@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* PWA 介面優化：確保在 iOS 裝置上的全螢幕體驗 */
+@supports (padding-top: env(safe-area-inset-top)) {
+  html, body, #root {
+    height: 100dvh; /* 使用動態視窗高度 */
+    min-height: 100dvh;
+  }
+}
+
+/* 全域字體 */
+body {
+  font-family: 'Inter', sans-serif;
+}
