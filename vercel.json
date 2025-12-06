@@ -1,0 +1,10 @@
+{
+"build": {
+"env": {
+"VITE_FIREBASE_CONFIG": "@vite_firebase_config",
+"VITE_AUTH_TOKEN": "@vite_auth_token",
+"VITE_APP_ID": "sweet-ledger-beta"
+}
+},
+"outputDirectory": "build"
+}
