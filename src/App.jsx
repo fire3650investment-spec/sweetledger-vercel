@@ -72,7 +72,8 @@ import {
   User,
   AlertTriangle,
   LogOut,
-  CalendarDays // New Icon for Date Picker
+  CalendarDays,
+  Users // New Icon for Members
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -207,15 +208,18 @@ const callGemini = async (prompt, imageBase64 = null) => {
     );
 
     const data = await response.json();
+    if (data.error) {
+        console.error("Gemini API Error:", data.error);
+        return null;
+    }
     return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
   } catch (error) {
-    console.error("Gemini Error:", error);
+    console.error("Gemini Network Error:", error);
     return null;
   }
 };
 
 export default function SweetLedger() {
-  // 1. 檢查配置是否正確載入
   if (!app) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center text-gray-600 bg-gray-50">
@@ -249,7 +253,7 @@ export default function SweetLedger() {
   const [selectedImage, setSelectedImage] = useState(null); 
   const [currency, setCurrency] = useState('TWD'); 
   const [payer, setPayer] = useState(''); 
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); // New: Date state
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); 
   
   // Split State
   const [splitType, setSplitType] = useState('even'); 
@@ -269,7 +273,6 @@ export default function SweetLedger() {
 
   // Subscription State
   const [isSubscription, setIsSubscription] = useState(false);
-  // Removed subName state as requested
   const [subCycle, setSubCycle] = useState('monthly'); 
   const [subPayDay, setSubPayDay] = useState(''); 
 
@@ -317,7 +320,6 @@ export default function SweetLedger() {
   useEffect(() => {
     const initAuth = async () => {
       const token = window.__initial_auth_token;
-      // Vercel Preview Token handling
       if (token && token.length > 2 && token !== '""') {
          try {
              await signInWithCustomToken(auth, token);
@@ -332,7 +334,6 @@ export default function SweetLedger() {
       setUser(u);
       setAuthLoading(false); 
       const savedCode = localStorage.getItem('sweet_ledger_code');
-      // 如果已登入且有存過 Code，直接進 Dashboard
       if (savedCode && u) { 
         setLedgerCode(savedCode);
         setView('dashboard');
@@ -353,7 +354,6 @@ export default function SweetLedger() {
         const data = docSnap.data();
         setLedgerData(data);
         if (data.currency) setCurrency(data.currency);
-        // Sync nickname local state
         if (data.users && data.users[user.uid]) {
             setMyNickname(data.users[user.uid].name);
         }
@@ -471,7 +471,6 @@ export default function SweetLedger() {
     
     try {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-        // Use Google profile if available
         const userName = user.displayName || 'Host';
         const userAvatar = user.photoURL || '🐱';
 
@@ -508,7 +507,6 @@ export default function SweetLedger() {
       if (currentData.users && currentData.users[user.uid]) {
           console.log("Welcome back, existing member!");
       } else {
-          // 真·新成員加入 (Guest)
           const userName = user.displayName || 'Guest';
           const userAvatar = user.photoURL || '🐶';
           
@@ -536,13 +534,9 @@ export default function SweetLedger() {
     let customSplitData = null;
     let finalSplitType = splitType;
 
-    // 分攤邏輯：墊付制 (Who Paid)
-    // 當 splitType === 'custom' 時，customSplit 代表每個人「付了多少錢」
-    // 責任額 (Liability) 預設為 even (50/50)
     if (splitType === 'custom') {
         const hostAmt = parseFloat(customSplitHost) || 0;
         const guestAmt = parseFloat(customSplitGuest) || 0;
-        // 防呆
         if (Math.round((hostAmt + guestAmt) * 100) / 100 !== Math.round(amountFloat * 100) / 100) {
             console.error("自定義墊付金額必須等於總金額！"); 
             alert("付款金額總和必須等於支出總額！");
@@ -555,12 +549,9 @@ export default function SweetLedger() {
         if(hostUid) customSplitData[hostUid] = hostAmt;
         if(guestUid) customSplitData[guestUid] = guestAmt;
     } else if (splitType === 'self') {
-        // "只有我": 責任全歸我 (Liability 100% Me)
-        // 需判斷我是 Host 還是 Guest
         const myRole = ledgerData.users[user.uid]?.role;
         finalSplitType = myRole === 'host' ? 'host_all' : 'guest_all';
     } else if (splitType === 'partner') {
-        // "只有對方": 責任全歸對方 (Liability 100% Partner)
         const myRole = ledgerData.users[user.uid]?.role;
         finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     } else if (splitType === 'even') {
@@ -569,37 +560,30 @@ export default function SweetLedger() {
 
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        
-        // 使用者選擇的日期 (如果沒選就是今天)
         const selectedDate = new Date(date).toISOString(); 
-
         const commonData = {
             id: generateId(), 
             amount: amountFloat, 
             currency: currency, 
             category: selectedCategory,
-            payer: payer || user.uid, // Use selected payer (墊付人)
+            payer: payer || user.uid, 
             splitType: finalSplitType, 
             customSplit: customSplitData,
             note: note || selectedCategory.name, 
             projectId: currentProjectId,
         };
 
-        // 如果是固定支出，要寫兩次：一次 Subscription，一次當下的 Transaction
         if (isSubscription) {
-          // 1. Subscription Document (供未來使用)
           await updateDoc(docRef, { 
               subscriptions: arrayUnion({ 
                   ...commonData, 
-                  name: note || selectedCategory.name, // 使用備註作為名稱
+                  name: note || selectedCategory.name, 
                   cycle: subCycle, 
                   payDay: parseInt(subPayDay) || 1, 
                   mode: 'infinite', 
                   nextPaymentDate: selectedDate, 
               })
           });
-          // 2. Immediate Transaction Document (當下記帳)
-          // 邏輯：建立固定支出時，通常也代表當下已經付了一筆
           await updateDoc(docRef, { 
               transactions: arrayUnion({ 
                   ...commonData, 
@@ -609,8 +593,6 @@ export default function SweetLedger() {
           });
 
         } else {
-          // 普通記帳
-          // 新等級公式: 筆數 * 50
           const currentXp = ledgerData.gamification?.xp || 0;
           const newTotalXp = currentXp + 50; 
           await updateDoc(docRef, { transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 'gamification.xp': newTotalXp, 'gamification.level': Math.floor(newTotalXp / 1000) + 1 });
@@ -618,8 +600,7 @@ export default function SweetLedger() {
         setIsSubmittingTransaction(false);
         setShowSuccessAnimation(true);
         setTimeout(() => {
-            setAmount(''); setNote(''); setAiInput(''); setSelectedImage(null); setIsSubscription(false); setSubName(''); setSubPayDay(''); setSplitType('even'); setCustomSplitHost(''); setCustomSplitGuest('');
-            // Reset Date to today
+            setAmount(''); setNote(''); setAiInput(''); setSelectedImage(null); setIsSubscription(false); setSubCycle('monthly'); setSubPayDay(''); setSplitType('even'); setCustomSplitHost(''); setCustomSplitGuest('');
             setDate(new Date().toISOString().slice(0, 10));
             setShowSuccessAnimation(false);
             setView('dashboard');
@@ -666,6 +647,11 @@ export default function SweetLedger() {
      const result = await callGemini(prompt, selectedImage ? selectedImage.split(',')[1] : null);
      setIsAiProcessing(false);
      setAiModalInput('');
+
+     if (!result) {
+         alert("AI 無法解析，請檢查網路或 API Key");
+         return;
+     }
 
      try { 
          const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim(); 
@@ -750,19 +736,19 @@ export default function SweetLedger() {
     
     const totalExpense = thisMonthTxs.reduce((acc, curr) => acc + curr.amount, 0);
     
-    // 結算邏輯
+    // 結算邏輯 (重寫為墊付制計算)
     let myPaid = 0;
     let myLiability = 0;
 
     thisMonthTxs.forEach(tx => {
-        // 1. 計算我付了多少 (墊付)
+        // 1. 計算我墊付了多少 (Who Paid)
         if (tx.splitType === 'custom' && tx.customSplit) {
              myPaid += (tx.customSplit[user.uid] || 0);
         } else {
              if (tx.payer === user.uid) myPaid += tx.amount;
         }
 
-        // 2. 計算我該付多少 (責任)
+        // 2. 計算我該付多少 (Liability)
         let liability = 0;
         if (tx.splitType === 'even' || tx.splitType === 'custom') {
             liability = tx.amount / 2; // 預設均分責任
@@ -940,7 +926,7 @@ export default function SweetLedger() {
         </div>
         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { handleImageUpload(e); setIsAiModalOpen(true); }} />
         
-        {/* Amount Input with Payer Toggle */}
+        {/* Amount Input with Payer Toggle (New) */}
         <div className="px-6 py-2 text-center flex flex-col items-center relative">
             {/* New: Date Picker */}
             <div className="absolute top-0 right-6">
