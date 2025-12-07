@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInAnonymously, // 保留以防萬一，但主要使用 Google
+  signInAnonymously, 
   onAuthStateChanged,
   signInWithCustomToken,
   GoogleAuthProvider,
@@ -314,7 +314,7 @@ export default function SweetLedger() {
   useEffect(() => {
     const initAuth = async () => {
       const token = window.__initial_auth_token;
-      // Vercel Preview Token handling (優先使用自定義 Token)
+      // Vercel Preview Token handling
       if (token && token.length > 2 && token !== '""') {
          try {
              await signInWithCustomToken(auth, token);
@@ -323,9 +323,6 @@ export default function SweetLedger() {
              console.warn("Custom Token failed, trying standard auth flow...");
          }
       }
-      
-      // Standard Flow: Wait for user to sign in manually or restore session
-      // 我們移除了自動匿名登入，除非已經有 session
     };
     
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -367,7 +364,6 @@ export default function SweetLedger() {
     try {
         const provider = new GoogleAuthProvider();
         await signInWithPopup(auth, provider);
-        // 登入成功後，onAuthStateChanged 會處理跳轉
     } catch (error) {
         console.error("Google Login Error:", error);
         alert(`Google 登入失敗: ${error.message}`);
@@ -506,10 +502,8 @@ export default function SweetLedger() {
     if (docSnap.exists()) {
       const currentData = docSnap.data();
       
-      // 關鍵邏輯：檢查我是否已經是成員 (Host 換裝置登入的情況)
       if (currentData.users && currentData.users[user.uid]) {
           console.log("Welcome back, existing member!");
-          // 不做任何 user 更新，直接進入
       } else {
           // 真·新成員加入 (Guest)
           const userName = user.displayName || 'Guest';
@@ -539,12 +533,16 @@ export default function SweetLedger() {
     let customSplitData = null;
     let finalSplitType = splitType;
 
+    // 分攤邏輯：墊付制 (Who Paid)
+    // 當 splitType === 'custom' 時，customSplit 代表每個人「付了多少錢」
+    // 責任額 (Liability) 預設為 even (50/50)
     if (splitType === 'custom') {
         const hostAmt = parseFloat(customSplitHost) || 0;
         const guestAmt = parseFloat(customSplitGuest) || 0;
+        // 防呆
         if (Math.round((hostAmt + guestAmt) * 100) / 100 !== Math.round(amountFloat * 100) / 100) {
-            console.error("自定義分攤金額必須等於總金額！"); 
-            alert("分攤金額總和必須等於支出總額！");
+            console.error("自定義墊付金額必須等於總金額！"); 
+            alert("付款金額總和必須等於支出總額！");
             setIsSubmittingTransaction(false);
             return;
         }
@@ -564,7 +562,7 @@ export default function SweetLedger() {
             amount: amountFloat, 
             currency: currency, 
             category: selectedCategory,
-            payer: payer || user.uid, // Use selected payer
+            payer: payer || user.uid, // Use selected payer (墊付人)
             splitType: finalSplitType, 
             customSplit: customSplitData,
             note: note || selectedCategory.name, 
@@ -574,7 +572,7 @@ export default function SweetLedger() {
         if (isSubscription) {
           await updateDoc(docRef, { subscriptions: arrayUnion({ ...commonData, name: subName || selectedCategory.name, cycle: subCycle, payDay: parseInt(subPayDay) || 1, mode: 'infinite', nextPaymentDate: new Date().toISOString(), }), });
         } else {
-          // 新等級公式: 筆數 * 50 (不看金額)
+          // 新等級公式: 筆數 * 50
           const currentXp = ledgerData.gamification?.xp || 0;
           const newTotalXp = currentXp + 50; 
           await updateDoc(docRef, { transactions: arrayUnion({ ...commonData, date: new Date().toISOString(), isSettlement: false }), 'gamification.xp': newTotalXp, 'gamification.level': Math.floor(newTotalXp / 1000) + 1 });
@@ -711,35 +709,49 @@ export default function SweetLedger() {
     });
     
     const totalExpense = thisMonthTxs.reduce((acc, curr) => acc + curr.amount, 0);
+    
     // 結算邏輯
     let myPaid = 0;
-    let myShare = 0;
+    let myLiability = 0;
+
     thisMonthTxs.forEach(tx => {
-        if (tx.payer === user.uid) myPaid += tx.amount;
-        let share = 0;
-        if (tx.splitType === 'even') share = tx.amount / 2;
-        else if (tx.splitType === 'host_all') share = ledgerData.users[user.uid]?.role === 'host' ? tx.amount : 0;
-        else if (tx.splitType === 'guest_all') share = ledgerData.users[user.uid]?.role === 'guest' ? tx.amount : 0;
-        else if (tx.splitType === 'custom' && tx.customSplit) share = tx.customSplit[user.uid] || 0;
-        myShare += share;
+        // 1. 計算我付了多少 (墊付)
+        if (tx.splitType === 'custom' && tx.customSplit) {
+             myPaid += (tx.customSplit[user.uid] || 0);
+        } else {
+             if (tx.payer === user.uid) myPaid += tx.amount;
+        }
+
+        // 2. 計算我該付多少 (責任)
+        let liability = 0;
+        if (tx.splitType === 'even' || tx.splitType === 'custom') {
+            liability = tx.amount / 2; // 預設均分責任
+        } else if (tx.splitType === 'host_all') {
+            liability = ledgerData.users[user.uid]?.role === 'host' ? tx.amount : 0;
+        } else if (tx.splitType === 'guest_all') {
+            liability = ledgerData.users[user.uid]?.role === 'guest' ? tx.amount : 0;
+        }
+        myLiability += liability;
     });
-    const settlement = myPaid - myShare;
+
+    const settlement = myPaid - myLiability; // 正數=多付(對方欠我)
 
     const currentProjectName = ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常開銷';
     const getHouseIcon = (level) => { if (level < 5) return '⛺️'; if (level < 15) return '🏠'; if (level < 30) return '🏡'; return '🏰'; };
     const allCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
+    const charId = ledgerData.settings?.character || 'cat';
 
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
-        {/* Edit Transaction Modal (Enhanced) */}
+        {/* Edit Transaction Modal (Enhanced: Fixed Position + Z-Index 100) */}
         {isEditTxModalOpen && editingTx && (
-            <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+2rem)] animate-in fade-in">
+            <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-in fade-in">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-bold text-gray-800">編輯交易</h3>
                     <button onClick={() => setIsEditTxModalOpen(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button>
                 </div>
-                <div className="space-y-4 flex-1 overflow-y-auto">
-                     <div className="text-center text-gray-400 text-xs">金額</div>
+                <div className="space-y-4 flex-1 overflow-y-auto pb-10">
+                     <div className="text-center text-gray-400 text-xs">金額 ({editingTx.currency})</div>
                      <input type="number" value={editingTx.amount} onChange={(e) => setEditingTx({...editingTx, amount: parseFloat(e.target.value)})} className="w-full text-center text-4xl font-bold bg-transparent outline-none"/>
                      
                      <div className="text-center text-gray-400 text-xs mt-4">分類</div>
@@ -787,6 +799,7 @@ export default function SweetLedger() {
            </div>
            <div className="flex items-center gap-2">
              <div className="bg-rose-100 px-3 py-1.5 rounded-full flex flex-col items-end gap-0.5">
+               <span className="text-[10px] text-rose-400 font-bold leading-none">{CHARACTERS[charId].greeting}</span>
                <div className="flex items-center gap-1">
                  <span className="text-lg leading-none">{getHouseIcon(ledgerData.gamification?.level || 1)}</span>
                  <span className="text-xs font-bold text-rose-600 leading-none">Lv.{ledgerData.gamification?.level || 1}</span>
@@ -854,15 +867,17 @@ export default function SweetLedger() {
     }
 
     return (
-      <div className="h-full flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] bg-white relative">
+      <div className="h-full flex flex-col pt-[calc(env(safe-area-inset-top)+2rem)] bg-white relative">
         {showSuccessAnimation && (
-            <div className="absolute inset-0 z-[60] bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
+            <div className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
                 <div className="scale-150 text-green-500 animate-bounce"><CheckCircle2 size={80} strokeWidth={3} /></div>
                 <h2 className="text-2xl font-bold text-gray-800 mt-4">記帳完成！</h2>
             </div>
         )}
+        
+        {/* AI Modal (Fixed + Z-Index) */}
         {isAiModalOpen && (
-            <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col p-6 animate-in fade-in duration-200">
+            <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-in fade-in duration-200">
                 <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-800">AI 智慧輸入</h3><button onClick={() => { setIsAiModalOpen(false); setIsRecording(false); }} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
                 <div className="flex-1 flex flex-col gap-4">
                     <textarea value={aiModalInput} onChange={(e) => setAiModalInput(e.target.value)} placeholder="請說話或輸入... 例如：「昨天晚餐吃壽司花了1200元」" className="w-full h-40 p-4 bg-gray-50 rounded-2xl text-lg outline-none resize-none border border-gray-200 focus:border-purple-500 transition-colors"/>
@@ -912,13 +927,13 @@ export default function SweetLedger() {
             <div className="bg-white p-4 rounded-xl shadow-sm mb-20 space-y-4">
                 <div className="border-b border-gray-100 pb-4">
                     <div className="flex justify-between items-center mb-2"><span className="text-sm font-medium text-gray-600">分攤方式</span><select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="text-sm bg-gray-100 p-1 px-2 rounded-lg outline-none"><option value="even">均攤 (50/50)</option><option value="custom">自定義</option></select></div>
-                    {splitType === 'custom' && (<div className="flex gap-2 mt-2"><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Host 支付</label><input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Guest 支付</label><input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div></div>)}
+                    {splitType === 'custom' && (<div className="flex gap-2 mt-2"><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Host 先付</label><input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Guest 先付</label><input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div></div>)}
                 </div>
                 <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-sm font-medium text-gray-600"><RefreshCw size={16} /><span>固定支出</span></div><button onClick={() => setIsSubscription(!isSubscription)} className={`w-12 h-6 rounded-full transition-colors ${isSubscription ? 'bg-rose-500' : 'bg-gray-200'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isSubscription ? 'left-7' : 'left-1'}`}></div></button></div>
                 {isSubscription && (<div className="pt-2 space-y-3"><input type="text" placeholder="訂閱名稱" value={subName} onChange={(e) => setSubName(e.target.value)} className="w-full p-2 border rounded-lg text-sm"/><div className="flex gap-2"><select value={subCycle} onChange={(e) => setSubCycle(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm"><option value="monthly">每月</option><option value="weekly">每週</option></select><input type="number" placeholder="日 (1-31)" value={subPayDay} onChange={(e) => setSubPayDay(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm text-center"/></div></div>)}
             </div>
         </div>
-        <div className="absolute bottom-0 left-0 w-full p-4 bg-white border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+1rem)]"><button onClick={addTransaction} disabled={!amount || isSubmittingTransaction} className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-colors ${amount && !isSubmittingTransaction ? 'bg-gray-900 text-white shadow-lg' : 'bg-gray-200 text-gray-400'}`}>{isSubmittingTransaction ? (<><RefreshCw className="animate-spin" size={20}/> 處理中...</>) : (<><Check size={20}/> 完成記帳</>)}</button></div>
+        <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+1rem)]"><button onClick={addTransaction} disabled={!amount || isSubmittingTransaction} className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-colors ${amount && !isSubmittingTransaction ? 'bg-gray-900 text-white shadow-lg' : 'bg-gray-200 text-gray-400'}`}>{isSubmittingTransaction ? (<><RefreshCw className="animate-spin" size={20}/> 處理中...</>) : (<><Check size={20}/> 完成記帳</>)}</button></div>
       </div>
     );
   };
