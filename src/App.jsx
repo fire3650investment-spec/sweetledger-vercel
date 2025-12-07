@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInAnonymously, 
+  signInAnonymously, // 保留以防萬一，但主要使用 Google
   onAuthStateChanged,
-  signInWithCustomToken
+  signInWithCustomToken,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut
 } from 'firebase/auth';
 import { 
   getFirestore, 
@@ -67,7 +70,8 @@ import {
   CheckCircle2,
   ArrowRightLeft,
   User,
-  AlertTriangle
+  AlertTriangle,
+  LogOut
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -210,7 +214,6 @@ const callGemini = async (prompt, imageBase64 = null) => {
 };
 
 export default function SweetLedger() {
-  // 1. 檢查配置是否正確載入
   if (!app) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center text-gray-600 bg-gray-50">
@@ -243,7 +246,7 @@ export default function SweetLedger() {
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null); 
   const [currency, setCurrency] = useState('TWD'); 
-  const [payer, setPayer] = useState(''); // New: Payer state
+  const [payer, setPayer] = useState(''); 
   
   // Split State
   const [splitType, setSplitType] = useState('even'); 
@@ -311,37 +314,29 @@ export default function SweetLedger() {
   useEffect(() => {
     const initAuth = async () => {
       const token = window.__initial_auth_token;
-      const tryAnonymousLogin = async () => {
-        try {
-           console.log("Attempting Anonymous Auth...");
-           await signInAnonymously(auth);
-        } catch (anonErr) {
-           console.error("Anonymous Auth Failed:", anonErr);
-           alert(`登入失敗！\n請確認 Firebase Console -> Authentication -> Sign-in method -> Anonymous 已開啟。\n(${anonErr.code})`);
-           setIsInitializing(false);
-        }
-      };
-      try {
-        if (token && token.length > 2 && token !== '""' && token !== "''") {
-          console.log("Attempting Custom Token Auth...");
-          await signInWithCustomToken(auth, token);
-        } else {
-          await tryAnonymousLogin();
-        }
-      } catch (error) {
-        console.warn("Custom Token Auth Failed, falling back to Anonymous:", error);
-        await tryAnonymousLogin();
+      // Vercel Preview Token handling (優先使用自定義 Token)
+      if (token && token.length > 2 && token !== '""') {
+         try {
+             await signInWithCustomToken(auth, token);
+             return;
+         } catch (e) {
+             console.warn("Custom Token failed, trying standard auth flow...");
+         }
       }
+      
+      // Standard Flow: Wait for user to sign in manually or restore session
+      // 我們移除了自動匿名登入，除非已經有 session
     };
     
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthLoading(false); 
       const savedCode = localStorage.getItem('sweet_ledger_code');
+      // 如果已登入且有存過 Code，直接進 Dashboard
       if (savedCode && u) { 
         setLedgerCode(savedCode);
         setView('dashboard');
-        setPayer(u.uid); // Default payer
+        setPayer(u.uid);
       }
       setTimeout(() => setIsInitializing(false), 800);
     });
@@ -368,6 +363,25 @@ export default function SweetLedger() {
   }, [user, ledgerCode]);
 
   // Actions
+  const handleGoogleLogin = async () => {
+    try {
+        const provider = new GoogleAuthProvider();
+        await signInWithPopup(auth, provider);
+        // 登入成功後，onAuthStateChanged 會處理跳轉
+    } catch (error) {
+        console.error("Google Login Error:", error);
+        alert(`Google 登入失敗: ${error.message}`);
+    }
+  };
+
+  const handleLogout = async () => {
+      if(confirm('確定要登出嗎？')) {
+          await signOut(auth);
+          setUser(null);
+          setView('onboarding');
+      }
+  };
+
   const updateLedgerSetting = async (key, value) => {
     if (!ledgerCode) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -453,24 +467,19 @@ export default function SweetLedger() {
   };
 
   const createLedger = async () => {
-    if (!user) {
-        if(authLoading) {
-            alert("正在連線中...請稍後再試");
-        } else {
-            alert("無法登入。請確認您的網路連線，或檢查 Vercel 環境變數是否正確設定。");
-        }
-        return;
-    }
+    if (!user) { alert("請先登入"); return; }
     setLoading(true);
     
-    const pid = firebaseConfig.projectId || 'unknown';
-
     try {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+        // Use Google profile if available
+        const userName = user.displayName || 'Host';
+        const userAvatar = user.photoURL || '🐱';
+
         const newLedger = {
         ...INITIAL_LEDGER_STATE,
         users: {
-            [user.uid]: { name: 'Host', avatar: '🐱', role: 'host' }
+            [user.uid]: { name: userName, avatar: userAvatar, role: 'host' }
         }
         };
         
@@ -481,20 +490,7 @@ export default function SweetLedger() {
     } catch (e) {
         console.error("Create Ledger Error:", e);
         if (e.code === 'permission-denied') {
-            const ruleText = `
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /artifacts/${appId}/public/data/ledgers/{ledgerCode} {
-      allow read, write: if request.auth != null;
-    }
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}`;
-            console.log("【請將以下完整規則貼到 Firebase Console】\n", ruleText);
-            alert(`權限不足！(Permission Denied)\n請按 F12 開啟 Console 複製正確規則，並到 Firebase Console 發布。`);
+            alert(`權限不足！請檢查 Firebase Rules`);
         } else {
             alert(`建立失敗: ${e.message}`);
         }
@@ -503,17 +499,29 @@ service cloud.firestore {
   };
 
   const joinLedger = async (code) => {
-    if (!user) return;
+    if (!user) { alert("請先登入"); return; }
     setLoading(true);
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
       const currentData = docSnap.data();
-      const updatedUsers = {
-        ...currentData.users,
-        [user.uid]: { name: 'Guest', avatar: '🐶', role: 'guest' }
-      };
-      await updateDoc(docRef, { users: updatedUsers });
+      
+      // 關鍵邏輯：檢查我是否已經是成員 (Host 換裝置登入的情況)
+      if (currentData.users && currentData.users[user.uid]) {
+          console.log("Welcome back, existing member!");
+          // 不做任何 user 更新，直接進入
+      } else {
+          // 真·新成員加入 (Guest)
+          const userName = user.displayName || 'Guest';
+          const userAvatar = user.photoURL || '🐶';
+          
+          const updatedUsers = {
+            ...currentData.users,
+            [user.uid]: { name: userName, avatar: userAvatar, role: 'guest' }
+          };
+          await updateDoc(docRef, { users: updatedUsers });
+      }
+      
       localStorage.setItem('sweet_ledger_code', code);
       setLedgerCode(code);
       setView('dashboard');
@@ -838,8 +846,6 @@ service cloud.firestore {
     const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
     const filteredCategories = currentCats.filter(cat => selectedCategoryIds.includes(cat.id)); 
-    
-    // Logic for recent notes
     const recentNotes = [];
     if (ledgerData.transactions) {
         const notes = ledgerData.transactions.filter(t => t.category.id === selectedCategory.id).map(t => t.note).filter(n => n);
@@ -1073,6 +1079,9 @@ service cloud.firestore {
                     <Copy size={20} />
                 </button>
             </div>
+            <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+                將此代碼分享給您的另一半，他們在歡迎畫面輸入後即可加入此帳本。
+            </p>
          </div>
          
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
@@ -1105,6 +1114,13 @@ service cloud.firestore {
              <h3 className="font-bold text-red-700 mb-3 flex items-center gap-2"><AlertTriangle size={18}/> 危險區域</h3>
              <button onClick={handleResetAccount} className="w-full bg-white text-red-600 border border-red-200 py-3 rounded-xl font-bold">重置所有帳務資料</button>
          </div>
+
+         {/* Logout Button */}
+         <div className="mt-8 mb-4">
+             <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-red-500 py-2">
+                 <LogOut size={16} /> 登出 Google 帳號
+             </button>
+         </div>
       </div>
     );
   };
@@ -1133,12 +1149,31 @@ service cloud.firestore {
             <div className="text-6xl mb-4">🍰</div>
             <h1 className="text-3xl font-bold text-gray-800 mb-2">情侶記帳</h1>
             <p className="text-gray-500 mb-8">讓記帳成為情侶間的小樂趣</p>
-            <button onClick={createLedger} className="w-full bg-rose-500 text-white py-4 rounded-xl font-bold text-lg mb-4 shadow-lg shadow-rose-200 active:scale-95 transition-transform">{loading ? "建立中..." : "建立新帳本"}</button>
+            
+            {/* Google Login Button */}
+            {!user ? (
+               <button 
+                 onClick={handleGoogleLogin}
+                 className="w-full bg-white border border-gray-200 text-gray-700 py-4 rounded-xl font-bold text-lg mb-4 shadow-sm flex items-center justify-center gap-3 active:scale-95 transition-transform"
+               >
+                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6"/>
+                 使用 Google 登入
+               </button>
+            ) : (
+               <div className="w-full space-y-4">
+                   <div className="flex items-center justify-center gap-2 mb-4">
+                       <img src={user.photoURL} className="w-8 h-8 rounded-full"/>
+                       <span className="text-sm font-bold text-gray-600">嗨，{user.displayName}</span>
+                   </div>
+                   <button onClick={createLedger} className="w-full bg-rose-500 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-rose-200 active:scale-95 transition-transform">{loading ? "建立中..." : "建立新帳本"}</button>
+               </div>
+            )}
+
             <div className="relative my-6"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div><div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-gray-500">或</span></div></div>
             <div className="flex gap-2 w-full">
                 <input type="text" placeholder="輸入邀請碼" className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-rose-500" onChange={(e) => setLedgerCode(e.target.value.toUpperCase())} />
                 {/* Fix: whitespace-nowrap and flex-shrink-0 to prevent button wrap */}
-                <button onClick={() => joinLedger(ledgerCode)} className="bg-gray-800 text-white px-6 rounded-xl font-bold active:scale-95 transition-transform whitespace-nowrap flex-shrink-0">加入</button>
+                <button onClick={() => { if(!user) { alert("請先登入 Google 帳號"); return; } joinLedger(ledgerCode); }} className="bg-gray-800 text-white px-6 rounded-xl font-bold active:scale-95 transition-transform whitespace-nowrap flex-shrink-0">加入</button>
             </div>
             </div>
         </div>
