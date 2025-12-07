@@ -68,6 +68,7 @@ const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfi
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
 
+// 注意：這個 ID 必須與 Firestore 規則中的路徑匹配
 const appId = 'sweet-ledger-beta';
 const GEMINI_API_KEY = "AIzaSyBWgsEEY_guFAZL-8aHD-d9q5d1gfdbBRc"; 
 
@@ -225,31 +226,35 @@ export default function SweetLedger() {
   useEffect(() => {
     const initAuth = async () => {
       const token = window.__initial_auth_token;
+      
+      const tryAnonymousLogin = async () => {
+        try {
+           console.log("Attempting Anonymous Auth...");
+           await signInAnonymously(auth);
+        } catch (anonErr) {
+           console.error("Anonymous Auth Failed:", anonErr);
+           alert(`登入失敗！\n請確認 Firebase Console -> Authentication -> Sign-in method -> Anonymous 已開啟。\n(${anonErr.code})`);
+        }
+      };
+
       try {
-        if (token) {
+        if (token && token.length > 2 && token !== '""' && token !== "''") {
+          console.log("Attempting Custom Token Auth...");
           await signInWithCustomToken(auth, token);
         } else {
-          await signInAnonymously(auth);
+          await tryAnonymousLogin();
         }
       } catch (error) {
-        console.error("Auth Error:", error);
-        // 詳細錯誤診斷
-        let msg = `登入失敗 (${error.code})。`;
-        if (error.code === 'auth/api-key-not-valid.-please-pass-a-valid-api-key.') {
-            msg += "\n原因：API Key 無效。請檢查 Vercel 的 VITE_FIREBASE_CONFIG 設定，確認 JSON 格式正確且沒有多餘空格。";
-        } else if (error.code === 'auth/operation-not-allowed') {
-            msg += "\n原因：匿名登入未開啟。請到 Firebase Console -> Authentication -> Sign-in method 開啟 Anonymous。";
-        }
-        alert(msg);
+        console.warn("Custom Token Auth Failed, falling back to Anonymous:", error);
+        await tryAnonymousLogin();
       }
     };
     
-    // 監聽 Auth 狀態
     const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthLoading(false); 
       const savedCode = localStorage.getItem('sweet_ledger_code');
-      if (savedCode && u) { // 只有在已登入且有存檔時才自動跳轉
+      if (savedCode && u) { 
         setLedgerCode(savedCode);
         setView('dashboard');
       }
@@ -267,14 +272,8 @@ export default function SweetLedger() {
         const data = docSnap.data();
         setLedgerData(data);
         if (data.currency) setCurrency(data.currency);
-        
-        // Initialize selected project if not set
-        // if (!selectedProject && data.projects?.length > 0) {
-        //     setSelectedProject(data.projects[0]);
-        // }
       }
     });
-
     return () => unsubscribe();
   }, [user, ledgerCode]);
 
@@ -328,7 +327,6 @@ export default function SweetLedger() {
     }
     setLoading(true);
     
-    // Diagnostic Info
     const pid = firebaseConfig.projectId || 'unknown';
     console.log(`[Diagnostic] Connecting to Project: ${pid}, User: ${user.uid}`);
 
@@ -348,13 +346,30 @@ export default function SweetLedger() {
     } catch (e) {
         console.error("Create Ledger Error:", e);
         if (e.code === 'permission-denied') {
-            alert(`權限錯誤！(Permission Denied)
+            const ruleText = `
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 允許任何已登入使用者存取 sweet-ledger-beta 下的所有資料
+    match /artifacts/sweet-ledger-beta/public/data/ledgers/{ledgerCode} {
+      allow read, write: if request.auth != null;
+    }
+    // 預設拒絕其他
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}`;
+            console.log("【請將以下完整規則貼到 Firebase Console】\n", ruleText);
+            alert(`權限不足！(Permission Denied) 🛑
             
-請確認您在 Vercel 設定的 Firebase 專案是否正確：
-目前連線專案 ID: ${pid}
+問題出在 Firestore 的安全規則。
 
-如果 ID 正確，請檢查該專案的 Firestore 規則是否已發布：
-match /artifacts/{appId}/public/data/ledgers/{ledgerCode} { allow read, write: if request.auth != null; }`);
+解決方法：
+1. 請按 F12 (或右鍵檢查) 打開瀏覽器的 Console (控制台)。
+2. 我已經把「正確的規則代碼」印在裡面了，請複製它。
+3. 到 Firebase Console -> Firestore Database -> 規則 (Rules)。
+4. 刪除原本的，貼上新的，並點擊「發布」。`);
         } else {
             alert(`建立失敗: ${e.message}`);
         }
@@ -367,7 +382,6 @@ match /artifacts/{appId}/public/data/ledgers/{ledgerCode} { allow read, write: i
     setLoading(true);
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code);
     const docSnap = await getDoc(docRef);
-    
     if (docSnap.exists()) {
       const currentData = docSnap.data();
       const updatedUsers = {
@@ -384,95 +398,50 @@ match /artifacts/{appId}/public/data/ledgers/{ledgerCode} { allow read, write: i
     setLoading(false);
   };
 
+  // Transaction Actions
   const addTransaction = async () => {
     if (!amount || !ledgerData) return;
-    
     const amountFloat = parseFloat(amount);
     const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
-
     let customSplitData = null;
     let finalSplitType = splitType;
 
     if (splitType === 'custom') {
         const hostAmt = parseFloat(customSplitHost) || 0;
         const guestAmt = parseFloat(customSplitGuest) || 0;
-        
         if (Math.round((hostAmt + guestAmt) * 100) / 100 !== Math.round(amountFloat * 100) / 100) {
-            console.error("自定義分攤金額必須等於總金額！");
-            return;
+            console.error("自定義分攤金額必須等於總金額！"); return;
         }
-        
         const hostUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
         const guestUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
-
         customSplitData = {};
         if(hostUid) customSplitData[hostUid] = hostAmt;
         if(guestUid) customSplitData[guestUid] = guestAmt;
-        
     } else if (splitType === 'even') {
-        if (!otherUserId) {
-            finalSplitType = 'host_all';
-        }
+        if (!otherUserId) { finalSplitType = 'host_all'; }
     }
 
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-
     const commonData = {
-        id: generateId(),
-        amount: amountFloat,
-        currency: currency,
-        category: selectedCategory,
-        payer: user.uid,
-        splitType: finalSplitType,
-        customSplit: customSplitData,
-        note: note || selectedCategory.name,
-        projectId: currentProjectId, // Use Global Current Project
+        id: generateId(), amount: amountFloat, currency: currency, category: selectedCategory,
+        payer: user.uid, splitType: finalSplitType, customSplit: customSplitData,
+        note: note || selectedCategory.name, projectId: currentProjectId,
     };
 
     if (isSubscription) {
-      await updateDoc(docRef, {
-        subscriptions: arrayUnion({
-            ...commonData,
-            name: subName || selectedCategory.name,
-            cycle: subCycle,
-            payDay: parseInt(subPayDay) || 1,
-            mode: 'infinite', 
-            nextPaymentDate: new Date().toISOString(), 
-        }),
-      });
+      await updateDoc(docRef, { subscriptions: arrayUnion({ ...commonData, name: subName || selectedCategory.name, cycle: subCycle, payDay: parseInt(subPayDay) || 1, mode: 'infinite', nextPaymentDate: new Date().toISOString(), }), });
     } else {
       const earnedXp = Math.floor(amountFloat / 10);
       const newTotalXp = (ledgerData.gamification?.xp || 0) + earnedXp;
-      
-      await updateDoc(docRef, {
-        transactions: arrayUnion({
-            ...commonData,
-            date: new Date().toISOString(),
-            isSettlement: false
-        }),
-        'gamification.xp': newTotalXp,
-        'gamification.level': Math.floor(newTotalXp / 1000) + 1
-      });
+      await updateDoc(docRef, { transactions: arrayUnion({ ...commonData, date: new Date().toISOString(), isSettlement: false }), 'gamification.xp': newTotalXp, 'gamification.level': Math.floor(newTotalXp / 1000) + 1 });
     }
-
-    setAmount('');
-    setNote('');
-    setAiInput('');
-    setSelectedImage(null);
-    setIsSubscription(false);
-    setSubName('');
-    setSubPayDay('');
-    setSplitType('even');
-    setCustomSplitHost('');
-    setCustomSplitGuest('');
-    
+    setAmount(''); setNote(''); setAiInput(''); setSelectedImage(null); setIsSubscription(false); setSubName(''); setSubPayDay(''); setSplitType('even'); setCustomSplitHost(''); setCustomSplitGuest('');
     setView('dashboard');
   };
 
-  const handleAiAnalysis = async () => {
-    if (!aiInput && !selectedImage) return;
-    setIsAiProcessing(true);
-
+  // AI & Upload Handlers
+  const handleAiAnalysis = async () => { 
+    if (!aiInput && !selectedImage) return; setIsAiProcessing(true);
     let prompt = `你是一個記帳助手。請分析使用者的輸入，並回傳一個 JSON 物件。
     目前的日期是：${new Date().toISOString()}。
     
@@ -484,55 +453,24 @@ match /artifacts/{appId}/public/data/ledgers/{ledgerCode} { allow read, write: i
     
     只回傳 JSON，不要 markdown 格式。例如: {"amount": 100, "categoryId": "food", "note": "午餐", "currency": "TWD"}`;
 
-    if (aiInput) prompt += `\n使用者文字: "${aiInput}"`;
-    if (selectedImage) prompt += `\n這是一張收據或發票的照片，請辨識總金額與可能的類別。`;
+    if (aiInput) prompt += `\n使用者文字: "${aiInput}"`; if (selectedImage) prompt += `\n這是一張收據或發票的照片，請辨識總金額與可能的類別。`;
 
     const result = await callGemini(prompt, selectedImage ? selectedImage.split(',')[1] : null);
-    
     setIsAiProcessing(false);
-    
-    try {
-      const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
-      
-      if (parsed.amount) setAmount(parsed.amount.toString());
-      if (parsed.note) setNote(parsed.note);
-      if (parsed.categoryId) {
-        const cat = CATEGORIES.find(c => c.id === parsed.categoryId);
-        if (cat) setSelectedCategory(cat);
-      }
-    } catch (e) {
-      console.error("AI Parse Error", e);
-    }
+    try { const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim(); const parsed = JSON.parse(cleanJson); if (parsed.amount) setAmount(parsed.amount.toString()); if (parsed.note) setNote(parsed.note); if (parsed.categoryId) { const cat = CATEGORIES.find(c => c.id === parsed.categoryId); if (cat) setSelectedCategory(cat); } } catch (e) { console.error("AI Parse Error", e); }
   };
-
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSelectedImage(reader.result);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const getCharacterAdvice = async () => {
-    const charId = ledgerData?.settings?.character || 'cat';
-    const character = CHARACTERS[charId];
-    // Calculate total based on current view/month or last 30 days. Let's use simple total.
-    const total = ledgerData?.transactions.reduce((acc, curr) => acc + curr.amount, 0) || 0;
-    
-    const prompt = `${character.prompt} 
-    目前這個月的總支出是 ${total} ${ledgerData.currency}。
-    請根據你的個性給出一句短評（30字以內）。`;
-    
+  
+  const handleImageUpload = (e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onloadend = () => { setSelectedImage(reader.result); }; reader.readAsDataURL(file); } };
+  
+  const getCharacterAdvice = async () => { 
+    const charId = ledgerData?.settings?.character || 'cat'; const character = CHARACTERS[charId]; const total = ledgerData?.transactions.reduce((acc, curr) => acc + curr.amount, 0) || 0;
+    const prompt = `${character.prompt} \n目前這個月的總支出是 ${total} ${ledgerData.currency}。請根據你的個性給出一句短評（30字以內）。`;
     return await callGemini(prompt);
   };
 
   // --- Sub-Views ---
 
-  const Dashboard = () => {
+  const Dashboard = () => { 
     if (!ledgerData) return null;
 
     // Filter by Project
@@ -540,16 +478,15 @@ match /artifacts/{appId}/public/data/ledgers/{ledgerCode} { allow read, write: i
     const currentMonthStr = new Date().toISOString().slice(0, 7);
     const thisMonthTxs = projectTxs.filter(t => t.date.startsWith(currentMonthStr));
     
-    const groupedTransactions = useMemo(() => {
-      const groups = {};
-      const sorted = [...projectTxs].sort((a, b) => new Date(b.date) - new Date(a.date));
-      
-      sorted.forEach(tx => {
-        const date = new Date(tx.date).toLocaleDateString('zh-TW');
-        if (!groups[date]) groups[date] = [];
-        groups[date].push(tx);
-      });
-      return groups;
+    const groupedTransactions = useMemo(() => { 
+      const groups = {}; 
+      const sorted = [...projectTxs].sort((a, b) => new Date(b.date) - new Date(a.date)); 
+      sorted.forEach(tx => { 
+        const date = new Date(tx.date).toLocaleDateString('zh-TW'); 
+        if (!groups[date]) groups[date] = []; 
+        groups[date].push(tx); 
+      }); 
+      return groups; 
     }, [projectTxs]);
 
     const totalExpense = thisMonthTxs.reduce((acc, curr) => acc + curr.amount, 0);
@@ -564,12 +501,7 @@ match /artifacts/{appId}/public/data/ledgers/{ledgerCode} { allow read, write: i
     }, 0);
 
     const currentProjectName = ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常開銷';
-    const getHouseIcon = (level) => {
-      if (level < 5) return '⛺️'; 
-      if (level < 15) return '🏠'; 
-      if (level < 30) return '🏡'; 
-      return '🏰'; 
-    };
+    const getHouseIcon = (level) => { if (level < 5) return '⛺️'; if (level < 15) return '🏠'; if (level < 30) return '🏡'; return '🏰'; };
 
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4">
@@ -653,7 +585,7 @@ match /artifacts/{appId}/public/data/ledgers/{ledgerCode} { allow read, write: i
       </div>
     );
   };
-
+  
   const AddExpenseView = () => {
     if (!ledgerData) return null;
 
