@@ -71,7 +71,8 @@ import {
   ArrowRightLeft,
   User,
   AlertTriangle,
-  LogOut
+  LogOut,
+  CalendarDays // New Icon for Date Picker
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -214,6 +215,7 @@ const callGemini = async (prompt, imageBase64 = null) => {
 };
 
 export default function SweetLedger() {
+  // 1. 檢查配置是否正確載入
   if (!app) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center text-gray-600 bg-gray-50">
@@ -247,6 +249,7 @@ export default function SweetLedger() {
   const [selectedImage, setSelectedImage] = useState(null); 
   const [currency, setCurrency] = useState('TWD'); 
   const [payer, setPayer] = useState(''); 
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); // New: Date state
   
   // Split State
   const [splitType, setSplitType] = useState('even'); 
@@ -266,7 +269,7 @@ export default function SweetLedger() {
 
   // Subscription State
   const [isSubscription, setIsSubscription] = useState(false);
-  const [subName, setSubName] = useState('');
+  // Removed subName state as requested
   const [subCycle, setSubCycle] = useState('monthly'); 
   const [subPayDay, setSubPayDay] = useState(''); 
 
@@ -539,6 +542,7 @@ export default function SweetLedger() {
     if (splitType === 'custom') {
         const hostAmt = parseFloat(customSplitHost) || 0;
         const guestAmt = parseFloat(customSplitGuest) || 0;
+        // 防呆
         if (Math.round((hostAmt + guestAmt) * 100) / 100 !== Math.round(amountFloat * 100) / 100) {
             console.error("自定義墊付金額必須等於總金額！"); 
             alert("付款金額總和必須等於支出總額！");
@@ -565,6 +569,10 @@ export default function SweetLedger() {
 
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        
+        // 使用者選擇的日期 (如果沒選就是今天)
+        const selectedDate = new Date(date).toISOString(); 
+
         const commonData = {
             id: generateId(), 
             amount: amountFloat, 
@@ -577,18 +585,42 @@ export default function SweetLedger() {
             projectId: currentProjectId,
         };
 
+        // 如果是固定支出，要寫兩次：一次 Subscription，一次當下的 Transaction
         if (isSubscription) {
-          await updateDoc(docRef, { subscriptions: arrayUnion({ ...commonData, name: subName || selectedCategory.name, cycle: subCycle, payDay: parseInt(subPayDay) || 1, mode: 'infinite', nextPaymentDate: new Date().toISOString(), }), });
+          // 1. Subscription Document (供未來使用)
+          await updateDoc(docRef, { 
+              subscriptions: arrayUnion({ 
+                  ...commonData, 
+                  name: note || selectedCategory.name, // 使用備註作為名稱
+                  cycle: subCycle, 
+                  payDay: parseInt(subPayDay) || 1, 
+                  mode: 'infinite', 
+                  nextPaymentDate: selectedDate, 
+              })
+          });
+          // 2. Immediate Transaction Document (當下記帳)
+          // 邏輯：建立固定支出時，通常也代表當下已經付了一筆
+          await updateDoc(docRef, { 
+              transactions: arrayUnion({ 
+                  ...commonData, 
+                  date: selectedDate, 
+                  isSettlement: false 
+              }) 
+          });
+
         } else {
+          // 普通記帳
           // 新等級公式: 筆數 * 50
           const currentXp = ledgerData.gamification?.xp || 0;
           const newTotalXp = currentXp + 50; 
-          await updateDoc(docRef, { transactions: arrayUnion({ ...commonData, date: new Date().toISOString(), isSettlement: false }), 'gamification.xp': newTotalXp, 'gamification.level': Math.floor(newTotalXp / 1000) + 1 });
+          await updateDoc(docRef, { transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 'gamification.xp': newTotalXp, 'gamification.level': Math.floor(newTotalXp / 1000) + 1 });
         }
         setIsSubmittingTransaction(false);
         setShowSuccessAnimation(true);
         setTimeout(() => {
             setAmount(''); setNote(''); setAiInput(''); setSelectedImage(null); setIsSubscription(false); setSubName(''); setSubPayDay(''); setSplitType('even'); setCustomSplitHost(''); setCustomSplitGuest('');
+            // Reset Date to today
+            setDate(new Date().toISOString().slice(0, 10));
             setShowSuccessAnimation(false);
             setView('dashboard');
         }, 1000);
@@ -875,7 +907,7 @@ export default function SweetLedger() {
         recentNotes.push(...uniqueNotes.slice(0, 10));
     }
     
-    // Get Partner Name
+    // Get Partner Name for "Only Partner" logic
     const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
     const partnerName = otherUserId ? (ledgerData.users[otherUserId].name || '對方') : '對方';
 
@@ -908,8 +940,18 @@ export default function SweetLedger() {
         </div>
         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { handleImageUpload(e); setIsAiModalOpen(true); }} />
         
-        {/* Amount Input with Payer Toggle (New) */}
-        <div className="px-6 py-2 text-center flex flex-col items-center">
+        {/* Amount Input with Payer Toggle */}
+        <div className="px-6 py-2 text-center flex flex-col items-center relative">
+            {/* New: Date Picker */}
+            <div className="absolute top-0 right-6">
+                <input 
+                    type="date" 
+                    value={date} 
+                    onChange={(e) => setDate(e.target.value)}
+                    className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-lg outline-none"
+                />
+            </div>
+
             <div className="text-gray-400 text-sm mb-1">{currency}</div>
             <input 
                 type="number" 
@@ -919,17 +961,24 @@ export default function SweetLedger() {
                 className="w-full text-6xl font-bold text-gray-800 text-center outline-none placeholder-gray-200 bg-transparent" 
                 inputMode="decimal"
             />
-            {/* Payer Toggle */}
+            {/* Payer Toggle - Only 2 Buttons: Me & Partner */}
             <div className="flex gap-2 mt-4">
-                {Object.entries(ledgerData.users).map(([uid, u]) => (
+                 {/* Button 1: Me */}
+                <button 
+                    onClick={() => setPayer(user.uid)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === user.uid ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
+                >
+                    我付的
+                </button>
+                {/* Button 2: Partner (Only if exists) */}
+                {otherUserId && (
                     <button 
-                        key={uid}
-                        onClick={() => setPayer(uid)}
-                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === uid ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
+                        onClick={() => setPayer(otherUserId)}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === otherUserId ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
                     >
-                        {u.name} 付的
+                        {partnerName} 付的
                     </button>
-                ))}
+                )}
             </div>
         </div>
         
@@ -942,8 +991,9 @@ export default function SweetLedger() {
                     <div className="flex justify-between items-center mb-2"><span className="text-sm font-medium text-gray-600">分攤方式</span><select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="text-sm bg-gray-100 p-1 px-2 rounded-lg outline-none"><option value="even">均攤 (50/50)</option><option value="self">只有我</option><option value="partner">只有{partnerName}</option><option value="custom">自定義</option></select></div>
                     {splitType === 'custom' && (<div className="flex gap-2 mt-2"><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Host 先付</label><input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Guest 先付</label><input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div></div>)}
                 </div>
+                {/* Subscription Name removed, simplified UI */}
                 <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-sm font-medium text-gray-600"><RefreshCw size={16} /><span>固定支出</span></div><button onClick={() => setIsSubscription(!isSubscription)} className={`w-12 h-6 rounded-full transition-colors ${isSubscription ? 'bg-rose-500' : 'bg-gray-200'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isSubscription ? 'left-7' : 'left-1'}`}></div></button></div>
-                {isSubscription && (<div className="pt-2 space-y-3"><input type="text" placeholder="訂閱名稱" value={subName} onChange={(e) => setSubName(e.target.value)} className="w-full p-2 border rounded-lg text-sm"/><div className="flex gap-2"><select value={subCycle} onChange={(e) => setSubCycle(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm"><option value="monthly">每月</option><option value="weekly">每週</option></select><input type="number" placeholder="日 (1-31)" value={subPayDay} onChange={(e) => setSubPayDay(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm text-center"/></div></div>)}
+                {isSubscription && (<div className="pt-2 space-y-3"><div className="flex gap-2"><select value={subCycle} onChange={(e) => setSubCycle(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm"><option value="monthly">每月</option><option value="weekly">每週</option></select><input type="number" placeholder="日 (1-31)" value={subPayDay} onChange={(e) => setSubPayDay(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm text-center"/></div></div>)}
             </div>
         </div>
         <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+1rem)]"><button onClick={addTransaction} disabled={!amount || isSubmittingTransaction} className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-colors ${amount && !isSubmittingTransaction ? 'bg-gray-900 text-white shadow-lg' : 'bg-gray-200 text-gray-400'}`}>{isSubmittingTransaction ? (<><RefreshCw className="animate-spin" size={20}/> 處理中...</>) : (<><Check size={20}/> 完成記帳</>)}</button></div>
@@ -1218,7 +1268,7 @@ export default function SweetLedger() {
                 {view === 'settings' && renderSettingsView()}
                 
                 {/* Bottom Navigation */}
-                <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6">
+                <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
                     <div className="flex justify-between items-center max-w-md mx-auto">
                     <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
                     <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
