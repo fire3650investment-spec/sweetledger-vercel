@@ -61,21 +61,16 @@ import {
 // --- Configuration & Constants ---
 
 // Firebase Configuration
-// 使用 window.__firebase_config 來確保 Vercel 環境變數的讀取
 const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
 
-// 確保 Config 存在才初始化，避免隱性錯誤
+// 確保 Config 存在才初始化
 const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
 
-// 修正：強制使用我們已在 Firestore 中配置好的固定 App ID
 const appId = 'sweet-ledger-beta';
-
-// Gemini API Key
 const GEMINI_API_KEY = "AIzaSyBWgsEEY_guFAZL-8aHD-d9q5d1gfdbBRc"; 
 
-// Icon Mapping
 const ICON_MAP = {
   food: Utensils,
   transport: Train,
@@ -98,7 +93,6 @@ const ICON_MAP = {
   project_private: Wallet
 };
 
-// Categories
 const CATEGORIES = [
   { id: 'food', name: '餐飲', icon: 'food', color: 'bg-orange-100 text-orange-600', hex: '#ea580c' },
   { id: 'transport', name: '交通', icon: 'transport', color: 'bg-blue-100 text-blue-600', hex: '#2563eb' },
@@ -112,7 +106,6 @@ const CATEGORIES = [
   { id: 'other', name: '其他', icon: 'other', color: 'bg-slate-100 text-slate-600', hex: '#475569' },
 ];
 
-// Characters
 const CHARACTERS = {
   cat: { id: 'cat', name: '貓咪', icon: 'cat', prompt: '你是一隻傲嬌毒舌的貓，覺得人類花錢很笨，回答簡短，句尾加「喵」。' },
   dog: { id: 'dog', name: '狗狗', icon: 'dog', prompt: '你是一隻超級熱情樂觀的狗，對什麼都充滿希望，句尾加「汪」。' },
@@ -120,7 +113,6 @@ const CHARACTERS = {
   bird: { id: 'bird', name: '啾啾', icon: 'bird', prompt: '你是一隻愛說八卦的鳥，對數字很敏感，句尾加「啾」。' },
 };
 
-// Initial Ledger Structure
 const INITIAL_LEDGER_STATE = {
   users: {}, 
   transactions: [],
@@ -140,8 +132,6 @@ const INITIAL_LEDGER_STATE = {
   }
 };
 
-// --- Helper Functions ---
-
 const formatCurrency = (amount, currency = 'TWD', privacy = false) => {
   if (privacy) return '****';
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency, minimumFractionDigits: 0 }).format(amount);
@@ -153,8 +143,6 @@ const getIconComponent = (iconName) => {
   const Component = ICON_MAP[iconName];
   return Component || ICON_MAP['default'];
 };
-
-// --- Gemini Service ---
 
 const callGemini = async (prompt, imageBase64 = null) => {
   try {
@@ -184,8 +172,6 @@ const callGemini = async (prompt, imageBase64 = null) => {
   }
 };
 
-// --- Main Component ---
-
 export default function SweetLedger() {
   // 1. 檢查配置是否正確載入
   if (!app) {
@@ -209,7 +195,7 @@ export default function SweetLedger() {
   const [ledgerData, setLedgerData] = useState(null);
   const [privacyMode, setPrivacyMode] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [currentProjectId, setCurrentProjectId] = useState('daily'); // Global Active Project
+  const [currentProjectId, setCurrentProjectId] = useState('daily'); 
 
   // Add Expense State
   const [amount, setAmount] = useState('');
@@ -229,21 +215,15 @@ export default function SweetLedger() {
   const [subCycle, setSubCycle] = useState('monthly'); 
   const [subPayDay, setSubPayDay] = useState(''); 
 
-  // Stats View State
-  const [statsMonth, setStatsMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
-
-  // Project Management State
+  const [statsMonth, setStatsMonth] = useState(new Date().toISOString().slice(0, 7)); 
   const [isEditingProject, setIsEditingProject] = useState(false);
   const [editingProjectData, setEditingProjectData] = useState({ id: '', name: '', icon: 'project_daily' });
 
   const fileInputRef = useRef(null);
   const importInputRef = useRef(null);
 
-  // --- Auth & Data Sync ---
-
   useEffect(() => {
     const initAuth = async () => {
-      // NOTE: window.__initial_auth_token is used for Vercel deployment logic
       const token = window.__initial_auth_token;
       try {
         if (token) {
@@ -253,24 +233,34 @@ export default function SweetLedger() {
         }
       } catch (error) {
         console.error("Auth Error:", error);
-        alert("登入失敗，請檢查 Firebase Anonymous Auth 是否開啟");
+        // 詳細錯誤診斷
+        let msg = `登入失敗 (${error.code})。`;
+        if (error.code === 'auth/api-key-not-valid.-please-pass-a-valid-api-key.') {
+            msg += "\n原因：API Key 無效。請檢查 Vercel 的 VITE_FIREBASE_CONFIG 設定，確認 JSON 格式正確且沒有多餘空格。";
+        } else if (error.code === 'auth/operation-not-allowed') {
+            msg += "\n原因：匿名登入未開啟。請到 Firebase Console -> Authentication -> Sign-in method 開啟 Anonymous。";
+        }
+        alert(msg);
       }
     };
-    initAuth();
-    return onAuthStateChanged(auth, (u) => {
+    
+    // 監聽 Auth 狀態
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
       setUser(u);
-      setAuthLoading(false); // Auth 載入完成
+      setAuthLoading(false); 
       const savedCode = localStorage.getItem('sweet_ledger_code');
-      if (savedCode) {
+      if (savedCode && u) { // 只有在已登入且有存檔時才自動跳轉
         setLedgerCode(savedCode);
         setView('dashboard');
       }
     });
+
+    initAuth();
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
     if (!user || !ledgerCode) return;
-    
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -288,8 +278,7 @@ export default function SweetLedger() {
     return () => unsubscribe();
   }, [user, ledgerCode]);
 
-  // --- Actions ---
-
+  // Actions
   const updateLedgerSetting = async (key, value) => {
     if (!ledgerCode) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -333,7 +322,7 @@ export default function SweetLedger() {
         if(authLoading) {
             alert("正在連線中...請稍後再試");
         } else {
-            alert("無法登入，請重新整理頁面或檢查網路");
+            alert("無法登入。請確認您的網路連線，或檢查 Vercel 環境變數是否正確設定。");
         }
         return;
     }
@@ -390,7 +379,6 @@ match /artifacts/{appId}/public/data/ledgers/{ledgerCode} { allow read, write: i
       setLedgerCode(code);
       setView('dashboard');
     } else {
-      console.error("找不到這個帳本代碼！");
       alert("找不到這個帳本代碼！");
     }
     setLoading(false);
