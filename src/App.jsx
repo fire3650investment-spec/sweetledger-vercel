@@ -68,11 +68,15 @@ import {
 
 // --- Configuration & Constants ---
 
+// Firebase Configuration
 const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
+
+// 確保 Config 存在才初始化
 const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
 
+// 注意：這個 ID 必須與 Firestore 規則中的路徑匹配
 const appId = 'sweet-ledger-beta';
 const GEMINI_API_KEY = "AIzaSyBWgsEEY_guFAZL-8aHD-d9q5d1gfdbBRc"; 
 
@@ -105,6 +109,19 @@ const ICON_MAP = {
   zap: Zap,
   book: BookOpen
 };
+
+const CATEGORIES = [
+  { id: 'food', name: '餐飲', icon: 'food', color: 'bg-orange-100 text-orange-600', hex: '#ea580c' },
+  { id: 'transport', name: '交通', icon: 'transport', color: 'bg-blue-100 text-blue-600', hex: '#2563eb' },
+  { id: 'shopping', name: '購物', icon: 'shopping', color: 'bg-pink-100 text-pink-600', hex: '#db2777' },
+  { id: 'housing', name: '房租', icon: 'housing', color: 'bg-indigo-100 text-indigo-600', hex: '#4f46e5' },
+  { id: 'hotel', name: '旅館', icon: 'hotel', color: 'bg-purple-100 text-purple-600', hex: '#9333ea' },
+  { id: 'ticket', name: '門票', icon: 'ticket', color: 'bg-yellow-100 text-yellow-600', hex: '#ca8a04' },
+  { id: 'telecom', name: '電信', icon: 'telecom', color: 'bg-gray-100 text-gray-600', hex: '#4b5563' },
+  { id: 'insurance', name: '保險', icon: 'insurance', color: 'bg-red-100 text-red-600', hex: '#dc2626' },
+  { id: 'life', name: '生活', icon: 'life', color: 'bg-green-100 text-green-600', hex: '#16a34a' },
+  { id: 'other', name: '其他', icon: 'other', color: 'bg-slate-100 text-slate-600', hex: '#475569' },
+];
 
 // 預設分類 (如果資料庫是新的)
 const DEFAULT_CATEGORIES = [
@@ -145,7 +162,7 @@ const INITIAL_LEDGER_STATE = {
   users: {}, 
   transactions: [],
   subscriptions: [],
-  customCategories: DEFAULT_CATEGORIES, // 新增：儲存自定義分類
+  customCategories: DEFAULT_CATEGORIES, 
   projects: [
     { id: 'daily', name: '日常開銷', icon: 'project_daily' },
     { id: 'travel', name: '日本旅遊專案', icon: 'project_travel' },
@@ -157,7 +174,6 @@ const INITIAL_LEDGER_STATE = {
   currency: 'TWD',
   settings: {
     character: 'cat',
-    // 預設全選，但之後會讀取 customCategories
     selectedCategories: DEFAULT_CATEGORIES.map(c => c.id) 
   }
 };
@@ -231,6 +247,7 @@ export default function SweetLedger() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
+  const [aiInput, setAiInput] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null); 
   const [currency, setCurrency] = useState('TWD'); 
@@ -900,6 +917,7 @@ service cloud.firestore {
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4">
          <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">消費分析</h2><div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1"><button onClick={() => handleMonthChange(-1)} className="p-1"><ChevronLeft size={16}/></button><span className="text-sm font-bold w-20 text-center">{statsMonth}</span><button onClick={() => handleMonthChange(1)} className="p-1"><ChevronRight size={16}/></button></div></div>
+         
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6"><h3 className="text-gray-600 font-bold mb-4">消費貢獻度 (支付金額)</h3><div className="flex justify-between items-center mb-2 text-sm"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-gray-600">Host</span></div><div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(hostTotal, ledgerData.currency)}</span><span className="text-xs text-gray-400">({Math.round(hostRatio)}%)</span></div></div><div className="flex justify-between items-center mb-3 text-sm"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-pink-500"></div><span className="text-gray-600">Guest</span></div><div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(guestTotal, ledgerData.currency)}</span><span className="text-xs text-gray-400">({Math.round(guestRatio)}%)</span></div></div><div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden"><div style={{ width: `${hostRatio}%` }} className="bg-blue-500 transition-all duration-1000"></div><div style={{ width: `${guestRatio}%` }} className="bg-pink-500 transition-all duration-1000"></div></div></div>
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center"><h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比</h3><div className="relative w-48 h-48 rounded-full mb-6" style={{ background: pieChartGradient }}><div className="absolute inset-4 bg-white rounded-full flex flex-col items-center justify-center"><span className="text-sm text-gray-400">總支出</span><span className="text-xl font-bold text-gray-800">{formatCurrency(totalExpense, ledgerData.currency)}</span></div></div><div className="w-full space-y-3">{categoryStats.map(stat => (<div key={stat.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.hex }}></div><span className="text-sm text-gray-600 font-medium">{stat.name}</span></div><div className="text-sm"><span className="font-bold text-gray-800 mr-2">{formatCurrency(stat.total, ledgerData.currency)}</span><span className="text-gray-400 text-xs">{Math.round((stat.total/totalExpense)*100)}%</span></div></div>))}</div></div>
       </div>
@@ -964,6 +982,31 @@ service cloud.firestore {
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 bg-gray-50 min-h-screen">
          <h2 className="text-2xl font-bold text-gray-800 mb-6">帳本設定</h2>
+         
+         {/* NEW: Invite Code Section */}
+         <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                <Heart size={18} className="text-rose-500" /> 帳本邀請碼
+            </h3>
+            <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
+                <div className="flex flex-col">
+                    <span className="text-xs text-gray-400 mb-1">您的專屬代碼</span>
+                    <span className="font-mono text-2xl font-bold text-gray-800 tracking-wider">{ledgerCode}</span>
+                </div>
+                <button 
+                    onClick={() => {
+                        navigator.clipboard.writeText(ledgerCode);
+                        alert("邀請碼已複製！");
+                    }}
+                    className="p-3 bg-white border border-gray-200 rounded-full shadow-sm active:scale-95 text-gray-600"
+                >
+                    <Copy size={20} />
+                </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+                將此代碼分享給您的另一半，他們在歡迎畫面輸入後即可加入此帳本。
+            </p>
+         </div>
          
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
              <div className="flex justify-between items-center mb-4">
