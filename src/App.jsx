@@ -539,7 +539,6 @@ export default function SweetLedger() {
     if (splitType === 'custom') {
         const hostAmt = parseFloat(customSplitHost) || 0;
         const guestAmt = parseFloat(customSplitGuest) || 0;
-        // 防呆
         if (Math.round((hostAmt + guestAmt) * 100) / 100 !== Math.round(amountFloat * 100) / 100) {
             console.error("自定義墊付金額必須等於總金額！"); 
             alert("付款金額總和必須等於支出總額！");
@@ -551,6 +550,15 @@ export default function SweetLedger() {
         customSplitData = {};
         if(hostUid) customSplitData[hostUid] = hostAmt;
         if(guestUid) customSplitData[guestUid] = guestAmt;
+    } else if (splitType === 'self') {
+        // "只有我": 責任全歸我 (Liability 100% Me)
+        // 需判斷我是 Host 還是 Guest
+        const myRole = ledgerData.users[user.uid]?.role;
+        finalSplitType = myRole === 'host' ? 'host_all' : 'guest_all';
+    } else if (splitType === 'partner') {
+        // "只有對方": 責任全歸對方 (Liability 100% Partner)
+        const myRole = ledgerData.users[user.uid]?.role;
+        finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     } else if (splitType === 'even') {
         if (!otherUserId) { finalSplitType = 'host_all'; }
     }
@@ -727,8 +735,10 @@ export default function SweetLedger() {
         if (tx.splitType === 'even' || tx.splitType === 'custom') {
             liability = tx.amount / 2; // 預設均分責任
         } else if (tx.splitType === 'host_all') {
+            // host_all = Host 負擔 100%
             liability = ledgerData.users[user.uid]?.role === 'host' ? tx.amount : 0;
         } else if (tx.splitType === 'guest_all') {
+            // guest_all = Guest 負擔 100%
             liability = ledgerData.users[user.uid]?.role === 'guest' ? tx.amount : 0;
         }
         myLiability += liability;
@@ -799,7 +809,6 @@ export default function SweetLedger() {
            </div>
            <div className="flex items-center gap-2">
              <div className="bg-rose-100 px-3 py-1.5 rounded-full flex flex-col items-end gap-0.5">
-               <span className="text-[10px] text-rose-400 font-bold leading-none">{CHARACTERS[charId].greeting}</span>
                <div className="flex items-center gap-1">
                  <span className="text-lg leading-none">{getHouseIcon(ledgerData.gamification?.level || 1)}</span>
                  <span className="text-xs font-bold text-rose-600 leading-none">Lv.{ledgerData.gamification?.level || 1}</span>
@@ -865,6 +874,10 @@ export default function SweetLedger() {
         const uniqueNotes = [...new Set(notes)];
         recentNotes.push(...uniqueNotes.slice(0, 10));
     }
+    
+    // Get Partner Name
+    const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
+    const partnerName = otherUserId ? (ledgerData.users[otherUserId].name || '對方') : '對方';
 
     return (
       <div className="h-full flex flex-col pt-[calc(env(safe-area-inset-top)+2rem)] bg-white relative">
@@ -926,7 +939,7 @@ export default function SweetLedger() {
             <div className="grid grid-cols-4 gap-4 mb-6">{filteredCategories.map(cat => { const CatIcon = getIconComponent(cat.icon); return (<button key={cat.id} onClick={() => setSelectedCategory(cat)} className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all ${selectedCategory.id === cat.id ? 'bg-white shadow-md scale-105 ring-2 ring-rose-200' : 'hover:bg-gray-100'}`}><div className={`text-2xl ${selectedCategory.id === cat.id ? 'text-gray-800' : 'text-gray-400'}`}><CatIcon size={28} /></div><span className={`text-xs font-medium ${selectedCategory.id === cat.id ? 'text-gray-800' : 'text-gray-500'}`}>{cat.name}</span></button>); })}</div>
             <div className="bg-white p-4 rounded-xl shadow-sm mb-20 space-y-4">
                 <div className="border-b border-gray-100 pb-4">
-                    <div className="flex justify-between items-center mb-2"><span className="text-sm font-medium text-gray-600">分攤方式</span><select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="text-sm bg-gray-100 p-1 px-2 rounded-lg outline-none"><option value="even">均攤 (50/50)</option><option value="custom">自定義</option></select></div>
+                    <div className="flex justify-between items-center mb-2"><span className="text-sm font-medium text-gray-600">分攤方式</span><select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="text-sm bg-gray-100 p-1 px-2 rounded-lg outline-none"><option value="even">均攤 (50/50)</option><option value="self">只有我</option><option value="partner">只有{partnerName}</option><option value="custom">自定義</option></select></div>
                     {splitType === 'custom' && (<div className="flex gap-2 mt-2"><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Host 先付</label><input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Guest 先付</label><input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div></div>)}
                 </div>
                 <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-sm font-medium text-gray-600"><RefreshCw size={16} /><span>固定支出</span></div><button onClick={() => setIsSubscription(!isSubscription)} className={`w-12 h-6 rounded-full transition-colors ${isSubscription ? 'bg-rose-500' : 'bg-gray-200'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isSubscription ? 'left-7' : 'left-1'}`}></div></button></div>
