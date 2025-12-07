@@ -65,7 +65,9 @@ import {
   BookOpen,
   StopCircle,
   CheckCircle2,
-  ArrowRightLeft
+  ArrowRightLeft,
+  User,
+  AlertTriangle
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -78,6 +80,7 @@ const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfi
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
 
+// 注意：這個 ID 必須與 Firestore 規則中的路徑匹配
 const appId = 'sweet-ledger-beta';
 const GEMINI_API_KEY = "AIzaSyBWgsEEY_guFAZL-8aHD-d9q5d1gfdbBRc"; 
 
@@ -207,6 +210,7 @@ const callGemini = async (prompt, imageBase64 = null) => {
 };
 
 export default function SweetLedger() {
+  // 1. 檢查配置是否正確載入
   if (!app) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center text-gray-600 bg-gray-50">
@@ -239,6 +243,7 @@ export default function SweetLedger() {
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null); 
   const [currency, setCurrency] = useState('TWD'); 
+  const [payer, setPayer] = useState(''); // New: Payer state
   
   // Split State
   const [splitType, setSplitType] = useState('even'); 
@@ -270,6 +275,9 @@ export default function SweetLedger() {
   
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editingCategoryData, setEditingCategoryData] = useState({ id: '', name: '', icon: 'food', color: COLORS[0].class, hex: COLORS[0].hex });
+  
+  // Nickname Edit State
+  const [myNickname, setMyNickname] = useState('');
 
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -278,6 +286,13 @@ export default function SweetLedger() {
     if (splitType === 'custom' && amount) {
     }
   }, [amount, splitType]);
+  
+  // Initialize payer when user loads
+  useEffect(() => {
+    if (user && !payer) {
+        setPayer(user.uid);
+    }
+  }, [user]);
 
   const handleCustomSplitChange = (field, value) => {
     const total = parseFloat(amount) || 0;
@@ -326,6 +341,7 @@ export default function SweetLedger() {
       if (savedCode && u) { 
         setLedgerCode(savedCode);
         setView('dashboard');
+        setPayer(u.uid); // Default payer
       }
       setTimeout(() => setIsInitializing(false), 800);
     });
@@ -342,11 +358,16 @@ export default function SweetLedger() {
         const data = docSnap.data();
         setLedgerData(data);
         if (data.currency) setCurrency(data.currency);
+        // Sync nickname local state
+        if (data.users && data.users[user.uid]) {
+            setMyNickname(data.users[user.uid].name);
+        }
       }
     });
     return () => unsubscribe();
   }, [user, ledgerCode]);
 
+  // Actions
   const updateLedgerSetting = async (key, value) => {
     if (!ledgerCode) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -358,6 +379,26 @@ export default function SweetLedger() {
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { currency: newCurrency });
     setCurrency(newCurrency); 
+  };
+  
+  const updateNickname = async () => {
+    if (!ledgerCode || !myNickname) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { [`users.${user.uid}.name`]: myNickname });
+    alert("暱稱已更新！");
+  };
+  
+  const handleResetAccount = async () => {
+      const confirmStr = prompt("警告：此操作將刪除所有交易紀錄且無法復原！\n請輸入 RESET 確認重置：");
+      if (confirmStr === "RESET") {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        await updateDoc(docRef, { 
+            transactions: [], 
+            subscriptions: [],
+            gamification: { xp: 0, level: 1, streak: 1, houseType: 'tent' }
+        });
+        alert("帳本已重置。");
+      }
   };
 
   const handleSaveProject = async () => {
@@ -421,7 +462,9 @@ export default function SweetLedger() {
         return;
     }
     setLoading(true);
+    
     const pid = firebaseConfig.projectId || 'unknown';
+
     try {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         const newLedger = {
@@ -430,6 +473,7 @@ export default function SweetLedger() {
             [user.uid]: { name: 'Host', avatar: '🐱', role: 'host' }
         }
         };
+        
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
         localStorage.setItem('sweet_ledger_code', code);
         setLedgerCode(code);
@@ -508,9 +552,15 @@ service cloud.firestore {
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const commonData = {
-            id: generateId(), amount: amountFloat, currency: currency, category: selectedCategory,
-            payer: user.uid, splitType: finalSplitType, customSplit: customSplitData,
-            note: note || selectedCategory.name, projectId: currentProjectId,
+            id: generateId(), 
+            amount: amountFloat, 
+            currency: currency, 
+            category: selectedCategory,
+            payer: payer || user.uid, // Use selected payer
+            splitType: finalSplitType, 
+            customSplit: customSplitData,
+            note: note || selectedCategory.name, 
+            projectId: currentProjectId,
         };
 
         if (isSubscription) {
@@ -669,22 +719,51 @@ service cloud.firestore {
 
     const currentProjectName = ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常開銷';
     const getHouseIcon = (level) => { if (level < 5) return '⛺️'; if (level < 15) return '🏠'; if (level < 30) return '🏡'; return '🏰'; };
-    const charId = ledgerData.settings?.character || 'cat';
+    const allCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
 
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
-        {/* Edit Transaction Modal */}
+        {/* Edit Transaction Modal (Enhanced) */}
         {isEditTxModalOpen && editingTx && (
-            <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col p-6 animate-in fade-in">
+            <div className="absolute inset-0 z-50 bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+2rem)] animate-in fade-in">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-bold text-gray-800">編輯交易</h3>
                     <button onClick={() => setIsEditTxModalOpen(false)} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button>
                 </div>
-                <div className="space-y-4">
+                <div className="space-y-4 flex-1 overflow-y-auto">
                      <div className="text-center text-gray-400 text-xs">金額</div>
                      <input type="number" value={editingTx.amount} onChange={(e) => setEditingTx({...editingTx, amount: parseFloat(e.target.value)})} className="w-full text-center text-4xl font-bold bg-transparent outline-none"/>
-                     <div className="text-center text-gray-400 text-xs">備註</div>
+                     
+                     <div className="text-center text-gray-400 text-xs mt-4">分類</div>
+                     <div className="grid grid-cols-4 gap-2">
+                        {allCats.map(cat => (
+                            <button 
+                                key={cat.id} 
+                                onClick={() => setEditingTx({...editingTx, category: cat})}
+                                className={`p-2 rounded-xl flex flex-col items-center border ${editingTx.category?.id === cat.id ? 'border-gray-800 bg-gray-50' : 'border-transparent'}`}
+                            >
+                                <div style={{color: cat.hex}}>{React.createElement(getIconComponent(cat.icon), {size: 20})}</div>
+                                <span className="text-[10px]">{cat.name}</span>
+                            </button>
+                        ))}
+                     </div>
+
+                     <div className="text-center text-gray-400 text-xs mt-4">付款人</div>
+                     <div className="flex gap-2 justify-center">
+                         {Object.entries(ledgerData.users).map(([uid, u]) => (
+                             <button 
+                                key={uid} 
+                                onClick={() => setEditingTx({...editingTx, payer: uid})}
+                                className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${editingTx.payer === uid ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600'}`}
+                             >
+                                {u.name}
+                             </button>
+                         ))}
+                     </div>
+
+                     <div className="text-center text-gray-400 text-xs mt-4">備註</div>
                      <input type="text" value={editingTx.note} onChange={(e) => setEditingTx({...editingTx, note: e.target.value})} className="w-full p-3 bg-gray-50 rounded-xl outline-none"/>
+                     
                      <button onClick={handleUpdateTransaction} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold mt-4">儲存修改</button>
                      <button onClick={handleDeleteTransaction} className="w-full bg-red-50 text-red-500 py-4 rounded-xl font-bold flex items-center justify-center gap-2"><Trash2 size={18}/> 刪除此筆紀錄</button>
                 </div>
@@ -700,7 +779,6 @@ service cloud.firestore {
            </div>
            <div className="flex items-center gap-2">
              <div className="bg-rose-100 px-3 py-1.5 rounded-full flex flex-col items-end gap-0.5">
-               <span className="text-[10px] text-rose-400 font-bold leading-none">{CHARACTERS[charId].greeting}</span>
                <div className="flex items-center gap-1">
                  <span className="text-lg leading-none">{getHouseIcon(ledgerData.gamification?.level || 1)}</span>
                  <span className="text-xs font-bold text-rose-600 leading-none">Lv.{ledgerData.gamification?.level || 1}</span>
@@ -760,6 +838,8 @@ service cloud.firestore {
     const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
     const filteredCategories = currentCats.filter(cat => selectedCategoryIds.includes(cat.id)); 
+    
+    // Logic for recent notes
     const recentNotes = [];
     if (ledgerData.transactions) {
         const notes = ledgerData.transactions.filter(t => t.category.id === selectedCategory.id).map(t => t.note).filter(n => n);
@@ -793,10 +873,35 @@ service cloud.firestore {
             <div className="flex gap-2"><button onClick={() => fileInputRef.current?.click()} className="p-2 bg-blue-50 text-blue-600 rounded-full"><Camera size={20} /></button><button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full ${isAiProcessing ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600'}`}>{isAiProcessing ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}</button></div>
         </div>
         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { handleImageUpload(e); setIsAiModalOpen(true); }} />
-        <div className="px-6 py-2 text-center"><div className="text-gray-400 text-sm mb-1">{currency}</div><input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0" className="w-full text-6xl font-bold text-gray-800 text-center outline-none placeholder-gray-200 bg-transparent" inputMode="decimal"/></div>
-        <div className="mx-4 bg-gray-50 p-4 rounded-xl shadow-sm mb-2 border border-gray-100"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder={`輸入備註 (例如: ${selectedCategory.name})...`} className="w-full outline-none text-gray-700 bg-transparent"/></div>
+        
+        {/* Amount Input with Payer Toggle (New) */}
+        <div className="px-6 py-2 text-center flex flex-col items-center">
+            <div className="text-gray-400 text-sm mb-1">{currency}</div>
+            <input 
+                type="number" 
+                value={amount} 
+                onChange={(e) => setAmount(e.target.value)} 
+                placeholder="0" 
+                className="w-full text-6xl font-bold text-gray-800 text-center outline-none placeholder-gray-200 bg-transparent" 
+                inputMode="decimal"
+            />
+            {/* Payer Toggle */}
+            <div className="flex gap-2 mt-4">
+                {Object.entries(ledgerData.users).map(([uid, u]) => (
+                    <button 
+                        key={uid}
+                        onClick={() => setPayer(uid)}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === uid ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
+                    >
+                        {u.name} 付的
+                    </button>
+                ))}
+            </div>
+        </div>
+        
+        <div className="mx-4 bg-gray-50 p-4 rounded-xl shadow-sm mb-2 border border-gray-100 mt-4"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder={`輸入備註 (例如: ${selectedCategory.name})...`} className="w-full outline-none text-gray-700 bg-transparent"/></div>
         {recentNotes.length > 0 && (<div className="mx-4 mb-4 flex flex-wrap gap-2">{recentNotes.map((n, idx) => (<button key={idx} onClick={() => setNote(n)} className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-lg hover:bg-gray-200 transition-colors">{n}</button>))}</div>)}
-        <div className="flex-1 bg-gray-50 rounded-t-3xl p-6 overflow-y-auto">
+        <div className="flex-1 bg-gray-50 rounded-t-3xl p-6 overflow-y-auto pb-40">
             <div className="grid grid-cols-4 gap-4 mb-6">{filteredCategories.map(cat => { const CatIcon = getIconComponent(cat.icon); return (<button key={cat.id} onClick={() => setSelectedCategory(cat)} className={`flex flex-col items-center gap-2 p-3 rounded-2xl transition-all ${selectedCategory.id === cat.id ? 'bg-white shadow-md scale-105 ring-2 ring-rose-200' : 'hover:bg-gray-100'}`}><div className={`text-2xl ${selectedCategory.id === cat.id ? 'text-gray-800' : 'text-gray-400'}`}><CatIcon size={28} /></div><span className={`text-xs font-medium ${selectedCategory.id === cat.id ? 'text-gray-800' : 'text-gray-500'}`}>{cat.name}</span></button>); })}</div>
             <div className="bg-white p-4 rounded-xl shadow-sm mb-20 space-y-4">
                 <div className="border-b border-gray-100 pb-4">
@@ -847,7 +952,7 @@ service cloud.firestore {
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4">
          <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">消費分析</h2><div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1"><button onClick={() => handleMonthChange(-1)} className="p-1"><ChevronLeft size={16}/></button><span className="text-sm font-bold w-20 text-center">{statsMonth}</span><button onClick={() => handleMonthChange(1)} className="p-1"><ChevronRight size={16}/></button></div></div>
          
-         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6"><h3 className="text-gray-600 font-bold mb-4">消費貢獻度 (支付金額)</h3><div className="flex justify-between items-center mb-2 text-sm"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-gray-600">Host</span></div><div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(hostTotal, ledgerData.currency)}</span><span className="text-xs text-gray-400">({Math.round(hostRatio)}%)</span></div></div><div className="flex justify-between items-center mb-3 text-sm"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-pink-500"></div><span className="text-gray-600">Guest</span></div><div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(guestTotal, ledgerData.currency)}</span><span className="text-xs text-gray-400">({Math.round(guestRatio)}%)</span></div></div><div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden"><div style={{ width: `${hostRatio}%` }} className="bg-blue-500 transition-all duration-1000"></div><div style={{ width: `${guestRatio}%` }} className="bg-pink-500 transition-all duration-1000"></div></div></div>
+         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6"><h3 className="text-gray-600 font-bold mb-4">消費貢獻度 (支付金額)</h3><div className="flex justify-between items-center mb-2 text-sm"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-blue-500"></div><span className="text-gray-600">{ledgerData.users[hostId]?.name || 'Host'}</span></div><div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(hostTotal, ledgerData.currency)}</span><span className="text-xs text-gray-400">({Math.round(hostRatio)}%)</span></div></div><div className="flex justify-between items-center mb-3 text-sm"><div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-pink-500"></div><span className="text-gray-600">{ledgerData.users[guestId]?.name || 'Guest'}</span></div><div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(guestTotal, ledgerData.currency)}</span><span className="text-xs text-gray-400">({Math.round(guestRatio)}%)</span></div></div><div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden"><div style={{ width: `${hostRatio}%` }} className="bg-blue-500 transition-all duration-1000"></div><div style={{ width: `${guestRatio}%` }} className="bg-pink-500 transition-all duration-1000"></div></div></div>
          
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center"><h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比</h3><div className="relative w-48 h-48 rounded-full mb-6" style={{ background: pieChartGradient }}><div className="absolute inset-4 bg-white rounded-full flex flex-col items-center justify-center"><span className="text-sm text-gray-400">總支出</span><span className="text-xl font-bold text-gray-800">{formatCurrency(totalExpense, ledgerData.currency)}</span></div></div><div className="w-full space-y-3">{categoryStats.map(stat => (<div key={stat.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.hex }}></div><span className="text-sm text-gray-600 font-medium">{stat.name}</span></div><div className="text-sm"><span className="font-bold text-gray-800 mr-2">{formatCurrency(stat.total, ledgerData.currency)}</span><span className="text-gray-400 text-xs">{Math.round((stat.total/totalExpense)*100)}%</span></div></div>))}</div></div>
 
@@ -902,7 +1007,7 @@ service cloud.firestore {
                     </div>
                     <div className="grid grid-cols-5 gap-2">
                          {COLORS.map(c => (
-                             <button key={c.name} onClick={() => setEditingCategoryData({...editingCategoryData, color: c.class, hex: c.hex})} className="w-8 h-8 rounded-full border-2 border-white shadow-sm" style={{backgroundColor: c.hex, ring: editingCategoryData.hex === c.hex ? '2px solid black' : 'none'}}></button>
+                             <button key={c.name} onClick={() => setEditingCategoryData({...editingCategoryData, color: c.class, hex: c.hex})} className={`w-8 h-8 rounded-full shadow-sm ${editingCategoryData.hex === c.hex ? 'ring-2 ring-gray-900 ring-offset-2' : 'border-2 border-white'}`} style={{backgroundColor: c.hex}}></button>
                          ))}
                     </div>
                     <button onClick={handleSaveCategory} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold">儲存</button>
@@ -933,7 +1038,22 @@ service cloud.firestore {
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 bg-gray-50 min-h-screen">
          <h2 className="text-2xl font-bold text-gray-800 mb-6">帳本設定</h2>
          
-         {/* NEW: Invite Code Section */}
+         {/* Nickname Setting */}
+         <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><User size={18} /> 我的暱稱</h3>
+            <div className="flex gap-2">
+                <input 
+                    type="text" 
+                    value={myNickname}
+                    onChange={(e) => setMyNickname(e.target.value)}
+                    placeholder="請輸入您的暱稱"
+                    className="flex-1 p-2 bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                />
+                <button onClick={updateNickname} className="bg-gray-900 text-white px-4 rounded-lg font-bold">儲存</button>
+            </div>
+         </div>
+
+         {/* Invite Code Section */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
             <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
                 <Heart size={18} className="text-rose-500" /> 帳本邀請碼
@@ -953,9 +1073,6 @@ service cloud.firestore {
                     <Copy size={20} />
                 </button>
             </div>
-            <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                將此代碼分享給您的另一半，他們在歡迎畫面輸入後即可加入此帳本。
-            </p>
          </div>
          
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
@@ -982,6 +1099,12 @@ service cloud.firestore {
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><FileText size={18}/> 資料備份與還原</h3><div className="mb-4 border-b border-gray-100 pb-4"><button onClick={handleExport} className="w-full py-2 border border-gray-300 rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50"><Download size={16}/> 下載 .csv</button></div></div>
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3">AI 角色</h3><div className="grid grid-cols-2 gap-3">{Object.values(CHARACTERS).map(char => { const CharIcon = getIconComponent(char.icon); return (<button key={char.id} onClick={() => updateLedgerSetting('character', char.id)} className={`p-3 rounded-xl border-2 transition-colors flex items-center gap-2 ${ledgerData.settings?.character === char.id ? 'border-rose-500 bg-rose-50' : 'border-gray-200 bg-white'}`}><CharIcon size={24} /><p className="text-sm font-medium">{char.name}</p></button>)})}</div></div>
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3">匯率設定</h3>{ledgerData.currency === 'TWD' && (<div className="flex items-center gap-2"><span className="text-sm text-gray-500">1 JPY =</span><input type="number" defaultValue={ledgerData.rates?.JPY} onBlur={(e) => { const val = parseFloat(e.target.value); if(val) updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode), { 'rates.JPY': val }); }} className="w-20 bg-gray-100 rounded-lg p-2 text-center" step="0.001"/><span className="text-sm text-gray-500">TWD</span></div>)}</div>
+         
+         {/* Danger Zone: Reset Account */}
+         <div className="bg-red-50 p-4 rounded-xl shadow-sm mb-6 border border-red-100">
+             <h3 className="font-bold text-red-700 mb-3 flex items-center gap-2"><AlertTriangle size={18}/> 危險區域</h3>
+             <button onClick={handleResetAccount} className="w-full bg-white text-red-600 border border-red-200 py-3 rounded-xl font-bold">重置所有帳務資料</button>
+         </div>
       </div>
     );
   };
