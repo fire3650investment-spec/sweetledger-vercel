@@ -208,13 +208,9 @@ const callGemini = async (prompt, imageBase64 = null) => {
     );
 
     const data = await response.json();
-    if (data.error) {
-        console.error("Gemini API Error:", data.error);
-        return null;
-    }
     return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
   } catch (error) {
-    console.error("Gemini Network Error:", error);
+    console.error("Gemini Error:", error);
     return null;
   }
 };
@@ -534,6 +530,7 @@ export default function SweetLedger() {
     let customSplitData = null;
     let finalSplitType = splitType;
 
+    // 分攤邏輯：墊付制 (Who Paid)
     if (splitType === 'custom') {
         const hostAmt = parseFloat(customSplitHost) || 0;
         const guestAmt = parseFloat(customSplitGuest) || 0;
@@ -543,11 +540,22 @@ export default function SweetLedger() {
             setIsSubmittingTransaction(false);
             return;
         }
+        
+        // 安全獲取 UID，若無 Partner 則不寫入該欄位
         const hostUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
         const guestUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
+        
         customSplitData = {};
         if(hostUid) customSplitData[hostUid] = hostAmt;
+        
+        // 防呆：如果尚未有 Guest，但輸入了 Guest 金額，則提示
+        if (guestAmt > 0 && !guestUid) {
+            alert("此帳本目前只有您一人，無法記錄對方的付款。");
+            setIsSubmittingTransaction(false);
+            return;
+        }
         if(guestUid) customSplitData[guestUid] = guestAmt;
+
     } else if (splitType === 'self') {
         const myRole = ledgerData.users[user.uid]?.role;
         finalSplitType = myRole === 'host' ? 'host_all' : 'guest_all';
@@ -753,10 +761,8 @@ export default function SweetLedger() {
         if (tx.splitType === 'even' || tx.splitType === 'custom') {
             liability = tx.amount / 2; // 預設均分責任
         } else if (tx.splitType === 'host_all') {
-            // host_all = Host 負擔 100%
             liability = ledgerData.users[user.uid]?.role === 'host' ? tx.amount : 0;
         } else if (tx.splitType === 'guest_all') {
-            // guest_all = Guest 負擔 100%
             liability = ledgerData.users[user.uid]?.role === 'guest' ? tx.amount : 0;
         }
         myLiability += liability;
@@ -852,6 +858,7 @@ export default function SweetLedger() {
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-50 overflow-hidden">
                         {txs.map((tx, idx) => { 
                             const CatIcon = getIconComponent(tx.category?.icon); 
+                            const payerName = ledgerData.users[tx.payer]?.name || '未知';
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
                                     <div className="flex items-center gap-3">
@@ -860,7 +867,10 @@ export default function SweetLedger() {
                                         </div>
                                         <div>
                                             <p className="font-medium text-gray-800">{tx.note}</p>
-                                            <div className="flex items-center gap-2"><p className="text-xs text-gray-400">{tx.category?.name}</p></div>
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-xs text-gray-400">{tx.category?.name}</p>
+                                                <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">[{payerName}付]</span>
+                                            </div>
                                         </div>
                                     </div>
                                     <span className="font-bold text-gray-800">{formatCurrency(tx.amount, tx.currency, privacyMode)}</span>
@@ -996,8 +1006,20 @@ export default function SweetLedger() {
 
     const hostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
     const guestId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
-    const hostTotal = filteredTxs.filter(t => t.payer === hostId).reduce((a,c) => a + c.amount, 0);
-    const guestTotal = filteredTxs.filter(t => t.payer === guestId).reduce((a,c) => a + c.amount, 0);
+    
+    // REVISED Stats Calculation (Pad Amount Priority)
+    const calculateTotalPaid = (uid) => {
+        return filteredTxs.reduce((sum, tx) => {
+            if (tx.splitType === 'custom' && tx.customSplit) {
+                return sum + (tx.customSplit[uid] || 0);
+            }
+            return sum + (tx.payer === uid ? tx.amount : 0);
+        }, 0);
+    };
+
+    const hostTotal = calculateTotalPaid(hostId);
+    const guestTotal = calculateTotalPaid(guestId);
+    
     const total = hostTotal + guestTotal;
     const hostRatio = total > 0 ? (hostTotal / total) * 100 : 50;
     const guestRatio = total > 0 ? (guestTotal / total) * 100 : 50;
@@ -1026,18 +1048,22 @@ export default function SweetLedger() {
          
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center"><h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比</h3><div className="relative w-48 h-48 rounded-full mb-6" style={{ background: pieChartGradient }}><div className="absolute inset-4 bg-white rounded-full flex flex-col items-center justify-center"><span className="text-sm text-gray-400">總支出</span><span className="text-xl font-bold text-gray-800">{formatCurrency(totalExpense, ledgerData.currency)}</span></div></div><div className="w-full space-y-3">{categoryStats.map(stat => (<div key={stat.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.hex }}></div><span className="text-sm text-gray-600 font-medium">{stat.name}</span></div><div className="text-sm"><span className="font-bold text-gray-800 mr-2">{formatCurrency(stat.total, ledgerData.currency)}</span><span className="text-gray-400 text-xs">{Math.round((stat.total/totalExpense)*100)}%</span></div></div>))}</div></div>
 
-         {/* New: History List */}
+         {/* New: History List (With Payer Tag) */}
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
             <h3 className="text-gray-600 font-bold mb-4">本月交易明細 ({sortedHistory.length}筆)</h3>
             <div className="space-y-4">
                 {sortedHistory.map((tx) => {
                     const CatIcon = getIconComponent(tx.category?.icon);
+                    const payerName = ledgerData.users[tx.payer]?.name || '未知';
                     return (
                         <div key={tx.id} className="flex items-center justify-between pb-3 border-b border-gray-50 last:border-0 last:pb-0">
                             <div className="flex items-center gap-3">
                                 <div className="text-gray-400 text-xs w-8 text-center">{new Date(tx.date).getDate()}日</div>
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${tx.category?.color?.replace('text-', 'bg-').split(' ')[0]} bg-opacity-20 text-${tx.category?.color?.split('text-')[1]}`}><CatIcon size={16} /></div>
-                                <div><p className="font-medium text-gray-800 text-sm">{tx.note}</p></div>
+                                <div>
+                                    <p className="font-medium text-gray-800 text-sm">{tx.note}</p>
+                                    <span className="text-[10px] text-gray-400 bg-gray-100 px-1 rounded">{payerName}付</span>
+                                </div>
                             </div>
                             <span className="font-bold text-gray-800 text-sm">{formatCurrency(tx.amount, tx.currency, privacyMode)}</span>
                         </div>
@@ -1107,6 +1133,19 @@ export default function SweetLedger() {
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 bg-gray-50 min-h-screen">
          <h2 className="text-2xl font-bold text-gray-800 mb-6">帳本設定</h2>
+         
+         {/* Member List (New) */}
+         <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Users size={18} /> 帳本成員</h3>
+            <div className="flex gap-4">
+                {Object.values(ledgerData.users).map(u => (
+                    <div key={u.name} className="flex flex-col items-center">
+                        <img src={u.avatar.includes('http') ? u.avatar : `https://ui-avatars.com/api/?name=${u.name}&background=random`} className="w-12 h-12 rounded-full mb-1 object-cover"/>
+                        <span className="text-xs font-bold text-gray-600">{u.name}</span>
+                    </div>
+                ))}
+            </div>
+         </div>
          
          {/* Nickname Setting */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
