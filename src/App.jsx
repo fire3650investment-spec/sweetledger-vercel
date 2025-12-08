@@ -1,3 +1,4 @@
+8. src/App.jsx (核心程式碼)
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
@@ -74,8 +75,7 @@ import {
   LogOut,
   CalendarDays,
   Users,
-  Wrench,
-  HandCoins
+  Wrench 
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -90,6 +90,7 @@ const db = app ? getFirestore(app) : null;
 
 // 注意：這個 ID 必須與 Firestore 規則中的路徑匹配
 const appId = 'sweet-ledger-beta';
+// API Key Updated
 const GEMINI_API_KEY = "AIzaSyBtMDYA9ALL33VMriQrnvzGGrodYOykUvo"; 
 
 const ICON_MAP = {
@@ -118,8 +119,7 @@ const ICON_MAP = {
   heart: Heart,
   gift: Gift,
   zap: Zap,
-  book: BookOpen,
-  settlement: HandCoins
+  book: BookOpen
 };
 
 const CATEGORIES = [
@@ -133,10 +133,9 @@ const CATEGORIES = [
   { id: 'insurance', name: '保險', icon: 'insurance', color: 'bg-red-100 text-red-600', hex: '#dc2626' },
   { id: 'life', name: '生活', icon: 'life', color: 'bg-green-100 text-green-600', hex: '#16a34a' },
   { id: 'other', name: '其他', icon: 'other', color: 'bg-slate-100 text-slate-600', hex: '#475569' },
-  { id: 'settlement', name: '還款結清', icon: 'settlement', color: 'bg-emerald-100 text-emerald-600', hex: '#059669' }
 ];
 
-const DEFAULT_CATEGORIES = CATEGORIES.filter(c => c.id !== 'settlement');
+const DEFAULT_CATEGORIES = CATEGORIES;
 
 const COLORS = [
   { name: 'Red', class: 'bg-red-100 text-red-600', hex: '#dc2626' },
@@ -288,7 +287,7 @@ export default function SweetLedger() {
   // Settings & Avatar State
   const [myNickname, setMyNickname] = useState('');
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
-  const [tempAvatar, setTempAvatar] = useState(''); 
+  const [tempAvatar, setTempAvatar] = useState(''); // New: Temporary avatar state for modal
 
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -539,37 +538,6 @@ export default function SweetLedger() {
         await updateDoc(docRef, { customCategories: newCategories });
      }
   };
-  
-  // New: Settle Up Logic
-  const handleSettleUp = async (amountToSettle, payeeName) => {
-    if (!amountToSettle || amountToSettle <= 0) return;
-    const confirmMsg = `確定要結清 ${formatCurrency(amountToSettle, ledgerData.currency)} 給 ${payeeName} 嗎？\n這將新增一筆還款紀錄。`;
-    
-    if (confirm(confirmMsg)) {
-        try {
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-            const commonData = {
-                id: generateId(), 
-                amount: amountToSettle, 
-                currency: ledgerData.currency, 
-                category: CATEGORIES.find(c => c.id === 'settlement'), // Implicit settlement category
-                payer: user.uid, // Assuming "I" am clicking the button to pay back
-                splitType: 'settlement', // Special type
-                note: `還款給 ${payeeName}`, 
-                projectId: currentProjectId,
-                date: new Date().toISOString()
-            };
-            
-            await updateDoc(docRef, { 
-                transactions: arrayUnion({ ...commonData, isSettlement: true }) 
-            });
-            alert("還款紀錄已新增，債務已結清！");
-        } catch (e) {
-            console.error("Settle Up Error:", e);
-            alert("結清失敗，請重試。");
-        }
-    }
-  };
 
   const createLedger = async () => {
     if (!user) { alert("請先登入"); return; }
@@ -595,20 +563,7 @@ export default function SweetLedger() {
     } catch (e) {
         console.error("Create Ledger Error:", e);
         if (e.code === 'permission-denied') {
-            const ruleText = `
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /artifacts/${appId}/public/data/ledgers/{ledgerCode} {
-      allow read, write: if request.auth != null;
-    }
-    match /{document=**} {
-      allow read, write: if false;
-    }
-  }
-}`;
-            console.log("【請將以下完整規則貼到 Firebase Console】\n", ruleText);
-            alert(`權限不足！(Permission Denied)\n請按 F12 開啟 Console 複製正確規則，並到 Firebase Console 發布。`);
+            alert(`權限不足！請檢查 Firebase Rules`);
         } else {
             alert(`建立失敗: ${e.message}`);
         }
@@ -850,8 +805,9 @@ service cloud.firestore {
     return await callGemini(prompt);
   };
   
-  // New Helper: Render Avatar Safely
+  // New Helper: Render Avatar Safely (Defense against crash)
   const renderAvatar = (avatarKeyOrUrl, sizeClass = "w-12 h-12") => {
+      // 1. Is it a character key?
       if (avatarKeyOrUrl && CHARACTERS[avatarKeyOrUrl]) {
           const Icon = getIconComponent(CHARACTERS[avatarKeyOrUrl].icon);
           return (
@@ -860,9 +816,11 @@ service cloud.firestore {
               </div>
           );
       }
+      // 2. Is it a URL?
       if (avatarKeyOrUrl && typeof avatarKeyOrUrl === 'string' && avatarKeyOrUrl.includes('http')) {
           return <img src={avatarKeyOrUrl} className={`${sizeClass} rounded-full object-cover border border-gray-200`} />;
       }
+      // 3. Default fallback
       return (
           <div className={`${sizeClass} rounded-full bg-gray-100 flex items-center justify-center text-gray-400 border border-gray-200`}>
               <User size={20} />
@@ -892,8 +850,6 @@ service cloud.firestore {
     let myLiability = 0;
 
     thisMonthTxs.forEach(tx => {
-        if(tx.isSettlement) return; // Skip settlement records in calc
-        
         // 1. 計算我墊付了多少 (Who Paid)
         if (tx.splitType === 'custom' && tx.customSplit) {
              myPaid += (tx.customSplit[user.uid] || 0);
@@ -912,27 +868,16 @@ service cloud.firestore {
         }
         myLiability += liability;
     });
-    
-    // 計算已結算金額 (Settlements)
-    const settlements = ledgerData.transactions.filter(tx => tx.isSettlement);
-    let settledAmount = 0;
-    settlements.forEach(tx => {
-        // 如果是我付出的還款 -> 減少我的負債 (增加 myPaid 概念)
-        if (tx.payer === user.uid) settledAmount += tx.amount;
-        // 如果是對方付給我的還款 -> 減少對方的負債 (減少 myPaid 概念)
-        else settledAmount -= tx.amount;
-    });
 
-    const settlement = (myPaid + settledAmount) - myLiability; 
+    const settlement = myPaid - myLiability; 
 
     const currentProjectName = ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常開銷';
     const getHouseIcon = (level) => { if (level < 5) return '⛺️'; if (level < 15) return '🏠'; if (level < 30) return '🏡'; return '🏰'; };
     const allCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const charId = ledgerData.settings?.character || 'cat';
 
-    // Get partner name for settlement msg
-    const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
-    const partnerName = otherUserId ? (ledgerData.users[otherUserId].name || '對方') : '對方';
+    // Get current user avatar for dashboard greeting
+    const myAvatarKey = ledgerData.users[user.uid]?.avatar;
 
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
@@ -947,17 +892,6 @@ service cloud.firestore {
                      <div className="text-center text-gray-400 text-xs">金額 ({editingTx.currency})</div>
                      <input type="number" value={editingTx.amount} onChange={(e) => setEditingTx({...editingTx, amount: parseFloat(e.target.value)})} className="w-full text-center text-4xl font-bold bg-transparent outline-none"/>
                      
-                     {/* Date Picker in Edit */}
-                     <div className="text-center text-gray-400 text-xs mt-4">日期</div>
-                     <div className="flex justify-center">
-                        <input 
-                            type="date" 
-                            value={new Date(editingTx.date).toISOString().slice(0,10)} 
-                            onChange={(e) => setEditingTx({...editingTx, date: new Date(e.target.value).toISOString()})}
-                            className="bg-gray-100 p-2 rounded-lg text-center"
-                        />
-                     </div>
-
                      <div className="text-center text-gray-400 text-xs mt-4">分類</div>
                      <div className="grid grid-cols-4 gap-2">
                         {allCats.map(cat => (
@@ -1002,8 +936,9 @@ service cloud.firestore {
              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white"><ChevronDown size={14} /></div>
            </div>
            <div className="flex items-center gap-2">
-             {/* Removed Avatar from Header */}
              <div className="bg-rose-100 px-3 py-1.5 rounded-full flex flex-col items-end gap-0.5">
+               {/* Show user avatar here now */}
+               {renderAvatar(myAvatarKey, "w-8 h-8")}
                <div className="flex items-center gap-1">
                  <span className="text-lg leading-none">{getHouseIcon(ledgerData.gamification?.level || 1)}</span>
                  <span className="text-xs font-bold text-rose-600 leading-none">Lv.{ledgerData.gamification?.level || 1}</span>
@@ -1014,26 +949,14 @@ service cloud.firestore {
              </button>
            </div>
         </div>
-        
-        {/* Settlement Card with Action Button */}
         <div className={`rounded-3xl p-6 text-white shadow-lg shadow-rose-200 mb-8 relative overflow-hidden transition-colors ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-rose-500 to-pink-600'}`}>
             <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
-            <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14}/> 總結算狀態 ({currentProjectName})</p>
-            <div className="flex justify-between items-end mb-2">
-                <h1 className="text-3xl font-bold tracking-tight">
-                    {settlement >= 0 ? `${partnerName} 欠你 ${formatCurrency(Math.abs(settlement), ledgerData.currency, privacyMode)}` : `你欠 ${partnerName} ${formatCurrency(Math.abs(settlement), ledgerData.currency, privacyMode)}`}
-                </h1>
-            </div>
-            {Math.abs(settlement) > 0 && (
-                <button 
-                    onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你')} 
-                    className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors"
-                >
-                    <HandCoins size={14}/> 結清債務
-                </button>
-            )}
+            <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14}/> 本月結算狀態 ({currentProjectName})</p>
+            <h1 className="text-4xl font-bold tracking-tight mb-2">
+                {settlement >= 0 ? `對方欠你 ${formatCurrency(Math.abs(settlement), ledgerData.currency, privacyMode)}` : `你欠對方 ${formatCurrency(Math.abs(settlement), ledgerData.currency, privacyMode)}`}
+            </h1>
+            <div className="flex items-center gap-2 text-sm text-white/80"><span>本月總支出: {formatCurrency(totalExpense, ledgerData.currency, privacyMode)}</span></div>
         </div>
-
         <div className="space-y-6">
             {Object.entries(groupedTransactions).map(([date, txs]) => (
                 <div key={date}>
@@ -1042,6 +965,7 @@ service cloud.firestore {
                         {txs.map((tx, idx) => { 
                             const CatIcon = getIconComponent(tx.category?.icon); 
                             const payerName = ledgerData.users[tx.payer]?.name || '未知';
+                            // 檢查是否為多人墊付
                             const isMultiPayer = tx.splitType === 'custom' && tx.customSplit && Object.keys(tx.customSplit).length > 1;
                             const displayPayer = isMultiPayer ? '多人墊付' : payerName;
 
@@ -1055,12 +979,12 @@ service cloud.firestore {
                                             <p className="font-medium text-gray-800">{tx.note}</p>
                                             <div className="flex items-center gap-2">
                                                 <p className="text-xs text-gray-400">{tx.category?.name}</p>
-                                                {/* UI Fix: No brackets */}
+                                                {/* UI Fix: Removed brackets and "付" */}
                                                 <span className="text-[10px] text-gray-400 bg-gray-100 px-1 rounded">{displayPayer}</span>
                                             </div>
                                         </div>
                                     </div>
-                                    <span className={`font-bold ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>{formatCurrency(tx.amount, tx.currency, privacyMode)}</span>
+                                    <span className="font-bold text-gray-800">{formatCurrency(tx.amount, tx.currency, privacyMode)}</span>
                                 </div>
                             ); 
                         })}
@@ -1079,7 +1003,6 @@ service cloud.firestore {
   };
 
   const renderAddExpenseView = () => {
-    // ... (Keep renderAddExpenseView logic same as Stage 5.5)
     if (!ledgerData) return null; 
     const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
@@ -1180,7 +1103,6 @@ service cloud.firestore {
                     <div className="flex justify-between items-center mb-2"><span className="text-sm font-medium text-gray-600">分攤方式</span><select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="text-sm bg-gray-100 p-1 px-2 rounded-lg outline-none"><option value="even">均攤 (50/50)</option><option value="self">只有我</option><option value="partner">只有{partnerName}</option><option value="custom">自定義</option></select></div>
                     {splitType === 'custom' && (<div className="flex gap-2 mt-2"><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">{hostName} 先付</label><input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">{guestName} 先付</label><input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div></div>)}
                 </div>
-                {/* Subscription Name removed, simplified UI */}
                 <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-sm font-medium text-gray-600"><RefreshCw size={16} /><span>固定支出</span></div><button onClick={() => setIsSubscription(!isSubscription)} className={`w-12 h-6 rounded-full transition-colors ${isSubscription ? 'bg-rose-500' : 'bg-gray-200'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isSubscription ? 'left-7' : 'left-1'}`}></div></button></div>
                 {isSubscription && (<div className="pt-2 space-y-3"><div className="flex gap-2"><select value={subCycle} onChange={(e) => setSubCycle(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm"><option value="monthly">每月</option><option value="weekly">每週</option></select><input type="number" placeholder="日 (1-31)" value={subPayDay} onChange={(e) => setSubPayDay(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm text-center"/></div></div>)}
             </div>
@@ -1212,7 +1134,6 @@ service cloud.firestore {
 
     const hostTotal = calculateTotalPaid(hostId);
     const guestTotal = calculateTotalPaid(guestId);
-    
     const total = hostTotal + guestTotal;
     const hostRatio = total > 0 ? (hostTotal / total) * 100 : 50;
     const guestRatio = total > 0 ? (guestTotal / total) * 100 : 50;
@@ -1252,7 +1173,7 @@ service cloud.firestore {
                     const displayPayer = isMultiPayer ? '多人墊付' : payerName;
 
                     return (
-                        <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-3 active:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 last:pb-0`}>
+                        <div key={tx.id} className="flex items-center justify-between pb-3 border-b border-gray-50 last:border-0 last:pb-0">
                             <div className="flex items-center gap-3">
                                 <div className="text-gray-400 text-xs w-8 text-center">{new Date(tx.date).getDate()}日</div>
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${tx.category?.color?.replace('text-', 'bg-').split(' ')[0]} bg-opacity-20 text-${tx.category?.color?.split('text-')[1]}`}><CatIcon size={16} /></div>
@@ -1277,6 +1198,7 @@ service cloud.firestore {
     const users = ledgerData.users || {};
 
     if (isEditingCategory) {
+        // ... (Category Edit Modal - same as before)
         return (
             <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4">
                 <h2 className="text-2xl font-bold text-gray-800 mb-6">{editingCategoryData.id ? '編輯分類' : '新增分類'}</h2>
@@ -1288,50 +1210,22 @@ service cloud.firestore {
                         placeholder="分類名稱"
                         className="w-full p-4 bg-gray-50 rounded-xl outline-none"
                     />
-                    <div className="grid grid-cols-5 gap-2">
-                        {AVAILABLE_ICONS.map(icon => {
-                            const IconCmp = getIconComponent(icon);
-                            return (
-                                <button key={icon} onClick={() => setEditingCategoryData({...editingCategoryData, icon})} className={`p-3 rounded-xl flex justify-center ${editingCategoryData.icon === icon ? 'bg-gray-200' : 'bg-gray-50'}`}>
-                                    <IconCmp size={20} />
-                                </button>
-                            )
-                        })}
-                    </div>
-                    <div className="grid grid-cols-5 gap-2">
-                         {COLORS.map(c => (
-                             <button key={c.name} onClick={() => setEditingCategoryData({...editingCategoryData, color: c.class, hex: c.hex})} className={`w-8 h-8 rounded-full shadow-sm ${editingCategoryData.hex === c.hex ? 'ring-2 ring-gray-900 ring-offset-2' : 'border-2 border-white'}`} style={{backgroundColor: c.hex}}></button>
-                         ))}
-                    </div>
+                    <div className="grid grid-cols-5 gap-2">{AVAILABLE_ICONS.map(icon => { const IconCmp = getIconComponent(icon); return (<button key={icon} onClick={() => setEditingCategoryData({...editingCategoryData, icon})} className={`p-3 rounded-xl flex justify-center ${editingCategoryData.icon === icon ? 'bg-gray-200' : 'bg-gray-50'}`}><IconCmp size={20} /></button>)})}</div>
+                    <div className="grid grid-cols-5 gap-2">{COLORS.map(c => (<button key={c.name} onClick={() => setEditingCategoryData({...editingCategoryData, color: c.class, hex: c.hex})} className={`w-8 h-8 rounded-full shadow-sm ${editingCategoryData.hex === c.hex ? 'ring-2 ring-gray-900 ring-offset-2' : 'border-2 border-white'}`} style={{backgroundColor: c.hex}}></button>))}</div>
                     <button onClick={handleSaveCategory} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold">儲存</button>
                     <button onClick={() => setIsEditingCategory(false)} className="w-full bg-gray-100 text-gray-500 py-4 rounded-xl font-bold">取消</button>
                 </div>
             </div>
-        )
+        );
     }
 
-    const handleExport = () => {
-        let csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += "Date,Project,Category,Note,Amount,Payer,SplitType\n";
-        ledgerData.transactions.forEach(tx => {
-            const row = [new Date(tx.date).toLocaleDateString(), ledgerData.projects.find(p => p.id === tx.projectId)?.name || 'Unknown', tx.category.name, tx.note, tx.amount, ledgerData.users[tx.payer]?.name || 'Unknown', tx.splitType].join(",");
-            csvContent += row + "\n";
-        });
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `sweet_ledger_export_${new Date().toISOString().slice(0,10)}.csv`);
-        document.body.appendChild(link);
-        link.click();
-    };
-
-    const handleImport = (e) => { /* Reuse existing logic but simplified for brevity in this snippet as it is unchanged logic */ };
+    const handleExport = () => { /* ... */ };
 
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 bg-gray-50 min-h-screen">
          <h2 className="text-2xl font-bold text-gray-800 mb-6">帳本設定</h2>
          
-         {/* Member List (New) */}
+         {/* 1. Member List (Safe Render) */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
             <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Users size={18} /> 帳本成員</h3>
             <div className="flex gap-4">
@@ -1373,7 +1267,7 @@ service cloud.firestore {
             </div>
          )}
          
-         {/* Nickname Setting */}
+         {/* 2. Nickname */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
             <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><User size={18} /> 我的暱稱</h3>
             <div className="flex gap-2">
@@ -1388,24 +1282,16 @@ service cloud.firestore {
             </div>
          </div>
 
-         {/* Invite Code Section */}
+         {/* 3. Invite Code */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
-            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-                <Heart size={18} className="text-rose-500" /> 帳本邀請碼
-            </h3>
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Heart size={18} className="text-rose-500" /> 帳本邀請碼</h3>
             <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
                 <div className="flex flex-col"><span className="text-xs text-gray-400 mb-1">您的專屬代碼</span><span className="font-mono text-2xl font-bold text-gray-800 tracking-wider">{ledgerCode}</span></div>
                 <button onClick={() => { navigator.clipboard.writeText(ledgerCode); alert("邀請碼已複製！"); }} className="p-3 bg-white border border-gray-200 rounded-full shadow-sm active:scale-95 text-gray-600"><Copy size={20} /></button>
             </div>
          </div>
          
-         {/* Fix Identity (Advanced) */}
-         <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
-            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Wrench size={18} /> 進階修復</h3>
-            <p className="text-xs text-gray-400 mb-3">如果發現帳本內有重複的成員或「Host」帳號，請點擊下方按鈕進行合併。</p>
-            <button onClick={handleFixIdentity} className="w-full bg-gray-100 text-gray-600 py-2 rounded-lg font-medium text-sm hover:bg-gray-200">合併匿名 Host 帳號</button>
-         </div>
-         
+         {/* 4. Categories */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
              <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-700">分類管理</h3><button onClick={() => { setIsEditingCategory(true); setEditingCategoryData({id:'', name:'', icon:'food', color: COLORS[0].class, hex: COLORS[0].hex}); }} className="text-xs bg-gray-900 text-white px-3 py-1 rounded-full">新增</button></div>
              <div className="grid grid-cols-4 gap-2">
@@ -1421,11 +1307,17 @@ service cloud.firestore {
              </div>
          </div>
 
+         {/* 5. CSV Export */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><FileText size={18}/> 資料備份與還原</h3><div className="mb-4 border-b border-gray-100 pb-4"><button onClick={handleExport} className="w-full py-2 border border-gray-300 rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50"><Download size={16}/> 下載 .csv</button></div></div>
          
-         <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3">匯率設定</h3>{ledgerData.currency === 'TWD' && (<div className="flex items-center gap-2"><span className="text-sm text-gray-500">1 JPY =</span><input type="number" defaultValue={ledgerData.rates?.JPY} onBlur={(e) => { const val = parseFloat(e.target.value); if(val) updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode), { 'rates.JPY': val }); }} className="w-20 bg-gray-100 rounded-lg p-2 text-center" step="0.001"/><span className="text-sm text-gray-500">TWD</span></div>)}</div>
-         
-         {/* Danger Zone: Reset Account */}
+         {/* 6. Advanced Fix */}
+         <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Wrench size={18} /> 進階修復</h3>
+            <p className="text-xs text-gray-400 mb-3">如果發現帳本內有重複的成員或「Host」帳號，請點擊下方按鈕進行合併。</p>
+            <button onClick={handleFixIdentity} className="w-full bg-gray-100 text-gray-600 py-2 rounded-lg font-medium text-sm hover:bg-gray-200">合併匿名 Host 帳號</button>
+         </div>
+
+         {/* 7. Danger Zone */}
          <div className="bg-red-50 p-4 rounded-xl shadow-sm mb-6 border border-red-100">
              <h3 className="font-bold text-red-700 mb-3 flex items-center gap-2"><AlertTriangle size={18}/> 危險區域</h3>
              <button onClick={handleResetAccount} className="w-full bg-white text-red-600 border border-red-200 py-3 rounded-xl font-bold">重置所有帳務資料</button>
@@ -1441,7 +1333,7 @@ service cloud.firestore {
     );
   };
 
-  const renderProjectsView = () => { /* Reuse logic from before but wrapped in function to avoid focus issues if any input exists */
+  const renderProjectsView = () => { /* Reuse existing logic */
       if (!ledgerData) return null;
       if (isEditingProject) { return (<div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4"><h2 className="text-2xl font-bold text-gray-800 mb-6">{editingProjectData.id ? '編輯專案' : '新增專案'}</h2><div className="space-y-4"><input type="text" value={editingProjectData.name} onChange={(e) => setEditingProjectData({...editingProjectData, name: e.target.value})} placeholder="專案名稱" className="w-full p-4 bg-gray-50 rounded-xl outline-none"/><div className="grid grid-cols-4 gap-2">{['project_daily', 'project_travel', 'project_house', 'project_private'].map(icon => { const IconCmp = getIconComponent(icon); return (<button key={icon} onClick={() => setEditingProjectData({...editingProjectData, icon})} className={`p-4 rounded-xl flex justify-center ${editingProjectData.icon === icon ? 'bg-rose-100 text-rose-600' : 'bg-gray-50'}`}><IconCmp size={24} /></button>)})}</div><button onClick={handleSaveProject} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold">儲存</button><button onClick={() => setIsEditingProject(false)} className="w-full bg-gray-100 text-gray-500 py-4 rounded-xl font-bold">取消</button></div></div>) }
       return (<div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4"><div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-bold text-gray-800">專案管理</h2><button onClick={() => { setIsEditingProject(true); setEditingProjectData({id:'', name:'', icon:'project_daily'}); }} className="bg-gray-900 text-white p-2 rounded-lg"><Plus size={20} /></button></div><div className="grid grid-cols-1 gap-4">{ledgerData.projects?.map(p => { const ProjIcon = getIconComponent(p.icon); return (<div key={p.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between"><div className="flex items-center gap-4"><div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-gray-600"><ProjIcon size={24} /></div><div><div className="font-bold text-gray-800">{p.name}</div><div className="text-xs text-gray-400">{p.id === 'daily' ? '預設' : '自訂專案'}</div></div></div>{p.id !== 'daily' && (<div className="flex gap-2"><button onClick={() => { setEditingProjectData(p); setIsEditingProject(true); }} className="p-2 text-gray-400 hover:text-gray-600"><Edit2 size={18} /></button><button onClick={() => handleDeleteProject(p.id)} className="p-2 text-red-400 hover:text-red-600"><Trash2 size={18} /></button></div>)}</div>)})}</div></div>);
@@ -1472,7 +1364,7 @@ service cloud.firestore {
                  onClick={handleGoogleLogin}
                  className="w-full bg-white border border-gray-200 text-gray-700 py-4 rounded-xl font-bold text-lg mb-4 shadow-sm flex items-center justify-center gap-3 active:scale-95 transition-transform"
                >
-                 <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6"/>
+                 <img src="[https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg](https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg)" className="w-6 h-6"/>
                  使用 Google 登入
                </button>
             ) : (
