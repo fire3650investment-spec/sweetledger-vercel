@@ -595,7 +595,20 @@ export default function SweetLedger() {
     } catch (e) {
         console.error("Create Ledger Error:", e);
         if (e.code === 'permission-denied') {
-            alert(`權限不足！請檢查 Firebase Rules`);
+            const ruleText = `
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /artifacts/${appId}/public/data/ledgers/{ledgerCode} {
+      allow read, write: if request.auth != null;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}`;
+            console.log("【請將以下完整規則貼到 Firebase Console】\n", ruleText);
+            alert(`權限不足！(Permission Denied)\n請按 F12 開啟 Console 複製正確規則，並到 Firebase Console 發布。`);
         } else {
             alert(`建立失敗: ${e.message}`);
         }
@@ -1239,7 +1252,7 @@ export default function SweetLedger() {
                     const displayPayer = isMultiPayer ? '多人墊付' : payerName;
 
                     return (
-                        <div key={tx.id} className="flex items-center justify-between pb-3 border-b border-gray-50 last:border-0 last:pb-0">
+                        <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-3 active:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 last:pb-0`}>
                             <div className="flex items-center gap-3">
                                 <div className="text-gray-400 text-xs w-8 text-center">{new Date(tx.date).getDate()}日</div>
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${tx.category?.color?.replace('text-', 'bg-').split(' ')[0]} bg-opacity-20 text-${tx.category?.color?.split('text-')[1]}`}><CatIcon size={16} /></div>
@@ -1322,23 +1335,43 @@ export default function SweetLedger() {
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
             <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Users size={18} /> 帳本成員</h3>
             <div className="flex gap-4">
-                {Object.values(ledgerData.users || {}).map((u, idx) => {
+                {Object.values(users).map((u, idx) => {
                     // Safe guard: check if u exists
                     if (!u) return null;
                     return (
                         <div key={idx} className="flex flex-col items-center">
-                            {/* Avatar logic */}
-                            <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-xl overflow-hidden">
-                                {u.avatar && typeof u.avatar === 'string' && u.avatar.includes('http') 
-                                    ? <img src={u.avatar} className="w-full h-full object-cover"/>
-                                    : (u.avatar || '?')}
-                            </div>
+                            <button onClick={() => { if(u.name === myNickname) setIsAvatarModalOpen(true); }} className="relative group">
+                                 {renderAvatar(u.avatar)}
+                                 {u.name === myNickname && <div className="absolute bottom-0 right-0 bg-gray-900 text-white rounded-full p-1 border-2 border-white"><Wrench size={10}/></div>}
+                            </button>
                             <span className="text-xs font-bold text-gray-600 mt-1">{u.name || 'Unknown'}</span>
                         </div>
                     );
                 })}
             </div>
          </div>
+         
+         {/* Avatar Picker Modal */}
+         {isAvatarModalOpen && (
+            <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in">
+                <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 w-full max-w-sm">
+                    <h3 className="text-xl font-bold text-gray-800 mb-4 text-center">選擇您的頭像</h3>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        {Object.entries(CHARACTERS).map(([key, char]) => {
+                            const Icon = getIconComponent(char.icon);
+                            return (
+                                <button key={key} onClick={() => handleAvatarSelect(key)} className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${tempAvatar === key ? 'border-rose-500 bg-rose-50 ring-2 ring-rose-200' : 'bg-gray-50 border-transparent hover:border-rose-200'}`}>
+                                    <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-rose-500 shadow-sm"><Icon size={24}/></div>
+                                    <span className="text-sm font-bold text-gray-600">{char.name}</span>
+                                </button>
+                            )
+                        })}
+                    </div>
+                    <button onClick={confirmAvatarUpdate} disabled={!tempAvatar} className={`w-full py-3 rounded-xl font-bold mb-2 transition-colors ${tempAvatar ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-gray-200 text-gray-400'}`}>確認更換</button>
+                    <button onClick={() => setIsAvatarModalOpen(false)} className="w-full bg-white text-gray-500 py-3 rounded-xl font-bold border border-gray-200">取消</button>
+                </div>
+            </div>
+         )}
          
          {/* Nickname Setting */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
@@ -1361,23 +1394,9 @@ export default function SweetLedger() {
                 <Heart size={18} className="text-rose-500" /> 帳本邀請碼
             </h3>
             <div className="flex items-center justify-between bg-gray-50 p-4 rounded-xl border border-gray-100">
-                <div className="flex flex-col">
-                    <span className="text-xs text-gray-400 mb-1">您的專屬代碼</span>
-                    <span className="font-mono text-2xl font-bold text-gray-800 tracking-wider">{ledgerCode}</span>
-                </div>
-                <button 
-                    onClick={() => {
-                        navigator.clipboard.writeText(ledgerCode);
-                        alert("邀請碼已複製！");
-                    }}
-                    className="p-3 bg-white border border-gray-200 rounded-full shadow-sm active:scale-95 text-gray-600"
-                >
-                    <Copy size={20} />
-                </button>
+                <div className="flex flex-col"><span className="text-xs text-gray-400 mb-1">您的專屬代碼</span><span className="font-mono text-2xl font-bold text-gray-800 tracking-wider">{ledgerCode}</span></div>
+                <button onClick={() => { navigator.clipboard.writeText(ledgerCode); alert("邀請碼已複製！"); }} className="p-3 bg-white border border-gray-200 rounded-full shadow-sm active:scale-95 text-gray-600"><Copy size={20} /></button>
             </div>
-            <p className="text-xs text-gray-400 mt-3 leading-relaxed">
-                將此代碼分享給您的另一半，他們在歡迎畫面輸入後即可加入此帳本。
-            </p>
          </div>
          
          {/* Fix Identity (Advanced) */}
@@ -1388,19 +1407,13 @@ export default function SweetLedger() {
          </div>
          
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
-             <div className="flex justify-between items-center mb-4">
-                 <h3 className="font-bold text-gray-700">分類管理</h3>
-                 <button onClick={() => { setIsEditingCategory(true); setEditingCategoryData({id:'', name:'', icon:'food', color: COLORS[0].class, hex: COLORS[0].hex}); }} className="text-xs bg-gray-900 text-white px-3 py-1 rounded-full">新增</button>
-             </div>
+             <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-gray-700">分類管理</h3><button onClick={() => { setIsEditingCategory(true); setEditingCategoryData({id:'', name:'', icon:'food', color: COLORS[0].class, hex: COLORS[0].hex}); }} className="text-xs bg-gray-900 text-white px-3 py-1 rounded-full">新增</button></div>
              <div className="grid grid-cols-4 gap-2">
                 {currentCategories.map(cat => {
                    const CatIcon = getIconComponent(cat.icon);
                    return (
                       <div key={cat.id} className="relative group">
-                          <button className={`w-full flex flex-col items-center gap-1 p-2 rounded-xl border border-gray-100 bg-white`}>
-                             <div style={{color: cat.hex}}><CatIcon size={20} /></div>
-                             <span className="text-[10px] font-medium truncate w-full text-center">{cat.name}</span>
-                          </button>
+                          <button className={`w-full flex flex-col items-center gap-1 p-2 rounded-xl border border-gray-100 bg-white`}><div style={{color: cat.hex}}><CatIcon size={20} /></div><span className="text-[10px] font-medium truncate w-full text-center">{cat.name}</span></button>
                           <button onClick={() => handleDeleteCategory(cat.id)} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 shadow-sm"><X size={10}/></button>
                       </div>
                    );
@@ -1409,7 +1422,7 @@ export default function SweetLedger() {
          </div>
 
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><FileText size={18}/> 資料備份與還原</h3><div className="mb-4 border-b border-gray-100 pb-4"><button onClick={handleExport} className="w-full py-2 border border-gray-300 rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50"><Download size={16}/> 下載 .csv</button></div></div>
-         <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3">AI 角色</h3><div className="grid grid-cols-2 gap-3">{Object.values(CHARACTERS).map(char => { const CharIcon = getIconComponent(char.icon); return (<button key={char.id} onClick={() => updateLedgerSetting('character', char.id)} className={`p-3 rounded-xl border-2 transition-colors flex items-center gap-2 ${ledgerData.settings?.character === char.id ? 'border-rose-500 bg-rose-50' : 'border-gray-200 bg-white'}`}><CharIcon size={24} /><p className="text-sm font-medium">{char.name}</p></button>)})}</div></div>
+         
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3">匯率設定</h3>{ledgerData.currency === 'TWD' && (<div className="flex items-center gap-2"><span className="text-sm text-gray-500">1 JPY =</span><input type="number" defaultValue={ledgerData.rates?.JPY} onBlur={(e) => { const val = parseFloat(e.target.value); if(val) updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode), { 'rates.JPY': val }); }} className="w-20 bg-gray-100 rounded-lg p-2 text-center" step="0.001"/><span className="text-sm text-gray-500">TWD</span></div>)}</div>
          
          {/* Danger Zone: Reset Account */}
