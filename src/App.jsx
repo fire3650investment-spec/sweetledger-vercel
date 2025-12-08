@@ -74,7 +74,7 @@ import {
   LogOut,
   CalendarDays,
   Users,
-  Wrench // New Icon for Fix
+  Wrench 
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -89,7 +89,8 @@ const db = app ? getFirestore(app) : null;
 
 // 注意：這個 ID 必須與 Firestore 規則中的路徑匹配
 const appId = 'sweet-ledger-beta';
-const GEMINI_API_KEY = "AIzaSyBWgsEEY_guFAZL-8aHD-d9q5d1gfdbBRc"; 
+// API Key Updated
+const GEMINI_API_KEY = "AIzaSyBtMDYA9ALL33VMriQrnvzGGrodYOykUvo"; 
 
 const ICON_MAP = {
   food: Utensils,
@@ -282,8 +283,9 @@ export default function SweetLedger() {
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editingCategoryData, setEditingCategoryData] = useState({ id: '', name: '', icon: 'food', color: COLORS[0].class, hex: COLORS[0].hex });
   
-  // Nickname Edit State
+  // Settings & Avatar State
   const [myNickname, setMyNickname] = useState('');
+  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
 
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -383,6 +385,14 @@ export default function SweetLedger() {
     if (!ledgerCode) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { [`settings.${key}`]: value });
+  };
+  
+  // New: Update Avatar Logic
+  const updateMyAvatar = async (avatarKey) => {
+    if (!ledgerCode) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { [`users.${user.uid}.avatar`]: avatarKey });
+    setIsAvatarModalOpen(false);
   };
 
   const updateLedgerCurrency = async (newCurrency) => {
@@ -529,7 +539,7 @@ export default function SweetLedger() {
     try {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         const userName = user.displayName || 'Host';
-        const userAvatar = user.photoURL || '🐱';
+        const userAvatar = user.photoURL || 'cat'; // Default to cat
 
         const newLedger = {
         ...INITIAL_LEDGER_STATE,
@@ -565,7 +575,7 @@ export default function SweetLedger() {
           console.log("Welcome back, existing member!");
       } else {
           const userName = user.displayName || 'Guest';
-          const userAvatar = user.photoURL || '🐶';
+          const userAvatar = user.photoURL || 'dog'; // Default to dog
           
           const updatedUsers = {
             ...currentData.users,
@@ -785,6 +795,29 @@ export default function SweetLedger() {
     const prompt = `${character.prompt} \n目前這個月的總支出是 ${total} ${ledgerData.currency}。請根據你的個性給出一句短評（30字以內）。`;
     return await callGemini(prompt);
   };
+  
+  // New Helper: Render Avatar Safely
+  const renderAvatar = (avatarKeyOrUrl, sizeClass = "w-12 h-12") => {
+      // 1. Is it a character key?
+      if (CHARACTERS[avatarKeyOrUrl]) {
+          const Icon = getIconComponent(CHARACTERS[avatarKeyOrUrl].icon);
+          return (
+              <div className={`${sizeClass} rounded-full bg-gray-100 flex items-center justify-center text-gray-600 border border-gray-200`}>
+                  <Icon size={20} />
+              </div>
+          );
+      }
+      // 2. Is it a URL?
+      if (avatarKeyOrUrl && avatarKeyOrUrl.includes('http')) {
+          return <img src={avatarKeyOrUrl} className={`${sizeClass} rounded-full object-cover border border-gray-200`} />;
+      }
+      // 3. Default
+      return (
+          <div className={`${sizeClass} rounded-full bg-gray-100 flex items-center justify-center text-gray-400 border border-gray-200`}>
+              <User size={20} />
+          </div>
+      );
+  };
 
   // --- RENDER FUNCTIONS ---
 
@@ -925,7 +958,9 @@ export default function SweetLedger() {
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${tx.category?.color?.replace('text-', 'bg-').split(' ')[0]} bg-opacity-20 text-${tx.category?.color?.split('text-')[1]}`}><CatIcon size={20} /></div>
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${tx.category?.color?.replace('text-', 'bg-').split(' ')[0]} bg-opacity-20 text-${tx.category?.color?.split('text-')[1]}`}>
+                                            <CatIcon size={20} />
+                                        </div>
                                         <div>
                                             <p className="font-medium text-gray-800">{tx.note}</p>
                                             <div className="flex items-center gap-2">
@@ -1210,16 +1245,37 @@ export default function SweetLedger() {
             <div className="flex gap-4">
                 {Object.values(ledgerData.users || {}).map(u => (
                     <div key={u.name} className="flex flex-col items-center">
-                        {(u.avatar && typeof u.avatar === 'string' && u.avatar.includes('http')) ? (
-                            <img src={u.avatar} className="w-12 h-12 rounded-full mb-1 object-cover"/>
-                        ) : (
-                            <div className="w-12 h-12 rounded-full mb-1 bg-gray-200 flex items-center justify-center text-xl">{u.avatar || '?'}</div>
-                        )}
-                        <span className="text-xs font-bold text-gray-600">{u.name}</span>
+                        {/* Avatar Picker Logic */}
+                        <button onClick={() => { if(u.name === myNickname) setIsAvatarModalOpen(true); }} className="relative group">
+                             {renderAvatar(u.avatar)}
+                             {u.name === myNickname && <div className="absolute bottom-0 right-0 bg-gray-900 text-white rounded-full p-1 border-2 border-white"><Wrench size={10}/></div>}
+                        </button>
+                        <span className="text-xs font-bold text-gray-600 mt-1">{u.name}</span>
                     </div>
                 ))}
             </div>
          </div>
+         
+         {/* Avatar Picker Modal */}
+         {isAvatarModalOpen && (
+            <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in">
+                <div className="bg-white p-6 rounded-2xl shadow-xl border border-gray-100 w-full max-w-sm">
+                    <h3 className="text-xl font-bold text-gray-800 mb-4 text-center">選擇您的頭像</h3>
+                    <div className="grid grid-cols-2 gap-4 mb-6">
+                        {Object.entries(CHARACTERS).map(([key, char]) => {
+                            const Icon = getIconComponent(char.icon);
+                            return (
+                                <button key={key} onClick={() => updateMyAvatar(key)} className="flex flex-col items-center gap-2 p-4 bg-gray-50 rounded-xl hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-all">
+                                    <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-rose-500 shadow-sm"><Icon size={24}/></div>
+                                    <span className="text-sm font-bold text-gray-600">{char.name}</span>
+                                </button>
+                            )
+                        })}
+                    </div>
+                    <button onClick={() => setIsAvatarModalOpen(false)} className="w-full bg-gray-100 text-gray-500 py-3 rounded-xl font-bold">取消</button>
+                </div>
+            </div>
+         )}
          
          {/* Nickname Setting */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
@@ -1290,7 +1346,9 @@ export default function SweetLedger() {
          </div>
 
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><FileText size={18}/> 資料備份與還原</h3><div className="mb-4 border-b border-gray-100 pb-4"><button onClick={handleExport} className="w-full py-2 border border-gray-300 rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50"><Download size={16}/> 下載 .csv</button></div></div>
-         <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3">AI 角色</h3><div className="grid grid-cols-2 gap-3">{Object.values(CHARACTERS).map(char => { const CharIcon = getIconComponent(char.icon); return (<button key={char.id} onClick={() => updateLedgerSetting('character', char.id)} className={`p-3 rounded-xl border-2 transition-colors flex items-center gap-2 ${ledgerData.settings?.character === char.id ? 'border-rose-500 bg-rose-50' : 'border-gray-200 bg-white'}`}><CharIcon size={24} /><p className="text-sm font-medium">{char.name}</p></button>)})}</div></div>
+         
+         {/* AI Character removed as separate section, integrated into Avatar */}
+         
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3">匯率設定</h3>{ledgerData.currency === 'TWD' && (<div className="flex items-center gap-2"><span className="text-sm text-gray-500">1 JPY =</span><input type="number" defaultValue={ledgerData.rates?.JPY} onBlur={(e) => { const val = parseFloat(e.target.value); if(val) updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode), { 'rates.JPY': val }); }} className="w-20 bg-gray-100 rounded-lg p-2 text-center" step="0.001"/><span className="text-sm text-gray-500">TWD</span></div>)}</div>
          
          {/* Danger Zone: Reset Account */}
