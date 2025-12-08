@@ -73,8 +73,7 @@ import {
   AlertTriangle,
   LogOut,
   CalendarDays,
-  Users,
-  Wrench // New Icon for Fix
+  Users // New Icon for Members
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -607,7 +606,6 @@ export default function SweetLedger() {
         customSplitData = {};
         if(hostUid) customSplitData[hostUid] = hostAmt;
         
-        // 防呆：若 Guest 尚未加入，禁止記錄 Guest 的墊付金額
         if (guestAmt > 0 && !guestUid) {
              alert("您的夥伴尚未加入帳本，系統無法記錄對方的墊付金額。\n請先邀請對方加入！");
              setIsSubmittingTransaction(false);
@@ -932,7 +930,8 @@ export default function SweetLedger() {
                                             <p className="font-medium text-gray-800">{tx.note}</p>
                                             <div className="flex items-center gap-2">
                                                 <p className="text-xs text-gray-400">{tx.category?.name}</p>
-                                                <span className="text-[10px] text-gray-400">{displayPayer}</span>
+                                                {/* UI Fix: Removed brackets and "付" */}
+                                                <span className="text-[10px] text-gray-400 bg-gray-100 px-1 rounded">{displayPayer}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -1050,6 +1049,7 @@ export default function SweetLedger() {
                     <div className="flex justify-between items-center mb-2"><span className="text-sm font-medium text-gray-600">分攤方式</span><select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="text-sm bg-gray-100 p-1 px-2 rounded-lg outline-none"><option value="even">均攤 (50/50)</option><option value="self">只有我</option><option value="partner">只有{partnerName}</option><option value="custom">自定義</option></select></div>
                     {splitType === 'custom' && (<div className="flex gap-2 mt-2"><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Host 先付</label><input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Guest 先付</label><input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div></div>)}
                 </div>
+                {/* Subscription Name removed, simplified UI */}
                 <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-sm font-medium text-gray-600"><RefreshCw size={16} /><span>固定支出</span></div><button onClick={() => setIsSubscription(!isSubscription)} className={`w-12 h-6 rounded-full transition-colors ${isSubscription ? 'bg-rose-500' : 'bg-gray-200'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isSubscription ? 'left-7' : 'left-1'}`}></div></button></div>
                 {isSubscription && (<div className="pt-2 space-y-3"><div className="flex gap-2"><select value={subCycle} onChange={(e) => setSubCycle(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm"><option value="monthly">每月</option><option value="weekly">每週</option></select><input type="number" placeholder="日 (1-31)" value={subPayDay} onChange={(e) => setSubPayDay(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm text-center"/></div></div>)}
             </div>
@@ -1110,6 +1110,7 @@ export default function SweetLedger() {
          
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center"><h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比</h3><div className="relative w-48 h-48 rounded-full mb-6" style={{ background: pieChartGradient }}><div className="absolute inset-4 bg-white rounded-full flex flex-col items-center justify-center"><span className="text-sm text-gray-400">總支出</span><span className="text-xl font-bold text-gray-800">{formatCurrency(totalExpense, ledgerData.currency)}</span></div></div><div className="w-full space-y-3">{categoryStats.map(stat => (<div key={stat.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.hex }}></div><span className="text-sm text-gray-600 font-medium">{stat.name}</span></div><div className="text-sm"><span className="font-bold text-gray-800 mr-2">{formatCurrency(stat.total, ledgerData.currency)}</span><span className="text-gray-400 text-xs">{Math.round((stat.total/totalExpense)*100)}%</span></div></div>))}</div></div>
 
+         {/* New: History List (With Payer Tag) */}
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
             <h3 className="text-gray-600 font-bold mb-4">本月交易明細 ({sortedHistory.length}筆)</h3>
             <div className="space-y-4">
