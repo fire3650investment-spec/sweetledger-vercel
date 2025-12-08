@@ -73,7 +73,7 @@ import {
   AlertTriangle,
   LogOut,
   CalendarDays,
-  Users // New Icon for Members
+  Users 
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -526,7 +526,6 @@ export default function SweetLedger() {
     if (!amount || !ledgerData) return;
     setIsSubmittingTransaction(true);
     const amountFloat = parseFloat(amount);
-    const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
     let customSplitData = null;
     let finalSplitType = splitType;
 
@@ -541,20 +540,21 @@ export default function SweetLedger() {
             return;
         }
         
-        // 安全獲取 UID，若無 Partner 則不寫入該欄位
+        // --- 修正 ID 抓取邏輯 ---
+        // 優先尋找明確定義的角色，若無則嘗試 fallback
         const hostUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
         const guestUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
         
         customSplitData = {};
         if(hostUid) customSplitData[hostUid] = hostAmt;
-        
-        // 防呆：如果尚未有 Guest，但輸入了 Guest 金額，則提示
-        if (guestAmt > 0 && !guestUid) {
-            alert("此帳本目前只有您一人，無法記錄對方的付款。");
-            setIsSubmittingTransaction(false);
-            return;
-        }
         if(guestUid) customSplitData[guestUid] = guestAmt;
+        
+        // 防呆：若 Guest 尚未加入，禁止記錄 Guest 的墊付金額
+        if (guestAmt > 0 && !guestUid) {
+             alert("您的夥伴尚未加入帳本，系統無法記錄對方的墊付金額。\n請先邀請對方加入！");
+             setIsSubmittingTransaction(false);
+             return;
+        }
 
     } else if (splitType === 'self') {
         const myRole = ledgerData.users[user.uid]?.role;
@@ -563,7 +563,7 @@ export default function SweetLedger() {
         const myRole = ledgerData.users[user.uid]?.role;
         finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     } else if (splitType === 'even') {
-        if (!otherUserId) { finalSplitType = 'host_all'; }
+        // ...
     }
 
     try {
@@ -744,7 +744,7 @@ export default function SweetLedger() {
     
     const totalExpense = thisMonthTxs.reduce((acc, curr) => acc + curr.amount, 0);
     
-    // 結算邏輯 (重寫為墊付制計算)
+    // 結算邏輯
     let myPaid = 0;
     let myLiability = 0;
 
@@ -768,16 +768,14 @@ export default function SweetLedger() {
         myLiability += liability;
     });
 
-    const settlement = myPaid - myLiability; // 正數=多付(對方欠我)
+    const settlement = myPaid - myLiability; 
 
     const currentProjectName = ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常開銷';
     const getHouseIcon = (level) => { if (level < 5) return '⛺️'; if (level < 15) return '🏠'; if (level < 30) return '🏡'; return '🏰'; };
     const allCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
-    const charId = ledgerData.settings?.character || 'cat';
 
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
-        {/* Edit Transaction Modal (Enhanced: Fixed Position + Z-Index 100) */}
         {isEditTxModalOpen && editingTx && (
             <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-in fade-in">
                 <div className="flex justify-between items-center mb-6">
@@ -859,6 +857,10 @@ export default function SweetLedger() {
                         {txs.map((tx, idx) => { 
                             const CatIcon = getIconComponent(tx.category?.icon); 
                             const payerName = ledgerData.users[tx.payer]?.name || '未知';
+                            // 檢查是否為多人墊付
+                            const isMultiPayer = tx.splitType === 'custom' && tx.customSplit && Object.keys(tx.customSplit).length > 1;
+                            const displayPayer = isMultiPayer ? '多人墊付' : payerName;
+
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
                                     <div className="flex items-center gap-3">
@@ -869,7 +871,7 @@ export default function SweetLedger() {
                                             <p className="font-medium text-gray-800">{tx.note}</p>
                                             <div className="flex items-center gap-2">
                                                 <p className="text-xs text-gray-400">{tx.category?.name}</p>
-                                                <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">[{payerName}付]</span>
+                                                <span className="text-[10px] text-gray-400">{displayPayer}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -903,7 +905,6 @@ export default function SweetLedger() {
         recentNotes.push(...uniqueNotes.slice(0, 10));
     }
     
-    // Get Partner Name for "Only Partner" logic
     const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
     const partnerName = otherUserId ? (ledgerData.users[otherUserId].name || '對方') : '對方';
 
@@ -916,7 +917,6 @@ export default function SweetLedger() {
             </div>
         )}
         
-        {/* AI Modal (Fixed + Z-Index) */}
         {isAiModalOpen && (
             <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-in fade-in duration-200">
                 <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-800">AI 智慧輸入</h3><button onClick={() => { setIsAiModalOpen(false); setIsRecording(false); }} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
@@ -936,9 +936,7 @@ export default function SweetLedger() {
         </div>
         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { handleImageUpload(e); setIsAiModalOpen(true); }} />
         
-        {/* Amount Input with Payer Toggle (New) */}
         <div className="px-6 py-2 text-center flex flex-col items-center relative">
-            {/* New: Date Picker */}
             <div className="absolute top-0 right-6">
                 <input 
                     type="date" 
@@ -957,24 +955,16 @@ export default function SweetLedger() {
                 className="w-full text-6xl font-bold text-gray-800 text-center outline-none placeholder-gray-200 bg-transparent" 
                 inputMode="decimal"
             />
-            {/* Payer Toggle - Only 2 Buttons: Me & Partner */}
             <div className="flex gap-2 mt-4">
-                 {/* Button 1: Me */}
-                <button 
-                    onClick={() => setPayer(user.uid)}
-                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === user.uid ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
-                >
-                    我付的
-                </button>
-                {/* Button 2: Partner (Only if exists) */}
-                {otherUserId && (
+                {Object.entries(ledgerData.users).map(([uid, u]) => (
                     <button 
-                        onClick={() => setPayer(otherUserId)}
-                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === otherUserId ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
+                        key={uid}
+                        onClick={() => setPayer(uid)}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === uid ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
                     >
-                        {partnerName} 付的
+                        {u.name} 付的
                     </button>
-                )}
+                ))}
             </div>
         </div>
         
@@ -987,7 +977,6 @@ export default function SweetLedger() {
                     <div className="flex justify-between items-center mb-2"><span className="text-sm font-medium text-gray-600">分攤方式</span><select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="text-sm bg-gray-100 p-1 px-2 rounded-lg outline-none"><option value="even">均攤 (50/50)</option><option value="self">只有我</option><option value="partner">只有{partnerName}</option><option value="custom">自定義</option></select></div>
                     {splitType === 'custom' && (<div className="flex gap-2 mt-2"><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Host 先付</label><input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">Guest 先付</label><input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div></div>)}
                 </div>
-                {/* Subscription Name removed, simplified UI */}
                 <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-sm font-medium text-gray-600"><RefreshCw size={16} /><span>固定支出</span></div><button onClick={() => setIsSubscription(!isSubscription)} className={`w-12 h-6 rounded-full transition-colors ${isSubscription ? 'bg-rose-500' : 'bg-gray-200'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isSubscription ? 'left-7' : 'left-1'}`}></div></button></div>
                 {isSubscription && (<div className="pt-2 space-y-3"><div className="flex gap-2"><select value={subCycle} onChange={(e) => setSubCycle(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm"><option value="monthly">每月</option><option value="weekly">每週</option></select><input type="number" placeholder="日 (1-31)" value={subPayDay} onChange={(e) => setSubPayDay(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm text-center"/></div></div>)}
             </div>
@@ -1001,7 +990,6 @@ export default function SweetLedger() {
     if (!ledgerData) return null;
     const handleMonthChange = (direction) => { const date = new Date(statsMonth + '-01'); date.setMonth(date.getMonth() + direction); setStatsMonth(date.toISOString().slice(0, 7)); };
     const filteredTxs = ledgerData.transactions.filter(t => t.date.startsWith(statsMonth) && (t.projectId || 'daily') === currentProjectId);
-    // Sort logic for history list (New Feature)
     const sortedHistory = [...filteredTxs].sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const hostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
@@ -1048,13 +1036,15 @@ export default function SweetLedger() {
          
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center"><h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比</h3><div className="relative w-48 h-48 rounded-full mb-6" style={{ background: pieChartGradient }}><div className="absolute inset-4 bg-white rounded-full flex flex-col items-center justify-center"><span className="text-sm text-gray-400">總支出</span><span className="text-xl font-bold text-gray-800">{formatCurrency(totalExpense, ledgerData.currency)}</span></div></div><div className="w-full space-y-3">{categoryStats.map(stat => (<div key={stat.id} className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.hex }}></div><span className="text-sm text-gray-600 font-medium">{stat.name}</span></div><div className="text-sm"><span className="font-bold text-gray-800 mr-2">{formatCurrency(stat.total, ledgerData.currency)}</span><span className="text-gray-400 text-xs">{Math.round((stat.total/totalExpense)*100)}%</span></div></div>))}</div></div>
 
-         {/* New: History List (With Payer Tag) */}
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
             <h3 className="text-gray-600 font-bold mb-4">本月交易明細 ({sortedHistory.length}筆)</h3>
             <div className="space-y-4">
                 {sortedHistory.map((tx) => {
                     const CatIcon = getIconComponent(tx.category?.icon);
                     const payerName = ledgerData.users[tx.payer]?.name || '未知';
+                    const isMultiPayer = tx.splitType === 'custom' && tx.customSplit && Object.keys(tx.customSplit).length > 1;
+                    const displayPayer = isMultiPayer ? '多人墊付' : payerName;
+
                     return (
                         <div key={tx.id} className="flex items-center justify-between pb-3 border-b border-gray-50 last:border-0 last:pb-0">
                             <div className="flex items-center gap-3">
@@ -1062,7 +1052,7 @@ export default function SweetLedger() {
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${tx.category?.color?.replace('text-', 'bg-').split(' ')[0]} bg-opacity-20 text-${tx.category?.color?.split('text-')[1]}`}><CatIcon size={16} /></div>
                                 <div>
                                     <p className="font-medium text-gray-800 text-sm">{tx.note}</p>
-                                    <span className="text-[10px] text-gray-400 bg-gray-100 px-1 rounded">{payerName}付</span>
+                                    <span className="text-[10px] text-gray-400 bg-gray-100 px-1 rounded">{displayPayer}</span>
                                 </div>
                             </div>
                             <span className="font-bold text-gray-800 text-sm">{formatCurrency(tx.amount, tx.currency, privacyMode)}</span>
@@ -1140,7 +1130,11 @@ export default function SweetLedger() {
             <div className="flex gap-4">
                 {Object.values(ledgerData.users).map(u => (
                     <div key={u.name} className="flex flex-col items-center">
-                        <img src={u.avatar.includes('http') ? u.avatar : `https://ui-avatars.com/api/?name=${u.name}&background=random`} className="w-12 h-12 rounded-full mb-1 object-cover"/>
+                        {u.avatar?.includes('http') ? (
+                            <img src={u.avatar} className="w-12 h-12 rounded-full mb-1 object-cover"/>
+                        ) : (
+                            <div className="w-12 h-12 rounded-full mb-1 bg-gray-200 flex items-center justify-center text-xl">{u.avatar}</div>
+                        )}
                         <span className="text-xs font-bold text-gray-600">{u.name}</span>
                     </div>
                 ))}
