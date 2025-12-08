@@ -73,7 +73,8 @@ import {
   AlertTriangle,
   LogOut,
   CalendarDays,
-  Users 
+  Users,
+  Wrench // New Icon for Fix
 } from 'lucide-react';
 
 // --- Configuration & Constants ---
@@ -410,6 +411,65 @@ export default function SweetLedger() {
       }
   };
 
+  const handleFixIdentity = async () => {
+    if (!ledgerData || !user) return;
+    const currentUserRole = ledgerData.users[user.uid]?.role;
+    
+    // 尋找是否有名為 "Host" 且不是我本人的帳號 (殭屍 Host)
+    const zombieHostId = Object.keys(ledgerData.users).find(uid => 
+        ledgerData.users[uid].role === 'host' && uid !== user.uid
+    );
+
+    if (!zombieHostId) {
+        alert("目前帳本狀態正常，無需修復。");
+        return;
+    }
+
+    const confirmMsg = `偵測到舊的「Host」帳號 (${zombieHostId.slice(0,5)}...)。\n您目前是「${currentUserRole}」。\n\n是否要「繼承」舊帳號的權限與資料，並將其刪除？\n(這將解決身分重複與統計錯誤的問題)`;
+    
+    if (confirm(confirmMsg)) {
+        try {
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+            const newUsers = { ...ledgerData.users };
+            
+            // 1. 把舊 Host 刪掉
+            delete newUsers[zombieHostId];
+            
+            // 2. 把自己變成 Host
+            if (newUsers[user.uid]) {
+                newUsers[user.uid] = { ...newUsers[user.uid], role: 'host' };
+            }
+
+            // 3. 更新所有舊交易的付款人 ID
+            const newTransactions = ledgerData.transactions.map(tx => {
+                let newTx = { ...tx };
+                if (newTx.payer === zombieHostId) newTx.payer = user.uid;
+                
+                // 更新 customSplit 裡的 ID
+                if (newTx.customSplit) {
+                    const newSplit = {};
+                    Object.keys(newTx.customSplit).forEach(key => {
+                        const newKey = key === zombieHostId ? user.uid : key;
+                        newSplit[newKey] = newTx.customSplit[key];
+                    });
+                    newTx.customSplit = newSplit;
+                }
+                return newTx;
+            });
+
+            await updateDoc(docRef, {
+                users: newUsers,
+                transactions: newTransactions
+            });
+            
+            alert("修復成功！您現在是唯一的 Host，舊帳號已移除。");
+        } catch (e) {
+            console.error("Fix Identity Error:", e);
+            alert("修復失敗，請檢查權限或網路。");
+        }
+    }
+  };
+
   const handleSaveProject = async () => {
     if (!editingProjectData.name) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -541,13 +601,11 @@ export default function SweetLedger() {
         }
         
         // --- 修正 ID 抓取邏輯 ---
-        // 優先尋找明確定義的角色，若無則嘗試 fallback
         const hostUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
         const guestUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
         
         customSplitData = {};
         if(hostUid) customSplitData[hostUid] = hostAmt;
-        if(guestUid) customSplitData[guestUid] = guestAmt;
         
         // 防呆：若 Guest 尚未加入，禁止記錄 Guest 的墊付金額
         if (guestAmt > 0 && !guestUid) {
@@ -555,6 +613,7 @@ export default function SweetLedger() {
              setIsSubmittingTransaction(false);
              return;
         }
+        if(guestUid) customSplitData[guestUid] = guestAmt;
 
     } else if (splitType === 'self') {
         const myRole = ledgerData.users[user.uid]?.role;
@@ -773,9 +832,11 @@ export default function SweetLedger() {
     const currentProjectName = ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常開銷';
     const getHouseIcon = (level) => { if (level < 5) return '⛺️'; if (level < 15) return '🏠'; if (level < 30) return '🏡'; return '🏰'; };
     const allCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
+    const charId = ledgerData.settings?.character || 'cat';
 
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
+        {/* Edit Transaction Modal (Enhanced: Fixed Position + Z-Index 100) */}
         {isEditTxModalOpen && editingTx && (
             <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-in fade-in">
                 <div className="flex justify-between items-center mb-6">
@@ -905,6 +966,7 @@ export default function SweetLedger() {
         recentNotes.push(...uniqueNotes.slice(0, 10));
     }
     
+    // Get Partner Name for "Only Partner" logic
     const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
     const partnerName = otherUserId ? (ledgerData.users[otherUserId].name || '對方') : '對方';
 
@@ -917,6 +979,7 @@ export default function SweetLedger() {
             </div>
         )}
         
+        {/* AI Modal (Fixed + Z-Index) */}
         {isAiModalOpen && (
             <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-in fade-in duration-200">
                 <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-800">AI 智慧輸入</h3><button onClick={() => { setIsAiModalOpen(false); setIsRecording(false); }} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
@@ -936,7 +999,9 @@ export default function SweetLedger() {
         </div>
         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { handleImageUpload(e); setIsAiModalOpen(true); }} />
         
+        {/* Amount Input with Payer Toggle (New) */}
         <div className="px-6 py-2 text-center flex flex-col items-center relative">
+            {/* New: Date Picker */}
             <div className="absolute top-0 right-6">
                 <input 
                     type="date" 
@@ -955,16 +1020,24 @@ export default function SweetLedger() {
                 className="w-full text-6xl font-bold text-gray-800 text-center outline-none placeholder-gray-200 bg-transparent" 
                 inputMode="decimal"
             />
+            {/* Payer Toggle - Only 2 Buttons: Me & Partner */}
             <div className="flex gap-2 mt-4">
-                {Object.entries(ledgerData.users).map(([uid, u]) => (
+                 {/* Button 1: Me */}
+                <button 
+                    onClick={() => setPayer(user.uid)}
+                    className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === user.uid ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
+                >
+                    我付的
+                </button>
+                {/* Button 2: Partner (Only if exists) */}
+                {otherUserId && (
                     <button 
-                        key={uid}
-                        onClick={() => setPayer(uid)}
-                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === uid ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
+                        onClick={() => setPayer(otherUserId)}
+                        className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${payer === otherUserId ? 'bg-gray-800 text-white shadow-md' : 'bg-gray-100 text-gray-400'}`}
                     >
-                        {u.name} 付的
+                        {partnerName} 付的
                     </button>
-                ))}
+                )}
             </div>
         </div>
         
@@ -990,6 +1063,7 @@ export default function SweetLedger() {
     if (!ledgerData) return null;
     const handleMonthChange = (direction) => { const date = new Date(statsMonth + '-01'); date.setMonth(date.getMonth() + direction); setStatsMonth(date.toISOString().slice(0, 7)); };
     const filteredTxs = ledgerData.transactions.filter(t => t.date.startsWith(statsMonth) && (t.projectId || 'daily') === currentProjectId);
+    // Sort logic for history list (New Feature)
     const sortedHistory = [...filteredTxs].sort((a, b) => new Date(b.date) - new Date(a.date));
 
     const hostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
@@ -1179,6 +1253,13 @@ export default function SweetLedger() {
             <p className="text-xs text-gray-400 mt-3 leading-relaxed">
                 將此代碼分享給您的另一半，他們在歡迎畫面輸入後即可加入此帳本。
             </p>
+         </div>
+         
+         {/* Fix Identity (Advanced) */}
+         <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Wrench size={18} /> 進階修復</h3>
+            <p className="text-xs text-gray-400 mb-3">如果發現帳本內有重複的成員或「Host」帳號，請點擊下方按鈕進行合併。</p>
+            <button onClick={handleFixIdentity} className="w-full bg-gray-100 text-gray-600 py-2 rounded-lg font-medium text-sm hover:bg-gray-200">合併匿名 Host 帳號</button>
          </div>
          
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
