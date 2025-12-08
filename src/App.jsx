@@ -330,6 +330,7 @@ export default function SweetLedger() {
       setUser(u);
       setAuthLoading(false); 
       const savedCode = localStorage.getItem('sweet_ledger_code');
+      // 如果已登入且有存過 Code，直接進 Dashboard
       if (savedCode && u) { 
         setLedgerCode(savedCode);
         setView('dashboard');
@@ -923,9 +924,7 @@ export default function SweetLedger() {
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${tx.category?.color?.replace('text-', 'bg-').split(' ')[0]} bg-opacity-20 text-${tx.category?.color?.split('text-')[1]}`}>
-                                            <CatIcon size={20} />
-                                        </div>
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${tx.category?.color?.replace('text-', 'bg-').split(' ')[0]} bg-opacity-20 text-${tx.category?.color?.split('text-')[1]}`}><CatIcon size={20} /></div>
                                         <div>
                                             <p className="font-medium text-gray-800">{tx.note}</p>
                                             <div className="flex items-center gap-2">
@@ -1054,7 +1053,6 @@ export default function SweetLedger() {
                     <div className="flex justify-between items-center mb-2"><span className="text-sm font-medium text-gray-600">分攤方式</span><select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="text-sm bg-gray-100 p-1 px-2 rounded-lg outline-none"><option value="even">均攤 (50/50)</option><option value="self">只有我</option><option value="partner">只有{partnerName}</option><option value="custom">自定義</option></select></div>
                     {splitType === 'custom' && (<div className="flex gap-2 mt-2"><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">{hostName} 先付</label><input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div><div className="w-1/2"><label className="text-xs text-gray-400 block mb-1">{guestName} 先付</label><input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} className={`w-full p-2 bg-gray-50 border rounded-lg text-sm text-center ${parseFloat(customSplitHost) + parseFloat(customSplitGuest) !== parseFloat(amount) ? 'border-red-300 bg-red-50' : ''}`}/></div></div>)}
                 </div>
-                {/* Subscription Name removed, simplified UI */}
                 <div className="flex justify-between items-center"><div className="flex items-center gap-2 text-sm font-medium text-gray-600"><RefreshCw size={16} /><span>固定支出</span></div><button onClick={() => setIsSubscription(!isSubscription)} className={`w-12 h-6 rounded-full transition-colors ${isSubscription ? 'bg-rose-500' : 'bg-gray-200'} relative`}><div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${isSubscription ? 'left-7' : 'left-1'}`}></div></button></div>
                 {isSubscription && (<div className="pt-2 space-y-3"><div className="flex gap-2"><select value={subCycle} onChange={(e) => setSubCycle(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm"><option value="monthly">每月</option><option value="weekly">每週</option></select><input type="number" placeholder="日 (1-31)" value={subPayDay} onChange={(e) => setSubPayDay(e.target.value)} className="w-1/2 p-2 border rounded-lg text-sm text-center"/></div></div>)}
             </div>
@@ -1208,12 +1206,12 @@ export default function SweetLedger() {
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
             <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Users size={18} /> 帳本成員</h3>
             <div className="flex gap-4">
-                {Object.values(ledgerData.users).map(u => (
+                {Object.values(ledgerData.users || {}).map(u => (
                     <div key={u.name} className="flex flex-col items-center">
-                        {u.avatar?.includes('http') ? (
+                        {(u.avatar && typeof u.avatar === 'string' && u.avatar.includes('http')) ? (
                             <img src={u.avatar} className="w-12 h-12 rounded-full mb-1 object-cover"/>
                         ) : (
-                            <div className="w-12 h-12 rounded-full mb-1 bg-gray-200 flex items-center justify-center text-xl">{u.avatar}</div>
+                            <div className="w-12 h-12 rounded-full mb-1 bg-gray-200 flex items-center justify-center text-xl">{u.avatar || '?'}</div>
                         )}
                         <span className="text-xs font-bold text-gray-600">{u.name}</span>
                     </div>
