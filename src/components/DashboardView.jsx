@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, Eye, EyeOff, ArrowRightLeft, HandCoins } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins } from 'lucide-react';
 import { formatCurrency, getIconComponent } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
@@ -104,7 +104,7 @@ export default function DashboardView({
                     onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你')} 
                     className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors"
                 >
-                    <HandCoins size={14}/> 結清債務
+                    <Coins size={14}/> 結清債務
                 </button>
             )}
         </div>

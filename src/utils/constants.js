@@ -1,7 +1,7 @@
 import { 
   Utensils, Train, ShoppingBag, Home, BedDouble, Ticket, Smartphone, Shield, Sun, 
   MessageCircle, Cat, Dog, Rabbit, Bird, Sparkles, Calendar, Plane, Wallet, Coffee, 
-  Music, Gamepad, Heart, Gift, Zap, BookOpen, HandCoins
+  Music, Gamepad, Heart, Gift, Zap, BookOpen, Coins
 } from 'lucide-react';
 
 export const ICON_MAP = {
@@ -31,7 +31,7 @@ export const ICON_MAP = {
   gift: Gift,
   zap: Zap,
   book: BookOpen,
-  settlement: HandCoins
+  settlement: Coins
 };
 
 export const CATEGORIES = [
