@@ -37,7 +37,16 @@ export default function DashboardView({
     let myPaid = 0;
     let myLiability = 0;
 
-    thisMonthTxs.forEach(tx => {
+    // 1. Calculate Debt from Expenses (Only active project)
+    // Note: We iterate projectTxs (all history of this project) for settlement balance? 
+    // Usually settlement balance is based on ALL history, not just this month.
+    // However, original code used `thisMonthTxs` for myPaid/myLiability loop which might be wrong if we want total debt.
+    // Let's stick to `thisMonthTxs` for now to match v2.5 behavior unless requested otherwise, 
+    // BUT usually debt is cumulative. 
+    // *Correction*: To fix the "100 dollar error" fully, we should scan ALL projectTxs for liability.
+    // Let's use `projectTxs` (all history for this project) instead of `thisMonthTxs` for settlement calc.
+    
+    projectTxs.forEach(tx => {
         if(tx.isSettlement) return; 
         
         const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
@@ -62,12 +71,17 @@ export default function DashboardView({
         myLiability += liability;
     });
     
-    // 計算已結算金額 (Settlements are always TWD)
-    const settlements = ledgerData.transactions.filter(tx => tx.isSettlement);
+    // Fix: Filter settlements by Project ID to avoid cross-project contamination
+    const settlements = ledgerData.transactions.filter(tx => 
+        tx.isSettlement && (tx.projectId || 'daily') === currentProjectId
+    );
+
     let settledAmount = 0;
     settlements.forEach(tx => {
-        if (tx.payer === user.uid) settledAmount += tx.amount;
-        else settledAmount -= tx.amount;
+        // Settlements are TWD by default from handleSettleUp, but safe to calc
+        const amount = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
+        if (tx.payer === user.uid) settledAmount += amount;
+        else settledAmount -= amount;
     });
 
     // Final Settlement
@@ -117,7 +131,7 @@ export default function DashboardView({
                     onClick={() => handleSettleUp(
                         Math.abs(settlement), 
                         settlement < 0 ? partnerName : '你', 
-                        settlement < 0 ? user.uid : otherUserId // Fix: Determine correct payer based on debt direction
+                        settlement < 0 ? user.uid : otherUserId 
                     )} 
                     className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4"
                 >

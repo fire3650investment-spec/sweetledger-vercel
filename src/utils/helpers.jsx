@@ -9,12 +9,11 @@ export const formatCurrency = (amount, currency = 'TWD', privacy = false) => {
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency, minimumFractionDigits: 0 }).format(amount);
 };
 
-// New: 匯率換算核心函式
+// Fix: Correct calculation logic (Multiplication)
 export const calculateTwdValue = (amount, currency, rates) => {
     if (currency === 'TWD') return amount;
-    const rate = rates?.[currency] || 1; // 找不到匯率預設 1:1
-    return amount / rate; // 注意：這裡定義的匯率邏輯是 "1 TWD = X Foreign Currency" 還是 "1 Foreign = X TWD"?
-    // 根據之前的 JPY: 0.23 (1日圓=0.23台幣)，邏輯應為：原幣 * 匯率 = 台幣
+    const rate = rates?.[currency] || 1; 
+    // Logic: 1 JPY = 0.23 TWD => 1000 JPY * 0.23 = 230 TWD
     return amount * rate;
 };
 
