@@ -33,6 +33,7 @@ import StatsView from './components/StatsView';
 import ProjectsView from './components/ProjectsView';
 import SettingsView from './components/SettingsView';
 import OnboardingView from './components/OnboardingView';
+import EditTransactionModal from './components/EditTransactionModal';
 
 // --- Configuration ---
 const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
@@ -647,15 +648,10 @@ export default function SweetLedger() {
                         setCurrentProjectId={setCurrentProjectId}
                         privacyMode={privacyMode}
                         setPrivacyMode={setPrivacyMode}
-                        isEditTxModalOpen={isEditTxModalOpen}
                         setIsEditTxModalOpen={setIsEditTxModalOpen}
-                        editingTx={editingTx}
                         setEditingTx={setEditingTx}
-                        handleUpdateTransaction={handleUpdateTransaction}
-                        handleDeleteTransaction={handleDeleteTransaction}
                         user={user}
                         handleSettleUp={handleSettleUp}
-                        setView={setView}
                     />
                 )}
                 {view === 'stats' && (
@@ -707,6 +703,17 @@ export default function SweetLedger() {
                     />
                 )}
                 
+                {/* Global Edit Transaction Modal */}
+                <EditTransactionModal 
+                    isOpen={isEditTxModalOpen}
+                    onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
+                    editingTx={editingTx}
+                    setEditingTx={setEditingTx}
+                    handleUpdateTransaction={handleUpdateTransaction}
+                    handleDeleteTransaction={handleDeleteTransaction}
+                    ledgerData={ledgerData}
+                />
+
                 {/* Bottom Navigation */}
                 <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
                     <div className="flex justify-between items-center max-w-md mx-auto">
