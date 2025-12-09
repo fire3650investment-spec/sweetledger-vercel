@@ -70,7 +70,7 @@ export default function SweetLedger() {
   const [aiInput, setAiInput] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null); 
-  const [currency, setCurrency] = useState('TWD'); // Current input currency
+  const [currency, setCurrency] = useState('TWD'); 
   const [payer, setPayer] = useState(''); 
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); 
   
@@ -207,7 +207,6 @@ export default function SweetLedger() {
     setTempAvatar('');
   };
 
-  // New: Project-Scoped Currency Update
   const updateLedgerCurrency = async (currencyKey, val) => {
     if (!ledgerCode || !currentProjectId || !ledgerData) return;
     const numVal = parseFloat(val);
@@ -215,7 +214,6 @@ export default function SweetLedger() {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newProjects = ledgerData.projects.map(p => {
             if (p.id === currentProjectId) {
-                // Merge new rate into existing rates
                 return { 
                     ...p, 
                     rates: { ...(p.rates || { JPY: 0.23, THB: 1 }), [currencyKey]: numVal } 
@@ -283,7 +281,6 @@ export default function SweetLedger() {
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     let newProjects = [...(ledgerData?.projects || [])];
     
-    // Ensure project has default rates if new
     const projectWithRates = {
         ...editingProjectData,
         rates: editingProjectData.rates || { JPY: 0.23, THB: 1 } 
@@ -299,11 +296,21 @@ export default function SweetLedger() {
     setEditingProjectData({ id: '', name: '', icon: 'project_daily' });
   };
 
+  // Fix: Cascade Delete
   const handleDeleteProject = async (projectId) => {
-    if (confirm('確定要刪除這個專案嗎？')) {
+    if (confirm('確定要刪除這個專案嗎？（警告：該專案下的所有帳務紀錄將一併刪除且無法復原）')) {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
-        await updateDoc(docRef, { projects: newProjects });
+        // Cascade delete transactions
+        const newTransactions = ledgerData.transactions.filter(t => t.projectId !== projectId);
+        // Cascade delete subscriptions
+        const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.projectId !== projectId);
+
+        await updateDoc(docRef, { 
+            projects: newProjects,
+            transactions: newTransactions,
+            subscriptions: newSubscriptions
+        });
         if (currentProjectId === projectId) setCurrentProjectId('daily');
     }
   };
@@ -336,9 +343,9 @@ export default function SweetLedger() {
      }
   };
   
-  const handleSettleUp = async (amountToSettle, payeeName) => {
+  // Fix: Correct Settlement Payer
+  const handleSettleUp = async (amountToSettle, payeeName, payerId) => {
     if (!amountToSettle || amountToSettle <= 0) return;
-    // Note: Settlement is always recorded in TWD based on current logic request
     if (confirm(`確定要結清 ${formatCurrency(amountToSettle, 'TWD')} 給 ${payeeName} 嗎？`)) {
         try {
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -348,7 +355,7 @@ export default function SweetLedger() {
                     amount: amountToSettle, 
                     currency: 'TWD', 
                     category: CATEGORIES.find(c => c.id === 'settlement'),
-                    payer: user.uid,
+                    payer: payerId, // Fix: Use passed payerId instead of user.uid
                     splitType: 'settlement',
                     note: `還款給 ${payeeName}`, 
                     projectId: currentProjectId,
@@ -440,7 +447,7 @@ export default function SweetLedger() {
         const commonData = {
             id: generateId(), 
             amount: amountFloat, 
-            currency: currency, // New: Record selected currency
+            currency: currency, 
             category: selectedCategory,
             payer: payer || user.uid, 
             splitType: finalSplitType, 
@@ -527,7 +534,7 @@ export default function SweetLedger() {
          const parsed = JSON.parse(cleanJson); 
          if (parsed.amount) setAmount(parsed.amount.toString()); 
          if (parsed.note) setNote(parsed.note); 
-         if (parsed.currency) setCurrency(parsed.currency); // AI can also detect currency
+         if (parsed.currency) setCurrency(parsed.currency); 
          if (parsed.categoryId) { 
              const allCats = ledgerData?.customCategories || DEFAULT_CATEGORIES;
              const cat = allCats.find(c => c.id === parsed.categoryId); 

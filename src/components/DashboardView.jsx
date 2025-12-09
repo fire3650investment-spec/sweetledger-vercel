@@ -45,8 +45,6 @@ export default function DashboardView({
         // 1. 計算我墊付了多少 (TWD)
         if (tx.splitType === 'custom' && tx.customSplit) {
              const myCustomShare = tx.customSplit[user.uid] || 0;
-             // Custom split stored amounts are likely in original currency, need normalizing?
-             // Assuming custom split inputs are in original currency (same as amount)
              myPaid += calculateTwdValue(myCustomShare, tx.currency || 'TWD', rates);
         } else {
              if (tx.payer === user.uid) myPaid += amountTwd;
@@ -112,12 +110,15 @@ export default function DashboardView({
                     {settlement >= 0 ? `${partnerName} 欠你 ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}` : `你欠 ${partnerName} ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}`}
                 </h1>
             </div>
-            {/* Fix: Restore Monthly Total */}
             <p className="text-white/70 text-xs font-medium">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
 
             {Math.abs(settlement) > 0 && (
                 <button 
-                    onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你')} 
+                    onClick={() => handleSettleUp(
+                        Math.abs(settlement), 
+                        settlement < 0 ? partnerName : '你', 
+                        settlement < 0 ? user.uid : otherUserId // Fix: Determine correct payer based on debt direction
+                    )} 
                     className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4"
                 >
                     <Coins size={14}/> 結清債務
@@ -150,7 +151,6 @@ export default function DashboardView({
                                             </div>
                                         </div>
                                     </div>
-                                    {/* Display Original Currency */}
                                     <span className={`font-bold ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>{formatCurrency(tx.amount, tx.currency || 'TWD', privacyMode)}</span>
                                 </div>
                             ); 
