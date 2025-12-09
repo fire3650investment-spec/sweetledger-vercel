@@ -70,7 +70,7 @@ export default function SweetLedger() {
   const [aiInput, setAiInput] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null); 
-  const [currency, setCurrency] = useState('TWD'); 
+  const [currency, setCurrency] = useState('TWD'); // Current input currency
   const [payer, setPayer] = useState(''); 
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); 
   
@@ -156,7 +156,6 @@ export default function SweetLedger() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setLedgerData(data);
-        if (data.currency) setCurrency(data.currency);
         if (data.users && data.users[user.uid]) {
             setMyNickname(data.users[user.uid].name);
         }
@@ -208,12 +207,23 @@ export default function SweetLedger() {
     setTempAvatar('');
   };
 
-  const updateLedgerCurrency = async (val) => {
-    if (!ledgerCode) return;
+  // New: Project-Scoped Currency Update
+  const updateLedgerCurrency = async (currencyKey, val) => {
+    if (!ledgerCode || !currentProjectId || !ledgerData) return;
     const numVal = parseFloat(val);
-    if(numVal) {
+    if (numVal && numVal > 0) {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        await updateDoc(docRef, { 'rates.JPY': numVal });
+        const newProjects = ledgerData.projects.map(p => {
+            if (p.id === currentProjectId) {
+                // Merge new rate into existing rates
+                return { 
+                    ...p, 
+                    rates: { ...(p.rates || { JPY: 0.23, THB: 1 }), [currencyKey]: numVal } 
+                };
+            }
+            return p;
+        });
+        await updateDoc(docRef, { projects: newProjects });
     }
   };
   
@@ -272,10 +282,17 @@ export default function SweetLedger() {
     if (!editingProjectData.name) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     let newProjects = [...(ledgerData?.projects || [])];
+    
+    // Ensure project has default rates if new
+    const projectWithRates = {
+        ...editingProjectData,
+        rates: editingProjectData.rates || { JPY: 0.23, THB: 1 } 
+    };
+
     if (editingProjectData.id) {
-        newProjects = newProjects.map(p => p.id === editingProjectData.id ? editingProjectData : p);
+        newProjects = newProjects.map(p => p.id === editingProjectData.id ? projectWithRates : p);
     } else {
-        newProjects.push({ ...editingProjectData, id: generateId() });
+        newProjects.push({ ...projectWithRates, id: generateId() });
     }
     await updateDoc(docRef, { projects: newProjects });
     setIsEditingProject(false);
@@ -321,14 +338,15 @@ export default function SweetLedger() {
   
   const handleSettleUp = async (amountToSettle, payeeName) => {
     if (!amountToSettle || amountToSettle <= 0) return;
-    if (confirm(`確定要結清 ${formatCurrency(amountToSettle, ledgerData.currency)} 給 ${payeeName} 嗎？`)) {
+    // Note: Settlement is always recorded in TWD based on current logic request
+    if (confirm(`確定要結清 ${formatCurrency(amountToSettle, 'TWD')} 給 ${payeeName} 嗎？`)) {
         try {
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
             await updateDoc(docRef, { 
                 transactions: arrayUnion({ 
                     id: generateId(), 
                     amount: amountToSettle, 
-                    currency: ledgerData.currency, 
+                    currency: 'TWD', 
                     category: CATEGORIES.find(c => c.id === 'settlement'),
                     payer: user.uid,
                     splitType: 'settlement',
@@ -422,7 +440,7 @@ export default function SweetLedger() {
         const commonData = {
             id: generateId(), 
             amount: amountFloat, 
-            currency: currency, 
+            currency: currency, // New: Record selected currency
             category: selectedCategory,
             payer: payer || user.uid, 
             splitType: finalSplitType, 
@@ -509,6 +527,7 @@ export default function SweetLedger() {
          const parsed = JSON.parse(cleanJson); 
          if (parsed.amount) setAmount(parsed.amount.toString()); 
          if (parsed.note) setNote(parsed.note); 
+         if (parsed.currency) setCurrency(parsed.currency); // AI can also detect currency
          if (parsed.categoryId) { 
              const allCats = ledgerData?.customCategories || DEFAULT_CATEGORIES;
              const cat = allCats.find(c => c.id === parsed.categoryId); 
@@ -560,9 +579,9 @@ export default function SweetLedger() {
   const handleExport = () => {
     if (!ledgerData) return;
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Date,Project,Category,Note,Amount,Payer,SplitType\n";
+    csvContent += "Date,Project,Category,Note,Amount,Currency,Payer,SplitType\n";
     ledgerData.transactions.forEach(tx => {
-        const row = [new Date(tx.date).toLocaleDateString(), ledgerData.projects.find(p => p.id === tx.projectId)?.name || 'Unknown', tx.category.name, tx.note, tx.amount, ledgerData.users[tx.payer]?.name || 'Unknown', tx.splitType].join(",");
+        const row = [new Date(tx.date).toLocaleDateString(), ledgerData.projects.find(p => p.id === tx.projectId)?.name || 'Unknown', tx.category.name, tx.note, tx.amount, tx.currency || 'TWD', ledgerData.users[tx.payer]?.name || 'Unknown', tx.splitType].join(",");
         csvContent += row + "\n";
     });
     const encodedUri = encodeURI(csvContent);
@@ -615,6 +634,7 @@ export default function SweetLedger() {
                     date={date}
                     setDate={setDate}
                     currency={currency}
+                    setCurrency={setCurrency}
                     amount={amount}
                     setAmount={setAmount}
                     payer={payer}
@@ -700,6 +720,7 @@ export default function SweetLedger() {
                         handleFixIdentity={handleFixIdentity}
                         ledgerCode={ledgerCode}
                         updateLedgerCurrency={updateLedgerCurrency}
+                        currentProjectId={currentProjectId}
                     />
                 )}
                 

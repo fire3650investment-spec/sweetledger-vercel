@@ -22,7 +22,8 @@ export default function AddExpenseView({
   handleImageUpload,
   date,
   setDate,
-  currency,
+  currency, // New
+  setCurrency, // New
   amount,
   setAmount,
   payer,
@@ -96,7 +97,7 @@ export default function AddExpenseView({
         </div>
         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { handleImageUpload(e); setIsAiModalOpen(true); }} />
         
-        {/* Amount Input */}
+        {/* Amount Input & Currency Toggle */}
         <div className="px-6 py-2 text-center flex flex-col items-center relative">
             <div className="absolute top-0 right-6">
                 <input 
@@ -107,7 +108,19 @@ export default function AddExpenseView({
                 />
             </div>
 
-            <div className="text-gray-400 text-sm mb-1">{currency}</div>
+            {/* Currency Toggle */}
+            <div className="flex gap-2 mb-2 p-1 bg-gray-100 rounded-lg">
+                {['TWD', 'JPY', 'THB'].map(c => (
+                    <button 
+                        key={c}
+                        onClick={() => setCurrency(c)}
+                        className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${currency === c ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}
+                    >
+                        {c}
+                    </button>
+                ))}
+            </div>
+
             <input 
                 type="number" 
                 value={amount} 

@@ -9,6 +9,15 @@ export const formatCurrency = (amount, currency = 'TWD', privacy = false) => {
   return new Intl.NumberFormat('zh-TW', { style: 'currency', currency, minimumFractionDigits: 0 }).format(amount);
 };
 
+// New: 匯率換算核心函式
+export const calculateTwdValue = (amount, currency, rates) => {
+    if (currency === 'TWD') return amount;
+    const rate = rates?.[currency] || 1; // 找不到匯率預設 1:1
+    return amount / rate; // 注意：這裡定義的匯率邏輯是 "1 TWD = X Foreign Currency" 還是 "1 Foreign = X TWD"?
+    // 根據之前的 JPY: 0.23 (1日圓=0.23台幣)，邏輯應為：原幣 * 匯率 = 台幣
+    return amount * rate;
+};
+
 export const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
 export const getIconComponent = (iconName) => {
@@ -45,7 +54,6 @@ export const callGemini = async (prompt, imageBase64 = null) => {
 };
 
 export const renderAvatar = (avatarKeyOrUrl, sizeClass = "w-12 h-12") => {
-    // 1. Is it a character key?
     if (avatarKeyOrUrl && CHARACTERS[avatarKeyOrUrl]) {
         const Icon = getIconComponent(CHARACTERS[avatarKeyOrUrl].icon);
         return (
@@ -54,11 +62,9 @@ export const renderAvatar = (avatarKeyOrUrl, sizeClass = "w-12 h-12") => {
             </div>
         );
     }
-    // 2. Is it a URL?
     if (avatarKeyOrUrl && typeof avatarKeyOrUrl === 'string' && avatarKeyOrUrl.includes('http')) {
         return <img src={avatarKeyOrUrl} className={`${sizeClass} rounded-full object-cover border border-gray-200`} alt="avatar" />;
     }
-    // 3. Default fallback
     return (
         <div className={`${sizeClass} rounded-full bg-gray-100 flex items-center justify-center text-gray-400 border border-gray-200`}>
             <User size={20} />

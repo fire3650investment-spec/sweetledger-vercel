@@ -25,11 +25,16 @@ export default function SettingsView({
   confirmAvatarUpdate,
   handleFixIdentity,
   ledgerCode,
-  updateLedgerCurrency
+  updateLedgerCurrency,
+  currentProjectId
 }) {
     if (!ledgerData) return null;
     const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const users = ledgerData.users || {};
+    
+    // Get Current Project Rates
+    const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
+    const rates = currentProject?.rates || { JPY: 0.23, THB: 1 };
 
     if (isEditingCategory) {
         return (
@@ -135,12 +140,38 @@ export default function SettingsView({
                 <button onClick={() => { navigator.clipboard.writeText(ledgerCode); alert("邀請碼已複製！"); }} className="p-3 bg-white border border-gray-200 rounded-full shadow-sm active:scale-95 text-gray-600"><Copy size={20} /></button>
             </div>
          </div>
-         
-         {/* Fix Identity (Advanced) */}
+
+         {/* Currency Settings (Project Scoped) */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
-            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Wrench size={18} /> 進階修復</h3>
-            <p className="text-xs text-gray-400 mb-3">如果發現帳本內有重複的成員或「Host」帳號，請點擊下方按鈕進行合併。</p>
-            <button onClick={handleFixIdentity} className="w-full bg-gray-100 text-gray-600 py-2 rounded-lg font-medium text-sm hover:bg-gray-200">合併匿名 Host 帳號</button>
+            <h3 className="font-bold text-gray-700 mb-1">匯率設定</h3>
+            <p className="text-xs text-gray-400 mb-3">當前專案：{currentProject?.name}</p>
+            
+            <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-500 w-16 text-right">JPY</span>
+                    <input 
+                        type="number" 
+                        defaultValue={rates.JPY} 
+                        onBlur={(e) => updateLedgerCurrency('JPY', e.target.value)} 
+                        className="flex-1 bg-gray-100 rounded-lg p-2 text-center" 
+                        step="0.001"
+                        placeholder="0.23"
+                    />
+                    <span className="text-sm text-gray-500">TWD</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-500 w-16 text-right">THB</span>
+                    <input 
+                        type="number" 
+                        defaultValue={rates.THB} 
+                        onBlur={(e) => updateLedgerCurrency('THB', e.target.value)} 
+                        className="flex-1 bg-gray-100 rounded-lg p-2 text-center" 
+                        step="0.001"
+                        placeholder="1.0"
+                    />
+                    <span className="text-sm text-gray-500">TWD</span>
+                </div>
+            </div>
          </div>
          
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
@@ -160,15 +191,17 @@ export default function SettingsView({
 
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><FileText size={18}/> 資料備份與還原</h3><div className="mb-4 border-b border-gray-100 pb-4"><button onClick={handleExport} className="w-full py-2 border border-gray-300 rounded-lg text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50"><Download size={16}/> 下載 .csv</button></div></div>
          
-         <div className="bg-white p-4 rounded-xl shadow-sm mb-6"><h3 className="font-bold text-gray-700 mb-3">匯率設定</h3>{ledgerData.currency === 'TWD' && (<div className="flex items-center gap-2"><span className="text-sm text-gray-500">1 JPY =</span><input type="number" defaultValue={ledgerData.rates?.JPY} onBlur={(e) => updateLedgerCurrency(e.target.value)} className="w-20 bg-gray-100 rounded-lg p-2 text-center" step="0.001"/><span className="text-sm text-gray-500">TWD</span></div>)}</div>
-         
-         {/* Danger Zone: Reset Account */}
+         <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Wrench size={18} /> 進階修復</h3>
+            <p className="text-xs text-gray-400 mb-3">如果發現帳本內有重複的成員或「Host」帳號，請點擊下方按鈕進行合併。</p>
+            <button onClick={handleFixIdentity} className="w-full bg-gray-100 text-gray-600 py-2 rounded-lg font-medium text-sm hover:bg-gray-200">合併匿名 Host 帳號</button>
+         </div>
+
          <div className="bg-red-50 p-4 rounded-xl shadow-sm mb-6 border border-red-100">
              <h3 className="font-bold text-red-700 mb-3 flex items-center gap-2"><AlertTriangle size={18}/> 危險區域</h3>
              <button onClick={handleResetAccount} className="w-full bg-white text-red-600 border border-red-200 py-3 rounded-xl font-bold">重置所有帳務資料</button>
          </div>
 
-         {/* Logout Button */}
          <div className="mt-8 mb-4">
              <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-gray-500 hover:text-red-500 py-2">
                  <LogOut size={16} /> 登出 Google 帳號

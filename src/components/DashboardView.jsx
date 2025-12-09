@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins } from 'lucide-react';
-import { formatCurrency, getIconComponent } from '../utils/helpers';
+import { formatCurrency, getIconComponent, calculateTwdValue } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
 export default function DashboardView({
@@ -26,33 +26,45 @@ export default function DashboardView({
         groupedTransactions[date].push(tx); 
     });
     
-    // 結算邏輯
+    // Get Project Rates
+    const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
+    const rates = currentProject?.rates || { JPY: 0.23, THB: 1 };
+    
+    // Calculate Monthly Total (TWD Normalized)
+    const monthlyTotal = thisMonthTxs.reduce((acc, curr) => acc + calculateTwdValue(curr.amount, curr.currency || 'TWD', rates), 0);
+
+    // 結算邏輯 (All normalized to TWD)
     let myPaid = 0;
     let myLiability = 0;
 
     thisMonthTxs.forEach(tx => {
         if(tx.isSettlement) return; 
         
-        // 1. 計算我墊付了多少
+        const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
+
+        // 1. 計算我墊付了多少 (TWD)
         if (tx.splitType === 'custom' && tx.customSplit) {
-             myPaid += (tx.customSplit[user.uid] || 0);
+             const myCustomShare = tx.customSplit[user.uid] || 0;
+             // Custom split stored amounts are likely in original currency, need normalizing?
+             // Assuming custom split inputs are in original currency (same as amount)
+             myPaid += calculateTwdValue(myCustomShare, tx.currency || 'TWD', rates);
         } else {
-             if (tx.payer === user.uid) myPaid += tx.amount;
+             if (tx.payer === user.uid) myPaid += amountTwd;
         }
 
-        // 2. 計算我該付多少
+        // 2. 計算我該付多少 (TWD)
         let liability = 0;
         if (tx.splitType === 'even' || tx.splitType === 'custom') {
-            liability = tx.amount / 2; 
+            liability = amountTwd / 2; 
         } else if (tx.splitType === 'host_all') {
-            liability = ledgerData.users[user.uid]?.role === 'host' ? tx.amount : 0;
+            liability = ledgerData.users[user.uid]?.role === 'host' ? amountTwd : 0;
         } else if (tx.splitType === 'guest_all') {
-            liability = ledgerData.users[user.uid]?.role === 'guest' ? tx.amount : 0;
+            liability = ledgerData.users[user.uid]?.role === 'guest' ? amountTwd : 0;
         }
         myLiability += liability;
     });
     
-    // 計算已結算金額
+    // 計算已結算金額 (Settlements are always TWD)
     const settlements = ledgerData.transactions.filter(tx => tx.isSettlement);
     let settledAmount = 0;
     settlements.forEach(tx => {
@@ -60,9 +72,10 @@ export default function DashboardView({
         else settledAmount -= tx.amount;
     });
 
+    // Final Settlement
     const settlement = (myPaid + settledAmount) - myLiability; 
 
-    const currentProjectName = ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常開銷';
+    const currentProjectName = currentProject?.name || '日常開銷';
     const getHouseIcon = (level) => { if (level < 5) return '⛺️'; if (level < 15) return '🏠'; if (level < 30) return '🏡'; return '🏰'; };
 
     const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
@@ -96,13 +109,16 @@ export default function DashboardView({
             <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14}/> 總結算狀態 ({currentProjectName})</p>
             <div className="flex justify-between items-end mb-2">
                 <h1 className="text-3xl font-bold tracking-tight">
-                    {settlement >= 0 ? `${partnerName} 欠你 ${formatCurrency(Math.abs(settlement), ledgerData.currency, privacyMode)}` : `你欠 ${partnerName} ${formatCurrency(Math.abs(settlement), ledgerData.currency, privacyMode)}`}
+                    {settlement >= 0 ? `${partnerName} 欠你 ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}` : `你欠 ${partnerName} ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}`}
                 </h1>
             </div>
+            {/* Fix: Restore Monthly Total */}
+            <p className="text-white/70 text-xs font-medium">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
+
             {Math.abs(settlement) > 0 && (
                 <button 
                     onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你')} 
-                    className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors"
+                    className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4"
                 >
                     <Coins size={14}/> 結清債務
                 </button>
@@ -134,7 +150,8 @@ export default function DashboardView({
                                             </div>
                                         </div>
                                     </div>
-                                    <span className={`font-bold ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>{formatCurrency(tx.amount, tx.currency, privacyMode)}</span>
+                                    {/* Display Original Currency */}
+                                    <span className={`font-bold ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>{formatCurrency(tx.amount, tx.currency || 'TWD', privacyMode)}</span>
                                 </div>
                             ); 
                         })}
