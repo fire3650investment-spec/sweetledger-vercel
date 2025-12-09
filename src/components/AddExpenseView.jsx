@@ -22,8 +22,8 @@ export default function AddExpenseView({
   handleImageUpload,
   date,
   setDate,
-  currency, // New
-  setCurrency, // New
+  currency, 
+  setCurrency, 
   amount,
   setAmount,
   payer,
@@ -97,28 +97,31 @@ export default function AddExpenseView({
         </div>
         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { handleImageUpload(e); setIsAiModalOpen(true); }} />
         
-        {/* Amount Input & Currency Toggle */}
-        <div className="px-6 py-2 text-center flex flex-col items-center relative">
-            <div className="absolute top-0 right-6">
+        {/* Amount Input & Currency/Date Row (UI Fix) */}
+        <div className="px-6 py-2 text-center flex flex-col items-center">
+            
+            {/* Top Row: Currency Toggle (Left) + Date Picker (Right) */}
+            <div className="w-full flex justify-between items-center mb-4 px-2">
+                {/* Currency Toggle */}
+                <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                    {['TWD', 'JPY', 'THB'].map(c => (
+                        <button 
+                            key={c}
+                            onClick={() => setCurrency(c)}
+                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${currency === c ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}
+                        >
+                            {c}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Date Picker */}
                 <input 
                     type="date" 
                     value={date} 
                     onChange={(e) => setDate(e.target.value)}
-                    className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-lg outline-none"
+                    className="bg-gray-100 text-gray-600 text-xs px-2 py-1.5 rounded-lg outline-none font-medium"
                 />
-            </div>
-
-            {/* Currency Toggle */}
-            <div className="flex gap-2 mb-2 p-1 bg-gray-100 rounded-lg">
-                {['TWD', 'JPY', 'THB'].map(c => (
-                    <button 
-                        key={c}
-                        onClick={() => setCurrency(c)}
-                        className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${currency === c ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}
-                    >
-                        {c}
-                    </button>
-                ))}
             </div>
 
             <input 
@@ -129,6 +132,7 @@ export default function AddExpenseView({
                 className="w-full text-6xl font-bold text-gray-800 text-center outline-none placeholder-gray-200 bg-transparent" 
                 inputMode="decimal"
             />
+            
             {/* Payer Toggle */}
             <div className="flex gap-2 mt-4">
                 <button 
