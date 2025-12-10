@@ -13,7 +13,7 @@ export default function DashboardView({
   setEditingTx,
   user,
   handleSettleUp,
-  handleOpenAddExpense // New Prop
+  handleOpenAddExpense
 }) {
     if (!ledgerData) return null;
     const projectTxs = ledgerData.transactions.filter(t => (t.projectId || 'daily') === currentProjectId);
@@ -80,9 +80,8 @@ export default function DashboardView({
     const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
     const partnerName = otherUserId ? (ledgerData.users[otherUserId].name || '對方') : '對方';
 
-    // Input Mode
-    const inputMode = ledgerData.settings?.defaultInputMode || 'dual';
-    // Dynamic Padding based on mode (dual buttons are wider)
+    // Input Mode - Fix: Default to 'standard'
+    const inputMode = ledgerData.settings?.defaultInputMode || 'standard';
     const paddingBottomClass = inputMode === 'dual' ? 'pb-32' : 'pb-24';
 
     return (

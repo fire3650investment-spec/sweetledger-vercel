@@ -766,20 +766,9 @@ export default function SweetLedger() {
                     
                     {/* Dynamic Add Button (Handled by Dashboard logic if on Dashboard, otherwise standard plus) */}
                     <div className="relative -top-6">
-                        {/* Note: The main "Add" button in nav bar is usually global. 
-                            However, our new 'Dual Mode' logic is implemented inside DashboardView's body? 
-                            Wait, no. The dual buttons are usually floating or part of the nav.
-                            In my previous response plan, I said "DashboardView renders buttons". 
-                            But the navigation bar is in App.jsx.
-                            
-                            Correction: To implement the dynamic button in the Nav Bar, we must check settings HERE in App.jsx.
-                        */}
                         {(() => {
-                            const inputMode = ledgerData.settings?.defaultInputMode || 'dual';
-                            // Logic: 
-                            // If Standard: Show Plus.
-                            // If AI: Show Sparkles.
-                            // If Dual: Show a container with two buttons?
+                            // Fix: Default to 'standard'
+                            const inputMode = ledgerData.settings?.defaultInputMode || 'standard';
                             
                             if (inputMode === 'dual') {
                                 return (

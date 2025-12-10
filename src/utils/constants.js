@@ -88,6 +88,6 @@ export const INITIAL_LEDGER_STATE = {
   settings: {
     character: 'cat',
     selectedCategories: DEFAULT_CATEGORIES.map(c => c.id),
-    defaultInputMode: 'dual' // standard | ai_priority | dual
+    defaultInputMode: 'standard' // Fix: Change default from 'dual' to 'standard'
   }
 };

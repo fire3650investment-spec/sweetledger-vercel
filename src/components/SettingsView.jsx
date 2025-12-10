@@ -27,12 +27,13 @@ export default function SettingsView({
   ledgerCode,
   updateLedgerCurrency,
   currentProjectId,
-  updateInputMode // New Prop
+  updateInputMode
 }) {
     if (!ledgerData) return null;
     const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const users = ledgerData.users || {};
-    const inputMode = ledgerData.settings?.defaultInputMode || 'dual';
+    // Fix: Fallback to 'standard' if setting is missing
+    const inputMode = ledgerData.settings?.defaultInputMode || 'standard';
     
     // Get Current Project Rates
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
@@ -76,7 +77,7 @@ export default function SettingsView({
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 bg-gray-50 min-h-screen">
          <h2 className="text-2xl font-bold text-gray-800 mb-6">帳本設定</h2>
          
-         {/* Input Mode Preference (New) */}
+         {/* Input Mode Preference */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
             <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><LayoutGrid size={18} /> 記帳按鈕偏好</h3>
             <div className="grid grid-cols-3 gap-2">
