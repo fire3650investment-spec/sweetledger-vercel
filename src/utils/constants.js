@@ -87,6 +87,7 @@ export const INITIAL_LEDGER_STATE = {
   currency: 'TWD',
   settings: {
     character: 'cat',
-    selectedCategories: DEFAULT_CATEGORIES.map(c => c.id) 
+    selectedCategories: DEFAULT_CATEGORIES.map(c => c.id),
+    defaultInputMode: 'dual' // standard | ai_priority | dual
   }
 };

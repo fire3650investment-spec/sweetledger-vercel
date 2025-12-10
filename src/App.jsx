@@ -19,7 +19,7 @@ import {
   arrayUnion
 } from 'firebase/firestore';
 import { 
-  Home, PieChart, Settings, Plus, Briefcase
+  Home, PieChart, Settings, Plus, Briefcase, Sparkles
 } from 'lucide-react';
 
 // Utils & Constants
@@ -156,6 +156,7 @@ export default function SweetLedger() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setLedgerData(data);
+        if (data.currency) setCurrency(data.currency);
         if (data.users && data.users[user.uid]) {
             setMyNickname(data.users[user.uid].name);
         }
@@ -223,6 +224,23 @@ export default function SweetLedger() {
         });
         await updateDoc(docRef, { projects: newProjects });
     }
+  };
+
+  // New: Update Input Mode Setting
+  const updateInputMode = async (mode) => {
+    if (!ledgerCode) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { 'settings.defaultInputMode': mode });
+  };
+
+  // New: Handle opening add expense view based on intent
+  const handleOpenAddExpense = (mode) => {
+      setView('add');
+      if (mode === 'ai') {
+          setIsAiModalOpen(true);
+      } else {
+          setIsAiModalOpen(false);
+      }
   };
   
   const updateNickname = async () => {
@@ -296,14 +314,11 @@ export default function SweetLedger() {
     setEditingProjectData({ id: '', name: '', icon: 'project_daily' });
   };
 
-  // Fix: Cascade Delete
   const handleDeleteProject = async (projectId) => {
     if (confirm('確定要刪除這個專案嗎？（警告：該專案下的所有帳務紀錄將一併刪除且無法復原）')) {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
-        // Cascade delete transactions
         const newTransactions = ledgerData.transactions.filter(t => t.projectId !== projectId);
-        // Cascade delete subscriptions
         const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.projectId !== projectId);
 
         await updateDoc(docRef, { 
@@ -343,7 +358,6 @@ export default function SweetLedger() {
      }
   };
   
-  // Fix: Correct Settlement Payer
   const handleSettleUp = async (amountToSettle, payeeName, payerId) => {
     if (!amountToSettle || amountToSettle <= 0) return;
     if (confirm(`確定要結清 ${formatCurrency(amountToSettle, 'TWD')} 給 ${payeeName} 嗎？`)) {
@@ -355,7 +369,7 @@ export default function SweetLedger() {
                     amount: amountToSettle, 
                     currency: 'TWD', 
                     category: CATEGORIES.find(c => c.id === 'settlement'),
-                    payer: payerId, // Fix: Use passed payerId instead of user.uid
+                    payer: payerId, 
                     splitType: 'settlement',
                     note: `還款給 ${payeeName}`, 
                     projectId: currentProjectId,
@@ -679,6 +693,7 @@ export default function SweetLedger() {
                         setEditingTx={setEditingTx}
                         user={user}
                         handleSettleUp={handleSettleUp}
+                        handleOpenAddExpense={handleOpenAddExpense} // Pass down
                     />
                 )}
                 {view === 'stats' && (
@@ -728,6 +743,7 @@ export default function SweetLedger() {
                         ledgerCode={ledgerCode}
                         updateLedgerCurrency={updateLedgerCurrency}
                         currentProjectId={currentProjectId}
+                        updateInputMode={updateInputMode} // Pass down
                     />
                 )}
                 
@@ -747,9 +763,39 @@ export default function SweetLedger() {
                     <div className="flex justify-between items-center max-w-md mx-auto">
                     <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
                     <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
+                    
+                    {/* Dynamic Add Button (Handled by Dashboard logic if on Dashboard, otherwise standard plus) */}
                     <div className="relative -top-6">
-                        <button onClick={() => setView('add')} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>
+                        {/* Note: The main "Add" button in nav bar is usually global. 
+                            However, our new 'Dual Mode' logic is implemented inside DashboardView's body? 
+                            Wait, no. The dual buttons are usually floating or part of the nav.
+                            In my previous response plan, I said "DashboardView renders buttons". 
+                            But the navigation bar is in App.jsx.
+                            
+                            Correction: To implement the dynamic button in the Nav Bar, we must check settings HERE in App.jsx.
+                        */}
+                        {(() => {
+                            const inputMode = ledgerData.settings?.defaultInputMode || 'dual';
+                            // Logic: 
+                            // If Standard: Show Plus.
+                            // If AI: Show Sparkles.
+                            // If Dual: Show a container with two buttons?
+                            
+                            if (inputMode === 'dual') {
+                                return (
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleOpenAddExpense('manual')} className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform"><Plus size={24} /></button>
+                                        <button onClick={() => handleOpenAddExpense('ai')} className="w-12 h-12 bg-rose-500 rounded-full flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform"><Sparkles size={24} /></button>
+                                    </div>
+                                );
+                            } else if (inputMode === 'ai_priority') {
+                                 return <button onClick={() => handleOpenAddExpense('ai')} className="w-16 h-16 bg-rose-500 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Sparkles size={32} /></button>;
+                            } else {
+                                 return <button onClick={() => handleOpenAddExpense('manual')} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>;
+                            }
+                        })()}
                     </div>
+
                     <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
                     <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
                     </div>

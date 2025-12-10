@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, Wrench, User, Heart, Copy, FileText, Download, AlertTriangle, LogOut, X } from 'lucide-react';
+import { Users, Wrench, User, Heart, Copy, FileText, Download, AlertTriangle, LogOut, X, Sparkles, Plus, LayoutGrid } from 'lucide-react';
 import { getIconComponent, renderAvatar } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS } from '../utils/constants';
 
@@ -26,11 +26,13 @@ export default function SettingsView({
   handleFixIdentity,
   ledgerCode,
   updateLedgerCurrency,
-  currentProjectId
+  currentProjectId,
+  updateInputMode // New Prop
 }) {
     if (!ledgerData) return null;
     const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const users = ledgerData.users || {};
+    const inputMode = ledgerData.settings?.defaultInputMode || 'dual';
     
     // Get Current Project Rates
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
@@ -74,6 +76,34 @@ export default function SettingsView({
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 bg-gray-50 min-h-screen">
          <h2 className="text-2xl font-bold text-gray-800 mb-6">帳本設定</h2>
          
+         {/* Input Mode Preference (New) */}
+         <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
+            <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><LayoutGrid size={18} /> 記帳按鈕偏好</h3>
+            <div className="grid grid-cols-3 gap-2">
+                <button 
+                    onClick={() => updateInputMode('standard')}
+                    className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${inputMode === 'standard' ? 'border-gray-900 bg-gray-900 text-white' : 'border-gray-200 bg-gray-50 text-gray-500'}`}
+                >
+                    <Plus size={24} className="mb-1"/>
+                    <span className="text-xs font-bold">標準</span>
+                </button>
+                <button 
+                    onClick={() => updateInputMode('ai_priority')}
+                    className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${inputMode === 'ai_priority' ? 'border-purple-500 bg-purple-500 text-white' : 'border-gray-200 bg-gray-50 text-gray-500'}`}
+                >
+                    <Sparkles size={24} className="mb-1"/>
+                    <span className="text-xs font-bold">AI 優先</span>
+                </button>
+                <button 
+                    onClick={() => updateInputMode('dual')}
+                    className={`flex flex-col items-center justify-center p-3 rounded-xl border transition-all ${inputMode === 'dual' ? 'border-rose-500 bg-rose-500 text-white' : 'border-gray-200 bg-gray-50 text-gray-500'}`}
+                >
+                    <div className="flex gap-1 mb-1"><Plus size={16}/><Sparkles size={16}/></div>
+                    <span className="text-xs font-bold">雙刀流</span>
+                </button>
+            </div>
+         </div>
+
          {/* Member List */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
             <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><Users size={18} /> 帳本成員</h3>

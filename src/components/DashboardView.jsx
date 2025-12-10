@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins, Plus, Sparkles } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
@@ -12,7 +12,8 @@ export default function DashboardView({
   setIsEditTxModalOpen,
   setEditingTx,
   user,
-  handleSettleUp
+  handleSettleUp,
+  handleOpenAddExpense // New Prop
 }) {
     if (!ledgerData) return null;
     const projectTxs = ledgerData.transactions.filter(t => (t.projectId || 'daily') === currentProjectId);
@@ -33,25 +34,15 @@ export default function DashboardView({
     // Calculate Monthly Total (TWD Normalized)
     const monthlyTotal = thisMonthTxs.reduce((acc, curr) => acc + calculateTwdValue(curr.amount, curr.currency || 'TWD', rates), 0);
 
-    // 結算邏輯 (All normalized to TWD)
+    // 結算邏輯
     let myPaid = 0;
     let myLiability = 0;
 
-    // 1. Calculate Debt from Expenses (Only active project)
-    // Note: We iterate projectTxs (all history of this project) for settlement balance? 
-    // Usually settlement balance is based on ALL history, not just this month.
-    // However, original code used `thisMonthTxs` for myPaid/myLiability loop which might be wrong if we want total debt.
-    // Let's stick to `thisMonthTxs` for now to match v2.5 behavior unless requested otherwise, 
-    // BUT usually debt is cumulative. 
-    // *Correction*: To fix the "100 dollar error" fully, we should scan ALL projectTxs for liability.
-    // Let's use `projectTxs` (all history for this project) instead of `thisMonthTxs` for settlement calc.
-    
     projectTxs.forEach(tx => {
         if(tx.isSettlement) return; 
         
         const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
 
-        // 1. 計算我墊付了多少 (TWD)
         if (tx.splitType === 'custom' && tx.customSplit) {
              const myCustomShare = tx.customSplit[user.uid] || 0;
              myPaid += calculateTwdValue(myCustomShare, tx.currency || 'TWD', rates);
@@ -59,7 +50,6 @@ export default function DashboardView({
              if (tx.payer === user.uid) myPaid += amountTwd;
         }
 
-        // 2. 計算我該付多少 (TWD)
         let liability = 0;
         if (tx.splitType === 'even' || tx.splitType === 'custom') {
             liability = amountTwd / 2; 
@@ -71,20 +61,17 @@ export default function DashboardView({
         myLiability += liability;
     });
     
-    // Fix: Filter settlements by Project ID to avoid cross-project contamination
     const settlements = ledgerData.transactions.filter(tx => 
         tx.isSettlement && (tx.projectId || 'daily') === currentProjectId
     );
 
     let settledAmount = 0;
     settlements.forEach(tx => {
-        // Settlements are TWD by default from handleSettleUp, but safe to calc
         const amount = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
         if (tx.payer === user.uid) settledAmount += amount;
         else settledAmount -= amount;
     });
 
-    // Final Settlement
     const settlement = (myPaid + settledAmount) - myLiability; 
 
     const currentProjectName = currentProject?.name || '日常開銷';
@@ -93,8 +80,13 @@ export default function DashboardView({
     const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
     const partnerName = otherUserId ? (ledgerData.users[otherUserId].name || '對方') : '對方';
 
+    // Input Mode
+    const inputMode = ledgerData.settings?.defaultInputMode || 'dual';
+    // Dynamic Padding based on mode (dual buttons are wider)
+    const paddingBottomClass = inputMode === 'dual' ? 'pb-32' : 'pb-24';
+
     return (
-      <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
+      <div className={`${paddingBottomClass} pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative`}>
         <div className="flex justify-between items-center mb-4">
            <div className="relative">
              <select value={currentProjectId} onChange={(e) => setCurrentProjectId(e.target.value)} className="appearance-none bg-gray-900 text-white pl-4 pr-8 py-2 rounded-full font-bold text-sm outline-none shadow-lg shadow-gray-200">
