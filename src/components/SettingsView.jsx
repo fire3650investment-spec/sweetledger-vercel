@@ -1,11 +1,12 @@
 import React from 'react';
-import { Users, Wrench, User, Heart, Copy, FileText, Download, AlertTriangle, LogOut, X, Sparkles, Plus, LayoutGrid } from 'lucide-react';
+import { Users, Wrench, User, Heart, Copy, FileText, Download, AlertTriangle, LogOut, X, Sparkles, Plus, LayoutGrid, RefreshCw } from 'lucide-react';
 import { getIconComponent, renderAvatar } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS } from '../utils/constants';
 
 export default function SettingsView({
   ledgerData,
   user,
+  setView, // New Prop
   isEditingCategory,
   setIsEditingCategory,
   editingCategoryData,
@@ -32,7 +33,6 @@ export default function SettingsView({
     if (!ledgerData) return null;
     const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const users = ledgerData.users || {};
-    // Fix: Fallback to 'standard' if setting is missing
     const inputMode = ledgerData.settings?.defaultInputMode || 'standard';
     
     // Get Current Project Rates
@@ -77,6 +77,23 @@ export default function SettingsView({
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 bg-gray-50 min-h-screen">
          <h2 className="text-2xl font-bold text-gray-800 mb-6">帳本設定</h2>
          
+         {/* Subscription Management (New) */}
+         <button 
+            onClick={() => setView('subscriptions')}
+            className="w-full bg-white p-4 rounded-xl shadow-sm mb-6 flex items-center justify-between group active:scale-[0.98] transition-all"
+         >
+            <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-500">
+                    <RefreshCw size={20} />
+                </div>
+                <div className="text-left">
+                    <h3 className="font-bold text-gray-800">固定支出管理</h3>
+                    <p className="text-xs text-gray-400">查看所有的自動扣款項目</p>
+                </div>
+            </div>
+            <div className="text-gray-300 group-hover:text-rose-500 transition-colors">➜</div>
+         </button>
+
          {/* Input Mode Preference */}
          <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
             <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2"><LayoutGrid size={18} /> 記帳按鈕偏好</h3>

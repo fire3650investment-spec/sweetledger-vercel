@@ -34,6 +34,7 @@ import ProjectsView from './components/ProjectsView';
 import SettingsView from './components/SettingsView';
 import OnboardingView from './components/OnboardingView';
 import EditTransactionModal from './components/EditTransactionModal';
+import SubscriptionsView from './components/SubscriptionsView';
 
 // --- Configuration ---
 const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
@@ -112,6 +113,8 @@ export default function SweetLedger() {
 
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
+  // Ref to prevent double-checking subscriptions in strict mode or rapid updates
+  const hasCheckedSubsRef = useRef(false);
 
   // --- Effects ---
   useEffect(() => {
@@ -164,6 +167,99 @@ export default function SweetLedger() {
     });
     return () => unsubscribe();
   }, [user, ledgerCode]);
+
+  // --- AUTOMATIC SUBSCRIPTION CHECKER ---
+  useEffect(() => {
+    const checkSubscriptions = async () => {
+        if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0) return;
+        // Basic throttle to prevent running on every snapshot update if triggered by itself
+        // Note: Real-world apps might use a "lastChecked" timestamp in DB, but this works for session.
+        if (hasCheckedSubsRef.current && Math.random() > 0.1) return; 
+
+        const now = new Date();
+        now.setHours(0,0,0,0); // Normalize today
+        
+        let updatesNeeded = false;
+        let newTransactions = [...(ledgerData.transactions || [])];
+        let newSubscriptions = [...ledgerData.subscriptions];
+
+        newSubscriptions = newSubscriptions.map(sub => {
+            let nextDate = new Date(sub.nextPaymentDate);
+            let updated = false;
+            // Safety: Max 12 iterations to prevent infinite loops if date is very old
+            let loopCount = 0;
+            
+            // Check if nextDate is today or in the past
+            // Using time comparison to be safe
+            while (nextDate <= new Date() && loopCount < 12) {
+                updated = true;
+                updatesNeeded = true;
+                
+                // 1. Generate Transaction
+                // Remove 'nextPaymentDate' and 'cycle' etc from transaction data to keep it clean
+                const { nextPaymentDate, cycle, payDay, mode, ...txBase } = sub;
+                
+                const tx = {
+                    ...txBase,
+                    id: generateId(),
+                    date: nextDate.toISOString(),
+                    note: `[自動扣款] ${sub.name}`,
+                    isSettlement: false
+                };
+                newTransactions.push(tx);
+
+                // 2. Advance Date
+                // Use payDay logic if available for monthly accuracy
+                if (sub.cycle === 'monthly') {
+                    // Logic: Move to next month, then try to set day to payDay
+                    const currentMonth = nextDate.getMonth();
+                    const nextMonth = currentMonth + 1;
+                    nextDate.setMonth(nextMonth);
+                    
+                    // Fix: 31st Jan -> 28th Feb issue. 
+                    // If sub.payDay exists, try to respect it.
+                    if (sub.payDay) {
+                        const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
+                        const targetDay = Math.min(sub.payDay, daysInNextMonth);
+                        nextDate.setDate(targetDay);
+                    }
+                } else if (sub.cycle === 'weekly') {
+                    nextDate.setDate(nextDate.getDate() + 7);
+                } else {
+                    // Default fallback: 1 month
+                    nextDate.setMonth(nextDate.getMonth() + 1);
+                }
+                
+                loopCount++;
+            }
+            
+            if (updated) {
+                return { ...sub, nextPaymentDate: nextDate.toISOString() };
+            }
+            return sub;
+        });
+
+        if (updatesNeeded) {
+            console.log("Auto-processing subscriptions...", newTransactions.length - ledgerData.transactions.length, "new transactions.");
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+            hasCheckedSubsRef.current = true; // Mark as checked to reduce freq
+            await updateDoc(docRef, { 
+                transactions: newTransactions,
+                subscriptions: newSubscriptions
+            });
+        }
+    };
+    
+    // Debounce checking to avoid conflict with initial load
+    const timer = setTimeout(() => {
+        checkSubscriptions();
+    }, 2000);
+    return () => clearTimeout(timer);
+
+  }, [ledgerData]); 
+  // Dependency on ledgerData ensures we check when data loads, 
+  // but logic inside prevents infinite loops by checking date.
+
 
   // --- Handlers ---
   const handleCustomSplitChange = (field, value) => {
@@ -319,6 +415,7 @@ export default function SweetLedger() {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
         const newTransactions = ledgerData.transactions.filter(t => t.projectId !== projectId);
+        // FIX: Also delete subscriptions for this project
         const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.projectId !== projectId);
 
         await updateDoc(docRef, { 
@@ -327,6 +424,19 @@ export default function SweetLedger() {
             subscriptions: newSubscriptions
         });
         if (currentProjectId === projectId) setCurrentProjectId('daily');
+    }
+  };
+
+  // Subscription Management
+  const handleDeleteSubscription = async (subToDelete) => {
+    if (!ledgerCode || !subToDelete) return;
+    if (confirm(`確定要取消「${subToDelete.name}」的固定扣款嗎？`)) {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        // Using stringify compare if IDs are not reliable, but we added ID generation
+        const newSubscriptions = (ledgerData.subscriptions || []).filter(s => 
+            s.id !== subToDelete.id
+        );
+        await updateDoc(docRef, { subscriptions: newSubscriptions });
     }
   };
 
@@ -693,7 +803,7 @@ export default function SweetLedger() {
                         setEditingTx={setEditingTx}
                         user={user}
                         handleSettleUp={handleSettleUp}
-                        handleOpenAddExpense={handleOpenAddExpense} // Pass down
+                        handleOpenAddExpense={handleOpenAddExpense} 
                     />
                 )}
                 {view === 'stats' && (
@@ -722,6 +832,7 @@ export default function SweetLedger() {
                     <SettingsView 
                         ledgerData={ledgerData}
                         user={user}
+                        setView={setView} // Passed down
                         isEditingCategory={isEditingCategory}
                         setIsEditingCategory={setIsEditingCategory}
                         editingCategoryData={editingCategoryData}
@@ -743,7 +854,15 @@ export default function SweetLedger() {
                         ledgerCode={ledgerCode}
                         updateLedgerCurrency={updateLedgerCurrency}
                         currentProjectId={currentProjectId}
-                        updateInputMode={updateInputMode} // Pass down
+                        updateInputMode={updateInputMode}
+                    />
+                )}
+                {view === 'subscriptions' && (
+                    <SubscriptionsView
+                        ledgerData={ledgerData}
+                        user={user}
+                        setView={setView}
+                        handleDeleteSubscription={handleDeleteSubscription}
                     />
                 )}
                 
@@ -759,6 +878,7 @@ export default function SweetLedger() {
                 />
 
                 {/* Bottom Navigation */}
+                {view !== 'subscriptions' && (
                 <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
                     <div className="flex justify-between items-center max-w-md mx-auto">
                     <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
@@ -767,9 +887,7 @@ export default function SweetLedger() {
                     {/* Dynamic Add Button (Handled by Dashboard logic if on Dashboard, otherwise standard plus) */}
                     <div className="relative -top-6">
                         {(() => {
-                            // Fix: Default to 'standard'
                             const inputMode = ledgerData.settings?.defaultInputMode || 'standard';
-                            
                             if (inputMode === 'dual') {
                                 return (
                                     <div className="flex gap-2">
@@ -786,9 +904,10 @@ export default function SweetLedger() {
                     </div>
 
                     <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
-                    <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
+                    <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' || view === 'subscriptions' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' || view === 'subscriptions' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
                     </div>
                 </div>
+                )}
                 </>
             )}
         </>
