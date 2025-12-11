@@ -113,7 +113,6 @@ export default function SweetLedger() {
 
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
-  // Ref to prevent double-checking subscriptions in strict mode or rapid updates
   const hasCheckedSubsRef = useRef(false);
 
   // --- Effects ---
@@ -172,12 +171,10 @@ export default function SweetLedger() {
   useEffect(() => {
     const checkSubscriptions = async () => {
         if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0) return;
-        // Basic throttle to prevent running on every snapshot update if triggered by itself
-        // Note: Real-world apps might use a "lastChecked" timestamp in DB, but this works for session.
         if (hasCheckedSubsRef.current && Math.random() > 0.1) return; 
 
         const now = new Date();
-        now.setHours(0,0,0,0); // Normalize today
+        now.setHours(0,0,0,0); 
         
         let updatesNeeded = false;
         let newTransactions = [...(ledgerData.transactions || [])];
@@ -186,17 +183,12 @@ export default function SweetLedger() {
         newSubscriptions = newSubscriptions.map(sub => {
             let nextDate = new Date(sub.nextPaymentDate);
             let updated = false;
-            // Safety: Max 12 iterations to prevent infinite loops if date is very old
             let loopCount = 0;
             
-            // Check if nextDate is today or in the past
-            // Using time comparison to be safe
             while (nextDate <= new Date() && loopCount < 12) {
                 updated = true;
                 updatesNeeded = true;
                 
-                // 1. Generate Transaction
-                // Remove 'nextPaymentDate' and 'cycle' etc from transaction data to keep it clean
                 const { nextPaymentDate, cycle, payDay, mode, ...txBase } = sub;
                 
                 const tx = {
@@ -208,16 +200,10 @@ export default function SweetLedger() {
                 };
                 newTransactions.push(tx);
 
-                // 2. Advance Date
-                // Use payDay logic if available for monthly accuracy
                 if (sub.cycle === 'monthly') {
-                    // Logic: Move to next month, then try to set day to payDay
                     const currentMonth = nextDate.getMonth();
                     const nextMonth = currentMonth + 1;
                     nextDate.setMonth(nextMonth);
-                    
-                    // Fix: 31st Jan -> 28th Feb issue. 
-                    // If sub.payDay exists, try to respect it.
                     if (sub.payDay) {
                         const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
                         const targetDay = Math.min(sub.payDay, daysInNextMonth);
@@ -226,7 +212,6 @@ export default function SweetLedger() {
                 } else if (sub.cycle === 'weekly') {
                     nextDate.setDate(nextDate.getDate() + 7);
                 } else {
-                    // Default fallback: 1 month
                     nextDate.setMonth(nextDate.getMonth() + 1);
                 }
                 
@@ -242,7 +227,7 @@ export default function SweetLedger() {
         if (updatesNeeded) {
             console.log("Auto-processing subscriptions...", newTransactions.length - ledgerData.transactions.length, "new transactions.");
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-            hasCheckedSubsRef.current = true; // Mark as checked to reduce freq
+            hasCheckedSubsRef.current = true;
             await updateDoc(docRef, { 
                 transactions: newTransactions,
                 subscriptions: newSubscriptions
@@ -250,16 +235,12 @@ export default function SweetLedger() {
         }
     };
     
-    // Debounce checking to avoid conflict with initial load
     const timer = setTimeout(() => {
         checkSubscriptions();
     }, 2000);
     return () => clearTimeout(timer);
 
   }, [ledgerData]); 
-  // Dependency on ledgerData ensures we check when data loads, 
-  // but logic inside prevents infinite loops by checking date.
-
 
   // --- Handlers ---
   const handleCustomSplitChange = (field, value) => {
@@ -322,14 +303,12 @@ export default function SweetLedger() {
     }
   };
 
-  // New: Update Input Mode Setting
   const updateInputMode = async (mode) => {
     if (!ledgerCode) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { 'settings.defaultInputMode': mode });
   };
 
-  // New: Handle opening add expense view based on intent
   const handleOpenAddExpense = (mode) => {
       setView('add');
       if (mode === 'ai') {
@@ -415,7 +394,6 @@ export default function SweetLedger() {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
         const newTransactions = ledgerData.transactions.filter(t => t.projectId !== projectId);
-        // FIX: Also delete subscriptions for this project
         const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.projectId !== projectId);
 
         await updateDoc(docRef, { 
@@ -427,12 +405,10 @@ export default function SweetLedger() {
     }
   };
 
-  // Subscription Management
   const handleDeleteSubscription = async (subToDelete) => {
     if (!ledgerCode || !subToDelete) return;
     if (confirm(`確定要取消「${subToDelete.name}」的固定扣款嗎？`)) {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        // Using stringify compare if IDs are not reliable, but we added ID generation
         const newSubscriptions = (ledgerData.subscriptions || []).filter(s => 
             s.id !== subToDelete.id
         );
@@ -581,6 +557,21 @@ export default function SweetLedger() {
         };
 
         if (isSubscription) {
+          // BUG FIX: Calculate NEXT payment date, not TODAY
+          let nextDate = new Date(selectedDate);
+          if (subCycle === 'monthly') {
+              // Move to next month
+              nextDate.setMonth(nextDate.getMonth() + 1);
+              // Try to respect Pay Day if specified
+              if (subPayDay) {
+                  const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
+                  const targetDay = Math.min(parseInt(subPayDay), daysInNextMonth);
+                  nextDate.setDate(targetDay);
+              }
+          } else if (subCycle === 'weekly') {
+              nextDate.setDate(nextDate.getDate() + 7);
+          }
+          
           await updateDoc(docRef, { 
               subscriptions: arrayUnion({ 
                   ...commonData, 
@@ -588,7 +579,7 @@ export default function SweetLedger() {
                   cycle: subCycle, 
                   payDay: parseInt(subPayDay) || 1, 
                   mode: 'infinite', 
-                  nextPaymentDate: selectedDate, 
+                  nextPaymentDate: nextDate.toISOString(), // FIXED: Use nextDate
               }),
               transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }) 
           });
@@ -832,7 +823,7 @@ export default function SweetLedger() {
                     <SettingsView 
                         ledgerData={ledgerData}
                         user={user}
-                        setView={setView} // Passed down
+                        setView={setView} 
                         isEditingCategory={isEditingCategory}
                         setIsEditingCategory={setIsEditingCategory}
                         editingCategoryData={editingCategoryData}
