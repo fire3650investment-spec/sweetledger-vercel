@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Camera, RefreshCw, Sparkles, StopCircle, Mic, CheckCircle2, Check, Delete, Keyboard } from 'lucide-react';
+import { X, Camera, RefreshCw, Sparkles, StopCircle, Mic, CheckCircle2, Check, Delete, Equal, Keyboard } from 'lucide-react';
 import { getIconComponent } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
 
@@ -54,17 +54,15 @@ export default function AddExpenseView({
     const [calcExpression, setCalcExpression] = useState('');
     const [isKeypadVisible, setIsKeypadVisible] = useState(true);
 
-    // --- AI Bug Fix: 監聽 amount 變化 ---
+    // --- AI Bug Fix & Initialization ---
     useEffect(() => {
-        // 當父層 amount 改變 (例如 AI 解析完成)，且與目前計算機顯示不同時，同步更新
         if (amount !== undefined && amount !== null && amount.toString() !== calcExpression) {
             setCalcExpression(amount.toString());
         }
-        // 如果剛進入且 amount 為空，確保計算機也為空
         if (!amount && !calcExpression) {
              setCalcExpression('');
         }
-    }, [amount]); // 加入 amount 作為依賴
+    }, [amount]); 
 
     // Mount 時強制開啟鍵盤
     useEffect(() => {
@@ -87,7 +85,6 @@ export default function AddExpenseView({
 
     // --- Calculator Logic ---
     const handleKeyPress = (key) => {
-        // Haptic Feedback (嘗試觸發震動)
         if (navigator.vibrate) {
             try { navigator.vibrate(10); } catch(e) {}
         }
@@ -101,26 +98,35 @@ export default function AddExpenseView({
         if (key === 'DEL') {
             const newVal = calcExpression.slice(0, -1);
             setCalcExpression(newVal);
-            setAmount(newVal); // 即時同步
+            // 如果刪除後變空，或是純數字，同步回父層
+            if (!newVal || /^[\d.]+$/.test(newVal)) {
+                 setAmount(newVal);
+            }
             return;
         }
 
         if (key === 'DONE') {
-            // 計算結果
-            if (/[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression)) {
+            // 判斷是否還有未完成的運算 (包含運算符號且不以符號結尾)
+            const isPendingMath = /[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression);
+
+            if (isPendingMath) {
+                 // 情況 A：有未完成運算 -> 執行計算，更新顯示，保持鍵盤開啟
                  try {
                     const safeExpr = calcExpression.replace(/×/g, '*').replace(/÷/g, '/');
                     // eslint-disable-next-line no-new-func
                     const result = new Function('return ' + safeExpr)();
                     const finalVal = Math.round(result * 100) / 100;
-                    setCalcExpression(finalVal.toString());
-                    setAmount(finalVal.toString());
-                 } catch (e) {}
+                    const finalStr = finalVal.toString();
+                    setCalcExpression(finalStr);
+                    setAmount(finalStr);
+                 } catch (e) {
+                     // 計算錯誤時不動作
+                 }
             } else {
+                // 情況 B：沒有運算符號 (已經是結果或純數字) -> 收起鍵盤
                 setAmount(calcExpression);
+                setIsKeypadVisible(false);
             }
-            // 僅收起鍵盤，不送出表單
-            setIsKeypadVisible(false);
             return;
         }
 
@@ -138,11 +144,17 @@ export default function AddExpenseView({
 
         const newVal = calcExpression + key;
         setCalcExpression(newVal);
-        // 如果只是數字，即時同步到 amount，讓「完成記帳」按鈕可以亮起
+        
+        // 如果輸入後是純數字（沒有運算符號），即時同步到 amount
+        // 這樣「完成記帳」按鈕可以即時亮起，不用等到按 DONE
         if (/^[\d.]+$/.test(newVal)) {
             setAmount(newVal);
         }
     };
+
+    // Helper to determine render state
+    // 用於決定顯示 '=' 還是 '✓'
+    const isMathPending = /[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression);
 
     // Render Helpers
     const renderKey = (label, type = 'num', className = '') => (
@@ -156,11 +168,10 @@ export default function AddExpenseView({
                 ${type === 'ac' ? 'bg-gray-200 text-gray-600 btn-num' : ''}
                 ${type === 'primary' ? 'bg-gray-900 text-white shadow-md' : ''}
             `}
-            // 降低高度以符合 30% 畫面限制
             style={{ height: '42px' }} 
         >
             {label === 'DEL' ? <Delete size={20}/> : label}
-            {label === 'DONE' ? <Check size={24}/> : null}
+            {label === 'DONE' ? (isMathPending ? <Equal size={28}/> : <Check size={28}/>) : null}
         </button>
     );
 
@@ -299,7 +310,6 @@ export default function AddExpenseView({
         </div>
 
         {/* --- Global Submit Button (置底粉紅按鈕) --- */}
-        {/* 固定在底部，無論計算機是否開啟都存在，但計算機開啟時會被覆蓋 (z-index 控制) */}
         <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] z-40">
             <button 
                 onClick={addTransaction} 
@@ -337,16 +347,15 @@ export default function AddExpenseView({
                 {/* DONE Button spanning 2 rows vertically */}
                 <button
                     onClick={(e) => { e.stopPropagation(); handleKeyPress('DONE'); }}
-                    className="col-start-5 row-start-3 row-span-2 bg-gray-900 text-white rounded-xl flex items-center justify-center shadow-md btn-press"
+                    className={`col-start-5 row-start-3 row-span-2 rounded-xl flex items-center justify-center shadow-md btn-press ${isMathPending ? 'bg-rose-500 text-white' : 'bg-gray-900 text-white'}`}
                 >
-                    <Check size={28}/>
+                    {isMathPending ? <Equal size={28}/> : <Check size={28}/>}
                 </button>
 
                 {/* Row 4: 0(Span2), ., ÷, DONE(Cont) */}
-                {renderKey('0', 'num', 'col-span-2')} {/* 0 spans 2 columns */}
+                {renderKey('0', 'num', 'col-span-2')} 
                 {renderKey('.')}
                 {renderKey('÷', 'op')}
-                {/* DONE occupies the last slot automatically via grid flow/row-span */}
             </div>
         </div>
       </div>
