@@ -53,16 +53,33 @@ export default function AddExpenseView({
     // --- Local State for Calculator ---
     const [calcExpression, setCalcExpression] = useState('');
     const [isKeypadVisible, setIsKeypadVisible] = useState(true);
+    
+    // 用來解決 Race Condition 的 Ref
+    // 當使用者正在打字時，暫時忽略父層傳回來的舊 amount
+    const isTypingRef = useRef(false);
 
     // --- AI Bug Fix & Initialization ---
     useEffect(() => {
+        // 如果是使用者正在打字 (isTypingRef = true)
+        if (isTypingRef.current) {
+            // 只有當父層傳回來的資料終於追上本地資料時，才解除打字狀態
+            if (amount?.toString() === calcExpression) {
+                isTypingRef.current = false;
+            }
+            // 在打字期間，忽略所有不一致的外部更新 (防止舊資料覆蓋新輸入)
+            return;
+        }
+
+        // 如果不是打字狀態 (例如 AI 更新，或是初始載入)，則正常同步
         if (amount !== undefined && amount !== null && amount.toString() !== calcExpression) {
             setCalcExpression(amount.toString());
         }
+        
+        // 邊界情況：如果剛進入且 amount 為空，確保計算機也為空
         if (!amount && !calcExpression) {
              setCalcExpression('');
         }
-    }, [amount]); 
+    }, [amount]); // 依賴 amount 變化
 
     // Mount 時強制開啟鍵盤
     useEffect(() => {
@@ -85,6 +102,9 @@ export default function AddExpenseView({
 
     // --- Calculator Logic ---
     const handleKeyPress = (key) => {
+        // 標記為正在打字
+        isTypingRef.current = true;
+
         if (navigator.vibrate) {
             try { navigator.vibrate(10); } catch(e) {}
         }
@@ -96,16 +116,24 @@ export default function AddExpenseView({
         }
 
         if (key === 'DEL') {
-            const newVal = calcExpression.slice(0, -1);
-            setCalcExpression(newVal);
-            if (!newVal || /^[\d.]+$/.test(newVal)) {
-                 setAmount(newVal);
-            }
+            // 使用 Functional Update 確保基於最新狀態
+            setCalcExpression(prev => {
+                const newVal = prev.slice(0, -1);
+                // 同步回父層 (注意：這裡不能直接用 newVal，因為是在 callback 內)
+                // 但為了簡單與一致性，我們可以在這裡執行 setAmount
+                // 不過 React 建議副作用放在外層。
+                // 這裡為了確保順序，我們直接計算出值
+                if (!newVal || /^[\d.]+$/.test(newVal)) {
+                     setAmount(newVal);
+                }
+                return newVal;
+            });
             return;
         }
 
         if (key === 'DONE') {
             const isPendingMath = /[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression);
+
             if (isPendingMath) {
                  try {
                     const safeExpr = calcExpression.replace(/×/g, '*').replace(/÷/g, '/');
@@ -113,35 +141,41 @@ export default function AddExpenseView({
                     const result = new Function('return ' + safeExpr)();
                     const finalVal = Math.round(result * 100) / 100;
                     const finalStr = finalVal.toString();
+                    
                     setCalcExpression(finalStr);
                     setAmount(finalStr);
                  } catch (e) {}
             } else {
                 setAmount(calcExpression);
                 setIsKeypadVisible(false);
+                // 完成後解除打字狀態，允許外部更新
+                isTypingRef.current = false;
             }
             return;
         }
 
+        // Standard Keys
         const operators = ['+', '-', '×', '÷'];
-        const lastChar = calcExpression.slice(-1);
-
-        if (operators.includes(key)) {
-            if (operators.includes(lastChar)) {
-                setCalcExpression(prev => prev.slice(0, -1) + key);
-                return;
-            }
-            if (!calcExpression) return; 
-        }
-
-        const newVal = calcExpression + key;
-        setCalcExpression(newVal);
         
-        if (/^[\d.]+$/.test(newVal)) {
-            setAmount(newVal);
-        }
+        setCalcExpression(prev => {
+            const lastChar = prev.slice(-1);
+            if (operators.includes(key)) {
+                if (operators.includes(lastChar)) {
+                    return prev.slice(0, -1) + key;
+                }
+                if (!prev) return prev; 
+            }
+            const newVal = prev + key;
+            
+            // 即時同步邏輯
+            if (/^[\d.]+$/.test(newVal)) {
+                setAmount(newVal);
+            }
+            return newVal;
+        });
     };
 
+    // Helper to determine render state
     const isMathPending = /[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression);
 
     // Render Helpers
@@ -165,7 +199,6 @@ export default function AddExpenseView({
 
     return (
       <div className="h-full flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] bg-white relative">
-        {/* 已移除全螢幕綠色動畫 */}
         
         {/* AI Modal */}
         {isAiModalOpen && (
@@ -211,8 +244,7 @@ export default function AddExpenseView({
                 <span className={`text-5xl font-bold tracking-tight ${!calcExpression ? 'text-gray-300' : 'text-gray-800'}`}>
                     {calcExpression || '0'}
                 </span>
-                
-                {/* 優化：仿真游標 (細長、Rose色、Blink動畫) */}
+                {/* 游標效果 */}
                 {isKeypadVisible && <div className="w-[2px] h-10 bg-rose-500 animate-cursor-blink ml-1"></div>}
             </div>
 
@@ -292,7 +324,7 @@ export default function AddExpenseView({
              )}
         </div>
 
-        {/* --- Global Submit Button (置底粉紅按鈕) --- */}
+        {/* --- Global Submit Button --- */}
         <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] z-40">
             <button 
                 onClick={addTransaction} 
@@ -303,7 +335,7 @@ export default function AddExpenseView({
             </button>
         </div>
 
-        {/* --- 5-Column Calculator Keypad (Fixed Overlay) --- */}
+        {/* --- 5-Column Calculator Keypad --- */}
         <div 
             className={`fixed bottom-0 left-0 w-full bg-gray-50 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-50 transition-transform duration-300 ease-out ${isKeypadVisible ? 'translate-y-0' : 'translate-y-[110%]'}`}
         >
