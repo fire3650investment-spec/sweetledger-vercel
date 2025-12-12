@@ -130,9 +130,6 @@ export default function SweetLedger() {
         setLedgerCode(savedCode);
         setView('dashboard');
         setPayer(u.uid);
-        // 優化重點：如果有 Saved Code，代表我們預期會載入資料。
-        // 此時 不要 關閉 isInitializing，直到資料載入完成（無論是從 Cache 還是 Network）
-        // 這樣可以避免「蛋糕 -> 白畫面 -> 首頁」的閃爍。
       } else {
         // 如果沒有登入或沒有 Code，直接關閉蛋糕，顯示 Onboarding
         setIsInitializing(false);
@@ -147,7 +144,6 @@ export default function SweetLedger() {
   useEffect(() => {
     if (!user || !ledgerCode) return;
 
-    // 1. 嘗試讀取本地快取 (Local Cache) - 實現「秒開」
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
     try {
         const cachedData = localStorage.getItem(cacheKey);
@@ -156,10 +152,9 @@ export default function SweetLedger() {
             if (parsed) {
                 console.log("Loaded from cache");
                 setLedgerData(parsed);
-                // 快取讀到了，立刻關閉蛋糕動畫，進入首頁
-                setIsInitializing(false); 
+                // 這裡雖然載入快取，但為了讓畫面平滑，我們等 React 渲染完這幀後再關閉 Loading
+                requestAnimationFrame(() => setIsInitializing(false));
                 
-                // 恢復一些 UI 狀態
                 if (parsed.currency) setCurrency(parsed.currency);
                 if (parsed.users && parsed.users[user.uid]) {
                     setMyNickname(parsed.users[user.uid].name);
@@ -170,24 +165,16 @@ export default function SweetLedger() {
         console.error("Cache read error", e);
     }
 
-    // 2. 建立網路連線 (Firestore Listener) - 確保資料同步
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        
-        // 寫入快取 (Update Cache)
         localStorage.setItem(cacheKey, JSON.stringify(data));
-        
-        // 更新 React State
         setLedgerData(data);
-        
         if (data.currency) setCurrency(data.currency);
         if (data.users && data.users[user.uid]) {
             setMyNickname(data.users[user.uid].name);
         }
-        
-        // 確保動畫關閉 (如果沒有快取，這是第一次關閉的時機)
         setIsInitializing(false);
       }
     });
@@ -269,7 +256,7 @@ export default function SweetLedger() {
 
   }, [ledgerData]); 
 
-  // --- Handlers ---
+  // --- Handlers (Keep unchanged) ---
   const handleCustomSplitChange = (field, value) => {
     const total = parseFloat(amount) || 0;
     const val = parseFloat(value) || 0;
@@ -568,12 +555,10 @@ export default function SweetLedger() {
         finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     }
 
-    // 優化 2: 樂觀更新 (Optimistic UI)
-    // 立即清除表單並切換頁面，不等待資料庫回應
+    // Optimistic UI update
     setIsSubmittingTransaction(false);
     setView('dashboard');
 
-    // 延遲重置表單，避免切換動畫時看到空白
     setTimeout(() => {
         setAmount(''); setNote(''); setAiInput(''); setSelectedImage(null); 
         setIsSubscription(false); setSubCycle('monthly'); setSubPayDay(''); 
@@ -596,7 +581,6 @@ export default function SweetLedger() {
             projectId: currentProjectId,
         };
 
-        // 背景執行寫入
         if (isSubscription) {
           let nextDate = new Date(selectedDate);
           if (subCycle === 'monthly') {
@@ -631,7 +615,6 @@ export default function SweetLedger() {
           });
         }
     } catch (e) {
-        // 如果背景寫入失敗，才報錯 (這在正式產品中通常需要一個 Toast Notification 系統，MVP 先用 log/alert)
         console.error("Background Write Error:", e);
         alert("⚠️ 連線異常，剛剛的記帳可能未成功寫入，請檢查網路。");
     }
@@ -745,11 +728,33 @@ export default function SweetLedger() {
   };
 
   if (isInitializing) {
-     return (<div className="min-h-screen flex items-center justify-center bg-pink-50"><div className="text-6xl animate-bounce">🍰</div></div>);
+     return (
+       <div className={`min-h-screen flex items-center justify-center bg-white transition-opacity duration-500 ${isInitializing ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+         {/* React Loading Shell - 確保與 index.html 的 App Shell 視覺一致 */}
+         <div style={{
+            minHeight: '100dvh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#fff',
+            fontFamily: 'system-ui, -apple-system, sans-serif'
+         }}>
+            <div style={{fontSize: '4rem', animation: 'sweet-bounce 1s infinite'}}>🍰</div>
+            <p style={{
+              marginTop: '1rem',
+              color: '#db2777',
+              fontWeight: 'bold',
+              fontSize: '0.875rem',
+              animation: 'sweet-fade 1.5s infinite alternate'
+            }}>SweetLedger Loading...</p>
+         </div>
+       </div>
+     );
   }
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-rose-100 pb-[env(safe-area-inset-bottom)]">
+    <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-rose-100 pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500">
       {view === 'onboarding' && (
         <OnboardingView 
           user={user}
