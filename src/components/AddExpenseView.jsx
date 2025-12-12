@@ -7,7 +7,7 @@ export default function AddExpenseView({
   ledgerData,
   currentProjectId,
   user,
-  showSuccessAnimation,
+  // showSuccessAnimation, // 已移除
   isAiModalOpen,
   setIsAiModalOpen,
   aiModalInput,
@@ -98,7 +98,6 @@ export default function AddExpenseView({
         if (key === 'DEL') {
             const newVal = calcExpression.slice(0, -1);
             setCalcExpression(newVal);
-            // 如果刪除後變空，或是純數字，同步回父層
             if (!newVal || /^[\d.]+$/.test(newVal)) {
                  setAmount(newVal);
             }
@@ -106,11 +105,8 @@ export default function AddExpenseView({
         }
 
         if (key === 'DONE') {
-            // 判斷是否還有未完成的運算 (包含運算符號且不以符號結尾)
             const isPendingMath = /[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression);
-
             if (isPendingMath) {
-                 // 情況 A：有未完成運算 -> 執行計算，更新顯示，保持鍵盤開啟
                  try {
                     const safeExpr = calcExpression.replace(/×/g, '*').replace(/÷/g, '/');
                     // eslint-disable-next-line no-new-func
@@ -119,18 +115,14 @@ export default function AddExpenseView({
                     const finalStr = finalVal.toString();
                     setCalcExpression(finalStr);
                     setAmount(finalStr);
-                 } catch (e) {
-                     // 計算錯誤時不動作
-                 }
+                 } catch (e) {}
             } else {
-                // 情況 B：沒有運算符號 (已經是結果或純數字) -> 收起鍵盤
                 setAmount(calcExpression);
                 setIsKeypadVisible(false);
             }
             return;
         }
 
-        // Standard Keys
         const operators = ['+', '-', '×', '÷'];
         const lastChar = calcExpression.slice(-1);
 
@@ -145,15 +137,11 @@ export default function AddExpenseView({
         const newVal = calcExpression + key;
         setCalcExpression(newVal);
         
-        // 如果輸入後是純數字（沒有運算符號），即時同步到 amount
-        // 這樣「完成記帳」按鈕可以即時亮起，不用等到按 DONE
         if (/^[\d.]+$/.test(newVal)) {
             setAmount(newVal);
         }
     };
 
-    // Helper to determine render state
-    // 用於決定顯示 '=' 還是 '✓'
     const isMathPending = /[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression);
 
     // Render Helpers
@@ -177,12 +165,7 @@ export default function AddExpenseView({
 
     return (
       <div className="h-full flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] bg-white relative">
-        {showSuccessAnimation && (
-            <div className="absolute inset-0 z-[100] bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
-                <div className="scale-150 text-green-500 animate-bounce"><CheckCircle2 size={80} strokeWidth={3} /></div>
-                <h2 className="text-2xl font-bold text-gray-800 mt-4">記帳完成！</h2>
-            </div>
-        )}
+        {/* 已移除全螢幕綠色動畫 */}
         
         {/* AI Modal */}
         {isAiModalOpen && (
@@ -228,8 +211,9 @@ export default function AddExpenseView({
                 <span className={`text-5xl font-bold tracking-tight ${!calcExpression ? 'text-gray-300' : 'text-gray-800'}`}>
                     {calcExpression || '0'}
                 </span>
-                {/* 游標效果：只在開啟鍵盤時顯示 */}
-                {isKeypadVisible && <div className="w-0.5 h-10 bg-rose-500 animate-pulse ml-1 rounded-full"></div>}
+                
+                {/* 優化：仿真游標 (細長、Rose色、Blink動畫) */}
+                {isKeypadVisible && <div className="w-[2px] h-10 bg-rose-500 animate-cursor-blink ml-1"></div>}
             </div>
 
              <div className="flex gap-2 mt-2 justify-end">
@@ -246,7 +230,6 @@ export default function AddExpenseView({
         </div>
         
         {/* --- Scrollable Content Area --- */}
-        {/* 動態調整 padding-bottom 以避開鍵盤 (鍵盤約佔 30vh) */}
         <div className={`flex-1 overflow-y-auto px-4 pb-4 ${isKeypadVisible ? 'mb-[32vh]' : 'mb-20'} transition-all duration-300`}>
              <div className="bg-gray-50 p-3 rounded-xl mb-3 flex items-center gap-2 border border-gray-100">
                 <input 
@@ -325,26 +308,22 @@ export default function AddExpenseView({
             className={`fixed bottom-0 left-0 w-full bg-gray-50 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-50 transition-transform duration-300 ease-out ${isKeypadVisible ? 'translate-y-0' : 'translate-y-[110%]'}`}
         >
             <div className="grid grid-cols-5 gap-2 px-1 py-2">
-                {/* Row 1: 7, 8, 9, +, DEL */}
                 {renderKey('7')}
                 {renderKey('8')}
                 {renderKey('9')}
                 {renderKey('+', 'op')}
                 {renderKey('DEL', 'ac')}
 
-                {/* Row 2: 4, 5, 6, -, AC */}
                 {renderKey('4')}
                 {renderKey('5')}
                 {renderKey('6')}
                 {renderKey('-', 'op')}
                 {renderKey('AC', 'ac')}
 
-                {/* Row 3: 1, 2, 3, x, DONE(Start) */}
                 {renderKey('1')}
                 {renderKey('2')}
                 {renderKey('3')}
                 {renderKey('×', 'op')}
-                {/* DONE Button spanning 2 rows vertically */}
                 <button
                     onClick={(e) => { e.stopPropagation(); handleKeyPress('DONE'); }}
                     className={`col-start-5 row-start-3 row-span-2 rounded-xl flex items-center justify-center shadow-md btn-press ${isMathPending ? 'bg-rose-500 text-white' : 'bg-gray-900 text-white'}`}
@@ -352,7 +331,6 @@ export default function AddExpenseView({
                     {isMathPending ? <Equal size={28}/> : <Check size={28}/>}
                 </button>
 
-                {/* Row 4: 0(Span2), ., ÷, DONE(Cont) */}
                 {renderKey('0', 'num', 'col-span-2')} 
                 {renderKey('.')}
                 {renderKey('÷', 'op')}

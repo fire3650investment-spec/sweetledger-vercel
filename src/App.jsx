@@ -22,11 +22,9 @@ import {
   Home, PieChart, Settings, Plus, Briefcase, Sparkles
 } from 'lucide-react';
 
-// Utils & Constants
 import { INITIAL_LEDGER_STATE, DEFAULT_CATEGORIES, CATEGORIES, COLORS } from './utils/constants';
 import { formatCurrency, generateId, callGemini } from './utils/helpers';
 
-// Components
 import DashboardView from './components/DashboardView';
 import AddExpenseView from './components/AddExpenseView';
 import StatsView from './components/StatsView';
@@ -36,7 +34,6 @@ import OnboardingView from './components/OnboardingView';
 import EditTransactionModal from './components/EditTransactionModal';
 import SubscriptionsView from './components/SubscriptionsView';
 
-// --- Configuration ---
 const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
 const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
 const auth = app ? getAuth(app) : null;
@@ -53,7 +50,6 @@ export default function SweetLedger() {
     );
   }
 
-  // --- Global State ---
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true); 
   const [isInitializing, setIsInitializing] = useState(true);
@@ -64,7 +60,6 @@ export default function SweetLedger() {
   const [loading, setLoading] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState('daily'); 
 
-  // --- Add Expense State ---
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
@@ -75,38 +70,31 @@ export default function SweetLedger() {
   const [payer, setPayer] = useState(''); 
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); 
   
-  // Split State
   const [splitType, setSplitType] = useState('even'); 
   const [customSplitHost, setCustomSplitHost] = useState('');
   const [customSplitGuest, setCustomSplitGuest] = useState('');
   const [isSubmittingTransaction, setIsSubmittingTransaction] = useState(false);
-  const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+  // 移除 showSuccessAnimation 狀態，因為我們採用立即跳轉
 
-  // AI Modal State
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiModalInput, setAiModalInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
 
-  // Edit Transaction Modal State
   const [isEditTxModalOpen, setIsEditTxModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
 
-  // Subscription State
   const [isSubscription, setIsSubscription] = useState(false);
   const [subCycle, setSubCycle] = useState('monthly'); 
   const [subPayDay, setSubPayDay] = useState(''); 
 
-  // Stats State
   const [statsMonth, setStatsMonth] = useState(new Date().toISOString().slice(0, 7)); 
   
-  // Project & Category Management State
   const [isEditingProject, setIsEditingProject] = useState(false);
   const [editingProjectData, setEditingProjectData] = useState({ id: '', name: '', icon: 'project_daily' });
   
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [editingCategoryData, setEditingCategoryData] = useState({ id: '', name: '', icon: 'food', color: COLORS[0].class, hex: COLORS[0].hex });
   
-  // Settings & Avatar State
   const [myNickname, setMyNickname] = useState('');
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [tempAvatar, setTempAvatar] = useState(''); 
@@ -115,7 +103,6 @@ export default function SweetLedger() {
   const recognitionRef = useRef(null);
   const hasCheckedSubsRef = useRef(false);
 
-  // --- Effects ---
   useEffect(() => {
     if (user && !payer) {
         setPayer(user.uid);
@@ -144,7 +131,8 @@ export default function SweetLedger() {
         setView('dashboard');
         setPayer(u.uid);
       }
-      setTimeout(() => setIsInitializing(false), 800);
+      // 優化 1: 移除 setTimeout，加速啟動
+      setIsInitializing(false);
     });
 
     initAuth();
@@ -541,6 +529,19 @@ export default function SweetLedger() {
         finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     }
 
+    // 優化 2: 樂觀更新 (Optimistic UI)
+    // 立即清除表單並切換頁面，不等待資料庫回應
+    setIsSubmittingTransaction(false);
+    setView('dashboard');
+
+    // 延遲重置表單，避免切換動畫時看到空白
+    setTimeout(() => {
+        setAmount(''); setNote(''); setAiInput(''); setSelectedImage(null); 
+        setIsSubscription(false); setSubCycle('monthly'); setSubPayDay(''); 
+        setSplitType('even'); setCustomSplitHost(''); setCustomSplitGuest('');
+        setDate(new Date().toISOString().slice(0, 10));
+    }, 500);
+
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const selectedDate = new Date(date).toISOString(); 
@@ -556,13 +557,11 @@ export default function SweetLedger() {
             projectId: currentProjectId,
         };
 
+        // 背景執行寫入
         if (isSubscription) {
-          // BUG FIX: Calculate NEXT payment date, not TODAY
           let nextDate = new Date(selectedDate);
           if (subCycle === 'monthly') {
-              // Move to next month
               nextDate.setMonth(nextDate.getMonth() + 1);
-              // Try to respect Pay Day if specified
               if (subPayDay) {
                   const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
                   const targetDay = Math.min(parseInt(subPayDay), daysInNextMonth);
@@ -579,7 +578,7 @@ export default function SweetLedger() {
                   cycle: subCycle, 
                   payDay: parseInt(subPayDay) || 1, 
                   mode: 'infinite', 
-                  nextPaymentDate: nextDate.toISOString(), // FIXED: Use nextDate
+                  nextPaymentDate: nextDate.toISOString(),
               }),
               transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }) 
           });
@@ -592,18 +591,10 @@ export default function SweetLedger() {
               'gamification.level': Math.floor(newTotalXp / 1000) + 1 
           });
         }
-        setIsSubmittingTransaction(false);
-        setShowSuccessAnimation(true);
-        setTimeout(() => {
-            setAmount(''); setNote(''); setAiInput(''); setSelectedImage(null); setIsSubscription(false); setSubCycle('monthly'); setSubPayDay(''); setSplitType('even'); setCustomSplitHost(''); setCustomSplitGuest('');
-            setDate(new Date().toISOString().slice(0, 10));
-            setShowSuccessAnimation(false);
-            setView('dashboard');
-        }, 1000);
     } catch (e) {
-        console.error("Add Transaction Error", e);
-        setIsSubmittingTransaction(false);
-        alert("記帳失敗，請重試");
+        // 如果背景寫入失敗，才報錯 (這在正式產品中通常需要一個 Toast Notification 系統，MVP 先用 log/alert)
+        console.error("Background Write Error:", e);
+        alert("⚠️ 連線異常，剛剛的記帳可能未成功寫入，請檢查網路。");
     }
   };
 
@@ -714,7 +705,6 @@ export default function SweetLedger() {
     link.click();
   };
 
-  // --- Render ---
   if (isInitializing) {
      return (<div className="min-h-screen flex items-center justify-center bg-pink-50"><div className="text-6xl animate-bounce">🍰</div></div>);
   }
@@ -740,7 +730,7 @@ export default function SweetLedger() {
                     ledgerData={ledgerData}
                     currentProjectId={currentProjectId}
                     user={user}
-                    showSuccessAnimation={showSuccessAnimation}
+                    // showSuccessAnimation={showSuccessAnimation} // 移除
                     isAiModalOpen={isAiModalOpen}
                     setIsAiModalOpen={setIsAiModalOpen}
                     aiModalInput={aiModalInput}
@@ -857,7 +847,6 @@ export default function SweetLedger() {
                     />
                 )}
                 
-                {/* Global Edit Transaction Modal */}
                 <EditTransactionModal 
                     isOpen={isEditTxModalOpen}
                     onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
@@ -868,14 +857,12 @@ export default function SweetLedger() {
                     ledgerData={ledgerData}
                 />
 
-                {/* Bottom Navigation */}
                 {view !== 'subscriptions' && (
                 <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
                     <div className="flex justify-between items-center max-w-md mx-auto">
                     <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
                     <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
                     
-                    {/* Dynamic Add Button (Handled by Dashboard logic if on Dashboard, otherwise standard plus) */}
                     <div className="relative -top-6">
                         {(() => {
                             const inputMode = ledgerData.settings?.defaultInputMode || 'standard';
