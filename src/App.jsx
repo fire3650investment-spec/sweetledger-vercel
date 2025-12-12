@@ -74,7 +74,6 @@ export default function SweetLedger() {
   const [customSplitHost, setCustomSplitHost] = useState('');
   const [customSplitGuest, setCustomSplitGuest] = useState('');
   const [isSubmittingTransaction, setIsSubmittingTransaction] = useState(false);
-  // 移除 showSuccessAnimation 狀態，因為我們採用立即跳轉
 
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiModalInput, setAiModalInput] = useState('');
@@ -109,6 +108,7 @@ export default function SweetLedger() {
     }
   }, [user]);
 
+  // Auth Initialization Strategy
   useEffect(() => {
     const initAuth = async () => {
       const token = window.__initial_auth_token;
@@ -130,26 +130,65 @@ export default function SweetLedger() {
         setLedgerCode(savedCode);
         setView('dashboard');
         setPayer(u.uid);
+        // 優化重點：如果有 Saved Code，代表我們預期會載入資料。
+        // 此時 不要 關閉 isInitializing，直到資料載入完成（無論是從 Cache 還是 Network）
+        // 這樣可以避免「蛋糕 -> 白畫面 -> 首頁」的閃爍。
+      } else {
+        // 如果沒有登入或沒有 Code，直接關閉蛋糕，顯示 Onboarding
+        setIsInitializing(false);
       }
-      // 優化 1: 移除 setTimeout，加速啟動
-      setIsInitializing(false);
     });
 
     initAuth();
     return () => unsubscribe();
   }, []);
 
+  // Data Loading Strategy (Local First + Network Sync)
   useEffect(() => {
     if (!user || !ledgerCode) return;
+
+    // 1. 嘗試讀取本地快取 (Local Cache) - 實現「秒開」
+    const cacheKey = `sweet_ledger_data_${ledgerCode}`;
+    try {
+        const cachedData = localStorage.getItem(cacheKey);
+        if (cachedData) {
+            const parsed = JSON.parse(cachedData);
+            if (parsed) {
+                console.log("Loaded from cache");
+                setLedgerData(parsed);
+                // 快取讀到了，立刻關閉蛋糕動畫，進入首頁
+                setIsInitializing(false); 
+                
+                // 恢復一些 UI 狀態
+                if (parsed.currency) setCurrency(parsed.currency);
+                if (parsed.users && parsed.users[user.uid]) {
+                    setMyNickname(parsed.users[user.uid].name);
+                }
+            }
+        }
+    } catch (e) {
+        console.error("Cache read error", e);
+    }
+
+    // 2. 建立網路連線 (Firestore Listener) - 確保資料同步
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
+        
+        // 寫入快取 (Update Cache)
+        localStorage.setItem(cacheKey, JSON.stringify(data));
+        
+        // 更新 React State
         setLedgerData(data);
+        
         if (data.currency) setCurrency(data.currency);
         if (data.users && data.users[user.uid]) {
             setMyNickname(data.users[user.uid].name);
         }
+        
+        // 確保動畫關閉 (如果沒有快取，這是第一次關閉的時機)
+        setIsInitializing(false);
       }
     });
     return () => unsubscribe();
