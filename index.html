@@ -3,44 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <!-- 確保視窗設定正確，避免移動端縮放問題 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>SweetLedger</title>
-    <style>
-      /* 定義啟動時的關鍵影格動畫 */
-      @keyframes sweet-bounce {
-        0%, 100% { transform: translateY(-25%); animation-timing-function: cubic-bezier(0.8,0,1,1); }
-        50% { transform: translateY(0); animation-timing-function: cubic-bezier(0,0,0.2,1); }
-      }
-      @keyframes sweet-fade {
-        0% { opacity: 0.5; }
-        100% { opacity: 1; }
-      }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>情侶記帳 - SweetLedger</title>
+    
+    <!-- PWA 設定 -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#ec4899">
+
+    <script type="module">
+      const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {};
+      window.__firebase_config = env.VITE_FIREBASE_CONFIG || '{}';
+      window.__initial_auth_token = env.VITE_AUTH_TOKEN || '';
+      window.__app_id = 'sweet-ledger-beta';
+    </script>
   </head>
   <body>
-    <div id="root">
-      <!-- App Shell: 靜態預載畫面 -->
-      <!-- 這個區塊只會在 React 載入前顯示，載入後會自動被取代 -->
-      <div style="
-        min-height: 100dvh; 
-        display: flex; 
-        flex-direction: column;
-        align-items: center; 
-        justify-content: center; 
-        background-color: #fff;
-        font-family: system-ui, -apple-system, sans-serif;
-      ">
-        <div style="font-size: 4rem; animation: sweet-bounce 1s infinite;">🍰</div>
-        <p style="
-          margin-top: 1rem; 
-          color: #db2777; 
-          font-weight: bold; 
-          font-size: 0.875rem; 
-          animation: sweet-fade 1.5s infinite alternate;
-        ">SweetLedger Loading...</p>
-      </div>
-    </div>
+    <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
