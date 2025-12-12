@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Camera, RefreshCw, Sparkles, StopCircle, Mic, CheckCircle2, Check, Delete, Calculator, Equal, Keyboard } from 'lucide-react';
-import { getIconComponent, formatCurrency } from '../utils/helpers';
+import { X, Camera, RefreshCw, Sparkles, StopCircle, Mic, CheckCircle2, Check, Delete, Keyboard } from 'lucide-react';
+import { getIconComponent } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
 
 export default function AddExpenseView({
@@ -52,19 +52,24 @@ export default function AddExpenseView({
     
     // --- Local State for Calculator ---
     const [calcExpression, setCalcExpression] = useState('');
-    // 預設為 true，確保進入時鍵盤是展開的
     const [isKeypadVisible, setIsKeypadVisible] = useState(true);
 
-    // Initialize calcExpression from amount if exists (e.g. from AI)
+    // --- AI Bug Fix: 監聽 amount 變化 ---
     useEffect(() => {
-        if (amount && amount !== calcExpression) {
+        // 當父層 amount 改變 (例如 AI 解析完成)，且與目前計算機顯示不同時，同步更新
+        if (amount !== undefined && amount !== null && amount.toString() !== calcExpression) {
             setCalcExpression(amount.toString());
-        } else if (!amount) {
-            setCalcExpression('');
         }
-        // 強制進入時展開鍵盤
+        // 如果剛進入且 amount 為空，確保計算機也為空
+        if (!amount && !calcExpression) {
+             setCalcExpression('');
+        }
+    }, [amount]); // 加入 amount 作為依賴
+
+    // Mount 時強制開啟鍵盤
+    useEffect(() => {
         setIsKeypadVisible(true);
-    }, []); 
+    }, []);
 
     const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
@@ -77,12 +82,12 @@ export default function AddExpenseView({
             .filter(t => t.category.id === selectedCategory.id && t.note)
             .map(t => t.note);
         const uniqueNotes = [...new Set(notes)];
-        recentNotes.push(...uniqueNotes.slice(0, 5)); // Limit to 5
+        recentNotes.push(...uniqueNotes.slice(0, 5));
     }
 
     // --- Calculator Logic ---
     const handleKeyPress = (key) => {
-        // Haptic Feedback (Android only, iOS ignored)
+        // Haptic Feedback (嘗試觸發震動)
         if (navigator.vibrate) {
             try { navigator.vibrate(10); } catch(e) {}
         }
@@ -94,30 +99,28 @@ export default function AddExpenseView({
         }
 
         if (key === 'DEL') {
-            setCalcExpression(prev => prev.slice(0, -1));
+            const newVal = calcExpression.slice(0, -1);
+            setCalcExpression(newVal);
+            setAmount(newVal); // 即時同步
             return;
         }
 
-        if (key === '=' || key === 'DONE') {
-            try {
-                // Safe evaluation of simple math
-                const safeExpr = calcExpression.replace(/×/g, '*').replace(/÷/g, '/');
-                if (!/^[\d+\-*/.\s]+$/.test(safeExpr)) return;
-                
-                // eslint-disable-next-line no-new-func
-                const result = new Function('return ' + safeExpr)();
-                const finalVal = Math.round(result * 100) / 100;
-                
-                setCalcExpression(finalVal.toString());
-                setAmount(finalVal.toString());
-                
-                // 按下 Done 後收起鍵盤，讓使用者確認畫面
-                if (key === 'DONE') {
-                    setIsKeypadVisible(false);
-                }
-            } catch (e) {
-                // Error handling
+        if (key === 'DONE') {
+            // 計算結果
+            if (/[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression)) {
+                 try {
+                    const safeExpr = calcExpression.replace(/×/g, '*').replace(/÷/g, '/');
+                    // eslint-disable-next-line no-new-func
+                    const result = new Function('return ' + safeExpr)();
+                    const finalVal = Math.round(result * 100) / 100;
+                    setCalcExpression(finalVal.toString());
+                    setAmount(finalVal.toString());
+                 } catch (e) {}
+            } else {
+                setAmount(calcExpression);
             }
+            // 僅收起鍵盤，不送出表單
+            setIsKeypadVisible(false);
             return;
         }
 
@@ -125,7 +128,6 @@ export default function AddExpenseView({
         const operators = ['+', '-', '×', '÷'];
         const lastChar = calcExpression.slice(-1);
 
-        // Prevent double operators
         if (operators.includes(key)) {
             if (operators.includes(lastChar)) {
                 setCalcExpression(prev => prev.slice(0, -1) + key);
@@ -134,35 +136,33 @@ export default function AddExpenseView({
             if (!calcExpression) return; 
         }
 
-        setCalcExpression(prev => prev + key);
+        const newVal = calcExpression + key;
+        setCalcExpression(newVal);
+        // 如果只是數字，即時同步到 amount，讓「完成記帳」按鈕可以亮起
+        if (/^[\d.]+$/.test(newVal)) {
+            setAmount(newVal);
+        }
     };
 
-    // Auto-sync amount when expression is just a number
-    useEffect(() => {
-        if (/^[\d.]+$/.test(calcExpression)) {
-            setAmount(calcExpression);
-        }
-    }, [calcExpression, setAmount]);
-
     // Render Helpers
-    const renderKey = (label, type = 'num', span = 1) => (
+    const renderKey = (label, type = 'num', className = '') => (
         <button
             onClick={(e) => { e.stopPropagation(); handleKeyPress(label); }}
             className={`
-                btn-press rounded-2xl text-xl font-bold flex items-center justify-center select-none
-                ${span === 2 ? 'col-span-2' : ''}
+                btn-press rounded-xl text-xl font-bold flex items-center justify-center select-none
+                ${className}
                 ${type === 'num' ? 'bg-white text-gray-800 btn-num' : ''}
                 ${type === 'op' ? 'bg-rose-50 text-rose-600 btn-op' : ''}
-                ${type === 'ac' ? 'bg-gray-200 text-gray-600 text-lg btn-num' : ''}
+                ${type === 'ac' ? 'bg-gray-200 text-gray-600 btn-num' : ''}
+                ${type === 'primary' ? 'bg-gray-900 text-white shadow-md' : ''}
             `}
-            style={{ height: '56px' }} 
+            // 降低高度以符合 30% 畫面限制
+            style={{ height: '42px' }} 
         >
-            {label === 'DEL' ? <Delete size={22}/> : label}
-            {label === 'DONE' ? (calcExpression.match(/[+\-×÷]/) ? <Equal size={28}/> : <Check size={28}/>) : null}
+            {label === 'DEL' ? <Delete size={20}/> : label}
+            {label === 'DONE' ? <Check size={24}/> : null}
         </button>
     );
-
-    const isMathPending = /[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression);
 
     return (
       <div className="h-full flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] bg-white relative">
@@ -200,7 +200,6 @@ export default function AddExpenseView({
         
         {/* --- Amount Display (Calculator Screen) --- */}
         <div className="px-4 py-2 shrink-0">
-             {/* Controls Row */}
              <div className="flex justify-between items-center mb-2">
                 <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
                     {['TWD', 'JPY', 'THB'].map(c => (
@@ -210,7 +209,7 @@ export default function AddExpenseView({
                 <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-gray-100 text-gray-600 text-[10px] px-2 py-1 rounded-lg outline-none font-medium"/>
             </div>
 
-            {/* Main Display (Click to open keypad) */}
+            {/* Display Area */}
             <div 
                 onClick={() => setIsKeypadVisible(true)}
                 className={`w-full h-20 rounded-2xl flex items-center justify-end px-4 overflow-hidden relative transition-all duration-200 ${isKeypadVisible ? 'bg-gray-50 ring-2 ring-rose-100' : 'bg-white border border-transparent'}`}
@@ -218,11 +217,10 @@ export default function AddExpenseView({
                 <span className={`text-5xl font-bold tracking-tight ${!calcExpression ? 'text-gray-300' : 'text-gray-800'}`}>
                     {calcExpression || '0'}
                 </span>
-                {/* Simulated Cursor */}
+                {/* 游標效果：只在開啟鍵盤時顯示 */}
                 {isKeypadVisible && <div className="w-0.5 h-10 bg-rose-500 animate-pulse ml-1 rounded-full"></div>}
             </div>
 
-            {/* Payer Toggle */}
              <div className="flex gap-2 mt-2 justify-end">
                 <button onClick={() => setPayer(user.uid)} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${payer === user.uid ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>我付</button>
                 {Object.keys(ledgerData.users).find(uid => uid !== user.uid) && (
@@ -237,22 +235,21 @@ export default function AddExpenseView({
         </div>
         
         {/* --- Scrollable Content Area --- */}
-        {/* pb-80 ensures content is not hidden behind the fixed keypad */}
-        <div className={`flex-1 overflow-y-auto px-4 pb-4 ${isKeypadVisible ? 'pb-[45vh]' : 'pb-24'} transition-all duration-300`}>
-             {/* Note Input (Focus closes keypad) */}
+        {/* 動態調整 padding-bottom 以避開鍵盤 (鍵盤約佔 30vh) */}
+        <div className={`flex-1 overflow-y-auto px-4 pb-4 ${isKeypadVisible ? 'mb-[32vh]' : 'mb-20'} transition-all duration-300`}>
              <div className="bg-gray-50 p-3 rounded-xl mb-3 flex items-center gap-2 border border-gray-100">
                 <input 
                     type="text" 
                     value={note} 
                     onChange={(e) => setNote(e.target.value)} 
-                    onFocus={() => setIsKeypadVisible(false)} // Close keypad on focus
+                    onFocus={() => setIsKeypadVisible(false)} // 點選備註時，收起計算機
                     placeholder={`備註: ${selectedCategory.name}...`} 
                     className="flex-1 bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400"
                 />
              </div>
              {recentNotes.length > 0 && (<div className="mb-4 flex flex-wrap gap-2">{recentNotes.map((n, idx) => (<button key={idx} onClick={() => setNote(n)} className="px-2 py-1 bg-gray-100 text-gray-500 text-[10px] rounded-lg border border-gray-200 active:bg-gray-200">{n}</button>))}</div>)}
 
-             {/* Categories Grid */}
+             {/* Categories */}
              <div className="grid grid-cols-4 gap-3 mb-6">
                 {filteredCategories.map(cat => { 
                     const CatIcon = getIconComponent(cat.icon); 
@@ -266,7 +263,6 @@ export default function AddExpenseView({
                 })}
              </div>
 
-             {/* Advanced Options */}
              <div className="bg-white border border-gray-100 p-3 rounded-xl space-y-3 mb-6">
                 <div className="flex justify-between items-center">
                     <span className="text-xs font-bold text-gray-500">分攤</span>
@@ -295,66 +291,62 @@ export default function AddExpenseView({
                 )}
              </div>
 
-             {/* Show "Open Keypad" button if keypad is hidden but we might want it back */}
              {!isKeypadVisible && (
-                 <button onClick={() => setIsKeypadVisible(true)} className="w-full py-3 text-gray-400 text-xs font-bold flex items-center justify-center gap-2 bg-gray-50 rounded-xl mb-8">
+                 <button onClick={() => setIsKeypadVisible(true)} className="w-full py-3 text-gray-400 text-xs font-bold flex items-center justify-center gap-2 bg-gray-50 rounded-xl mb-4">
                      <Keyboard size={16}/> 開啟計算機
                  </button>
              )}
         </div>
 
-        {/* --- Custom Calculator Keypad (Fixed Bottom Overlay) --- */}
+        {/* --- Global Submit Button (置底粉紅按鈕) --- */}
+        {/* 固定在底部，無論計算機是否開啟都存在，但計算機開啟時會被覆蓋 (z-index 控制) */}
+        <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] z-40">
+            <button 
+                onClick={addTransaction} 
+                disabled={!amount || parseFloat(amount) <= 0 || isSubmittingTransaction}
+                className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-colors ${amount && parseFloat(amount) > 0 && !isSubmittingTransaction ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-gray-200 text-gray-400'}`}
+            >
+                {isSubmittingTransaction ? (<><RefreshCw className="animate-spin" size={20}/> 處理中...</>) : (<><Check size={20}/> 完成記帳</>)}
+            </button>
+        </div>
+
+        {/* --- 5-Column Calculator Keypad (Fixed Overlay) --- */}
         <div 
-            className={`fixed bottom-0 left-0 w-full bg-gray-100 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-50 transition-transform duration-300 ease-out ${isKeypadVisible ? 'translate-y-0' : 'translate-y-[110%]'}`}
+            className={`fixed bottom-0 left-0 w-full bg-gray-50 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-50 transition-transform duration-300 ease-out ${isKeypadVisible ? 'translate-y-0' : 'translate-y-[110%]'}`}
         >
-            {/* Submit Action Bar (Above Keypad) */}
-            <div className="flex justify-between items-center mb-3 px-1 h-8">
-                <div className="text-xs text-gray-400 font-medium">
-                    {isSubscription ? `將設為 ${subCycle==='monthly'?'每月':'每週'} 固定支出` : ' '}
-                </div>
-                {/* Submit Button */}
-                {!isMathPending && amount && parseFloat(amount) > 0 && (
-                    <button 
-                        onClick={addTransaction} 
-                        disabled={isSubmittingTransaction}
-                        className="bg-gray-900 text-white px-6 py-2 rounded-full text-xs font-bold flex items-center gap-2 shadow-lg btn-press"
-                    >
-                        {isSubmittingTransaction ? <RefreshCw className="animate-spin" size={14}/> : <Check size={14}/>}
-                        確認記帳
-                    </button>
-                )}
-            </div>
-
-            <div className="grid grid-cols-4 gap-3">
-                {renderKey('AC', 'ac')}
-                {renderKey('DEL', 'ac')}
-                {renderKey('÷', 'op')}
-                {renderKey('×', 'op')}
-
+            <div className="grid grid-cols-5 gap-2 px-1 py-2">
+                {/* Row 1: 7, 8, 9, +, DEL */}
                 {renderKey('7')}
                 {renderKey('8')}
                 {renderKey('9')}
-                {renderKey('-', 'op')}
+                {renderKey('+', 'op')}
+                {renderKey('DEL', 'ac')}
 
+                {/* Row 2: 4, 5, 6, -, AC */}
                 {renderKey('4')}
                 {renderKey('5')}
                 {renderKey('6')}
-                {renderKey('+', 'op')}
+                {renderKey('-', 'op')}
+                {renderKey('AC', 'ac')}
 
+                {/* Row 3: 1, 2, 3, x, DONE(Start) */}
                 {renderKey('1')}
                 {renderKey('2')}
                 {renderKey('3')}
-                
-                {/* Equal / Done Button */}
+                {renderKey('×', 'op')}
+                {/* DONE Button spanning 2 rows vertically */}
                 <button
-                    onClick={(e) => { e.stopPropagation(); handleKeyPress(isMathPending ? '=' : 'DONE'); }}
-                    className={`row-span-2 rounded-2xl flex items-center justify-center shadow-md btn-press ${isMathPending ? 'bg-rose-500 text-white' : 'bg-gray-900 text-white'}`}
+                    onClick={(e) => { e.stopPropagation(); handleKeyPress('DONE'); }}
+                    className="col-start-5 row-start-3 row-span-2 bg-gray-900 text-white rounded-xl flex items-center justify-center shadow-md btn-press"
                 >
-                    {isMathPending ? <Equal size={32}/> : <Check size={32}/>}
+                    <Check size={28}/>
                 </button>
 
-                {renderKey('0', 'num', 2)}
+                {/* Row 4: 0(Span2), ., ÷, DONE(Cont) */}
+                {renderKey('0', 'num', 'col-span-2')} {/* 0 spans 2 columns */}
                 {renderKey('.')}
+                {renderKey('÷', 'op')}
+                {/* DONE occupies the last slot automatically via grid flow/row-span */}
             </div>
         </div>
       </div>
