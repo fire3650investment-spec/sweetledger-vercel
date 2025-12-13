@@ -49,22 +49,26 @@ export default function AddExpenseView({
     if (!ledgerData) return null; 
     
     // --- Local High-Performance State ---
-    // 這裡的 localAmount 是計算機的「顯示數值」與「邏輯核心」
-    // 完全獨立於父層 App.jsx，確保打字 0 延遲
     const [localAmount, setLocalAmount] = useState(initialAmount || '');
     const [isKeypadVisible, setIsKeypadVisible] = useState(true);
     
-    // 監聽父層傳入的初始值 (例如 AI 分析結果)
-    // 只有當父層值改變且本地為空時才同步，避免覆蓋使用者的輸入
+    // 監聽父層傳入的初始值
+    // Fix: 當父層重置為空字串時 (例如記帳完成)，強制清空本地狀態
     useEffect(() => {
-        if (initialAmount && initialAmount !== localAmount) {
-            setLocalAmount(initialAmount.toString());
+        if (initialAmount !== undefined) {
+             // 如果父層是空，且本地不是空 (代表被重置了)，則清空
+             if (!initialAmount && localAmount) {
+                 setLocalAmount('');
+                 setIsKeypadVisible(true); // 重置鍵盤狀態
+             }
+             // 如果父層有值 (例如 AI)，且與本地不同，則同步
+             else if (initialAmount && initialAmount.toString() !== localAmount) {
+                 setLocalAmount(initialAmount.toString());
+             }
         }
     }, [initialAmount]);
 
-    // 當本地數值改變時，Debounce 同步回父層 (為了讓父層的 "完成記帳" 按鈕能亮起)
-    // 但為了極致效能，我們可以選擇「不即時同步」，而是讓 AddExpenseView 自己控制提交按鈕
-    // 這裡我們採用折衷方案：只在 localAmount 改變時，更新父層，但父層不傳回 props 給我們渲染
+    // 當本地數值改變時，Debounce 同步回父層
     useEffect(() => {
         setAmount(localAmount);
     }, [localAmount]);
@@ -73,7 +77,6 @@ export default function AddExpenseView({
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
     const filteredCategories = currentCats.filter(cat => selectedCategoryIds.includes(cat.id)); 
     
-    // Recent Notes Logic
     const recentNotes = [];
     if (ledgerData.transactions) {
         const notes = ledgerData.transactions
@@ -83,9 +86,18 @@ export default function AddExpenseView({
         recentNotes.push(...uniqueNotes.slice(0, 5));
     }
 
+    // --- Close Handler ---
+    // Fix: 點擊 X 時，手動重置所有狀態，確保下次進來是乾淨的
+    const handleClose = () => {
+        setLocalAmount('');
+        setAmount(''); // 通知父層清空
+        setNote('');
+        setIsKeypadVisible(true);
+        setView('dashboard');
+    };
+
     // --- Calculator Logic (Pure Local) ---
     const handleKeyPress = (key) => {
-        // Haptic Feedback
         if (navigator.vibrate) {
             try { navigator.vibrate(10); } catch(e) {}
         }
@@ -169,7 +181,8 @@ export default function AddExpenseView({
         )}
 
         <div className="px-4 flex justify-between items-center mb-2 shrink-0">
-            <button onClick={() => setView('dashboard')} className="p-2 bg-gray-100 rounded-full active:bg-gray-200"><X size={20} className="text-gray-600"/></button>
+            {/* 使用新的 handleClose */}
+            <button onClick={handleClose} className="p-2 bg-gray-100 rounded-full active:bg-gray-200"><X size={20} className="text-gray-600"/></button>
             <div className="flex-1 flex justify-center">
                  <div className="bg-gray-100 text-gray-700 font-bold py-1 px-4 rounded-full text-xs flex items-center gap-2">
                     {ledgerData.projects?.find(p => p.id === currentProjectId)?.name}
