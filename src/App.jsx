@@ -108,7 +108,7 @@ export default function SweetLedger() {
     }
   }, [user]);
 
-  // Auth Initialization Strategy
+  // Auth Initialization
   useEffect(() => {
     const initAuth = async () => {
       const token = window.__initial_auth_token;
@@ -131,7 +131,6 @@ export default function SweetLedger() {
         setView('dashboard');
         setPayer(u.uid);
       } else {
-        // 如果沒有登入或沒有 Code，直接關閉蛋糕，顯示 Onboarding
         setIsInitializing(false);
       }
     });
@@ -140,7 +139,7 @@ export default function SweetLedger() {
     return () => unsubscribe();
   }, []);
 
-  // Data Loading Strategy (Local First + Network Sync)
+  // Data Loading Strategy
   useEffect(() => {
     if (!user || !ledgerCode) return;
 
@@ -152,7 +151,6 @@ export default function SweetLedger() {
             if (parsed) {
                 console.log("Loaded from cache");
                 setLedgerData(parsed);
-                // 這裡雖然載入快取，但為了讓畫面平滑，我們等 React 渲染完這幀後再關閉 Loading
                 requestAnimationFrame(() => setIsInitializing(false));
                 
                 if (parsed.currency) setCurrency(parsed.currency);
@@ -256,7 +254,7 @@ export default function SweetLedger() {
 
   }, [ledgerData]); 
 
-  // --- Handlers (Keep unchanged) ---
+  // --- Handlers ---
   const handleCustomSplitChange = (field, value) => {
     const total = parseFloat(amount) || 0;
     const val = parseFloat(value) || 0;
@@ -317,21 +315,8 @@ export default function SweetLedger() {
     }
   };
 
-  const updateInputMode = async (mode) => {
-    if (!ledgerCode) return;
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    await updateDoc(docRef, { 'settings.defaultInputMode': mode });
-  };
+  // Removed updateInputMode and handleOpenAddExpense logic as we simplified the flow
 
-  const handleOpenAddExpense = (mode) => {
-      setView('add');
-      if (mode === 'ai') {
-          setIsAiModalOpen(true);
-      } else {
-          setIsAiModalOpen(false);
-      }
-  };
-  
   const updateNickname = async () => {
     if (!ledgerCode || !myNickname) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -343,10 +328,10 @@ export default function SweetLedger() {
       const confirmStr = prompt("警告：此操作將刪除所有交易紀錄且無法復原！\n請輸入 RESET 確認重置：");
       if (confirmStr === "RESET") {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        // Removed gamification reset
         await updateDoc(docRef, { 
             transactions: [], 
             subscriptions: [],
-            gamification: { xp: 0, level: 1, streak: 1, houseType: 'tent' }
         });
         alert("帳本已重置。");
       }
@@ -606,12 +591,9 @@ export default function SweetLedger() {
               transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }) 
           });
         } else {
-          const currentXp = ledgerData.gamification?.xp || 0;
-          const newTotalXp = currentXp + 50; 
+          // Simplified: Just add transaction, removed XP logic
           await updateDoc(docRef, { 
               transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 
-              'gamification.xp': newTotalXp, 
-              'gamification.level': Math.floor(newTotalXp / 1000) + 1 
           });
         }
     } catch (e) {
@@ -727,213 +709,193 @@ export default function SweetLedger() {
     link.click();
   };
 
-  if (isInitializing) {
-     return (
-       <div className={`min-h-screen flex items-center justify-center bg-white transition-opacity duration-500 ${isInitializing ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-         {/* React Loading Shell - 確保與 index.html 的 App Shell 視覺一致 */}
-         <div style={{
-            minHeight: '100dvh',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: '#fff',
-            fontFamily: 'system-ui, -apple-system, sans-serif'
-         }}>
-            <div style={{fontSize: '4rem', animation: 'sweet-bounce 1s infinite'}}>🍰</div>
-            <p style={{
-              marginTop: '1rem',
-              color: '#db2777',
-              fontWeight: 'bold',
-              fontSize: '0.875rem',
-              animation: 'sweet-fade 1.5s infinite alternate'
-            }}>SweetLedger Loading...</p>
-         </div>
-       </div>
-     );
-  }
-
+  // Overlay approach
   return (
-    <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-rose-100 pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500">
-      {view === 'onboarding' && (
-        <OnboardingView 
-          user={user}
-          handleGoogleLogin={handleGoogleLogin}
-          createLedger={createLedger}
-          joinLedger={joinLedger}
-          ledgerCode={ledgerCode}
-          setLedgerCode={setLedgerCode}
-          loading={loading}
-        />
-      )}
-      
-      {view !== 'onboarding' && ledgerData && (
-        <>
-            {view === 'add' ? (
-                <AddExpenseView 
-                    ledgerData={ledgerData}
-                    currentProjectId={currentProjectId}
-                    user={user}
-                    // showSuccessAnimation={showSuccessAnimation} // 移除
-                    isAiModalOpen={isAiModalOpen}
-                    setIsAiModalOpen={setIsAiModalOpen}
-                    aiModalInput={aiModalInput}
-                    setAiModalInput={setAiModalInput}
-                    isRecording={isRecording}
-                    toggleVoiceRecording={toggleVoiceRecording}
-                    handleAiModalSubmit={handleAiModalSubmit}
-                    selectedImage={selectedImage}
-                    isAiProcessing={isAiProcessing}
-                    setView={setView}
-                    fileInputRef={fileInputRef}
-                    handleImageUpload={handleImageUpload}
-                    date={date}
-                    setDate={setDate}
-                    currency={currency}
-                    setCurrency={setCurrency}
-                    amount={amount}
-                    setAmount={setAmount}
-                    payer={payer}
-                    setPayer={setPayer}
-                    note={note}
-                    setNote={setNote}
-                    selectedCategory={selectedCategory}
-                    setSelectedCategory={setSelectedCategory}
-                    splitType={splitType}
-                    setSplitType={setSplitType}
-                    customSplitHost={customSplitHost}
-                    setCustomSplitHost={setCustomSplitHost}
-                    customSplitGuest={customSplitGuest}
-                    setCustomSplitGuest={setCustomSplitGuest}
-                    handleCustomSplitChange={handleCustomSplitChange}
-                    isSubscription={isSubscription}
-                    setIsSubscription={setIsSubscription}
-                    subCycle={subCycle}
-                    setSubCycle={setSubCycle}
-                    subPayDay={subPayDay}
-                    setSubPayDay={setSubPayDay}
-                    addTransaction={addTransaction}
-                    isSubmittingTransaction={isSubmittingTransaction}
-                />
-            ) : (
-                <>
-                {view === 'dashboard' && (
-                    <DashboardView 
+    <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-rose-100 pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500 relative">
+      <div 
+        className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white transition-opacity duration-700 ease-out ${isInitializing ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+      >
+         <div style={{fontSize: '4rem', animation: 'sweet-bounce 1s infinite'}}>🍰</div>
+         <p style={{
+           marginTop: '1rem',
+           color: '#db2777',
+           fontWeight: 'bold',
+           fontSize: '0.875rem',
+           animation: 'sweet-fade 1.5s infinite alternate'
+         }}>SweetLedger Loading...</p>
+      </div>
+
+      <div className={`transition-opacity duration-700 delay-100 ${!isInitializing ? 'opacity-100' : 'opacity-0'}`}>
+        {view === 'onboarding' && (
+            <OnboardingView 
+            user={user}
+            handleGoogleLogin={handleGoogleLogin}
+            createLedger={createLedger}
+            joinLedger={joinLedger}
+            ledgerCode={ledgerCode}
+            setLedgerCode={setLedgerCode}
+            loading={loading}
+            />
+        )}
+        
+        {view !== 'onboarding' && ledgerData && (
+            <>
+                {view === 'add' ? (
+                    <AddExpenseView 
                         ledgerData={ledgerData}
                         currentProjectId={currentProjectId}
-                        setCurrentProjectId={setCurrentProjectId}
-                        privacyMode={privacyMode}
-                        setPrivacyMode={setPrivacyMode}
-                        setIsEditTxModalOpen={setIsEditTxModalOpen}
-                        setEditingTx={setEditingTx}
                         user={user}
-                        handleSettleUp={handleSettleUp}
-                        handleOpenAddExpense={handleOpenAddExpense} 
-                    />
-                )}
-                {view === 'stats' && (
-                    <StatsView 
-                        ledgerData={ledgerData}
-                        currentProjectId={currentProjectId}
-                        statsMonth={statsMonth}
-                        setStatsMonth={setStatsMonth}
-                        privacyMode={privacyMode}
-                        setEditingTx={setEditingTx}
-                        setIsEditTxModalOpen={setIsEditTxModalOpen}
-                    />
-                )}
-                {view === 'projects' && (
-                    <ProjectsView 
-                        ledgerData={ledgerData}
-                        isEditingProject={isEditingProject}
-                        setIsEditingProject={setIsEditingProject}
-                        editingProjectData={editingProjectData}
-                        setEditingProjectData={setEditingProjectData}
-                        handleSaveProject={handleSaveProject}
-                        handleDeleteProject={handleDeleteProject}
-                    />
-                )}
-                {view === 'settings' && (
-                    <SettingsView 
-                        ledgerData={ledgerData}
-                        user={user}
-                        setView={setView} 
-                        isEditingCategory={isEditingCategory}
-                        setIsEditingCategory={setIsEditingCategory}
-                        editingCategoryData={editingCategoryData}
-                        setEditingCategoryData={setEditingCategoryData}
-                        handleSaveCategory={handleSaveCategory}
-                        handleDeleteCategory={handleDeleteCategory}
-                        handleExport={handleExport}
-                        handleResetAccount={handleResetAccount}
-                        handleLogout={handleLogout}
-                        isAvatarModalOpen={isAvatarModalOpen}
-                        setIsAvatarModalOpen={setIsAvatarModalOpen}
-                        myNickname={myNickname}
-                        setMyNickname={setMyNickname}
-                        updateNickname={updateNickname}
-                        tempAvatar={tempAvatar}
-                        handleAvatarSelect={handleAvatarSelect}
-                        confirmAvatarUpdate={confirmAvatarUpdate}
-                        handleFixIdentity={handleFixIdentity}
-                        ledgerCode={ledgerCode}
-                        updateLedgerCurrency={updateLedgerCurrency}
-                        currentProjectId={currentProjectId}
-                        updateInputMode={updateInputMode}
-                    />
-                )}
-                {view === 'subscriptions' && (
-                    <SubscriptionsView
-                        ledgerData={ledgerData}
-                        user={user}
+                        isAiModalOpen={isAiModalOpen}
+                        setIsAiModalOpen={setIsAiModalOpen}
+                        aiModalInput={aiModalInput}
+                        setAiModalInput={setAiModalInput}
+                        isRecording={isRecording}
+                        toggleVoiceRecording={toggleVoiceRecording}
+                        handleAiModalSubmit={handleAiModalSubmit}
+                        selectedImage={selectedImage}
+                        isAiProcessing={isAiProcessing}
                         setView={setView}
-                        handleDeleteSubscription={handleDeleteSubscription}
+                        fileInputRef={fileInputRef}
+                        handleImageUpload={handleImageUpload}
+                        date={date}
+                        setDate={setDate}
+                        currency={currency}
+                        setCurrency={setCurrency}
+                        amount={amount}
+                        setAmount={setAmount}
+                        payer={payer}
+                        setPayer={setPayer}
+                        note={note}
+                        setNote={setNote}
+                        selectedCategory={selectedCategory}
+                        setSelectedCategory={setSelectedCategory}
+                        splitType={splitType}
+                        setSplitType={setSplitType}
+                        customSplitHost={customSplitHost}
+                        setCustomSplitHost={setCustomSplitHost}
+                        customSplitGuest={customSplitGuest}
+                        setCustomSplitGuest={setCustomSplitGuest}
+                        handleCustomSplitChange={handleCustomSplitChange}
+                        isSubscription={isSubscription}
+                        setIsSubscription={setIsSubscription}
+                        subCycle={subCycle}
+                        setSubCycle={setSubCycle}
+                        subPayDay={subPayDay}
+                        setSubPayDay={setSubPayDay}
+                        addTransaction={addTransaction}
+                        isSubmittingTransaction={isSubmittingTransaction}
                     />
-                )}
-                
-                <EditTransactionModal 
-                    isOpen={isEditTxModalOpen}
-                    onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
-                    editingTx={editingTx}
-                    setEditingTx={setEditingTx}
-                    handleUpdateTransaction={handleUpdateTransaction}
-                    handleDeleteTransaction={handleDeleteTransaction}
-                    ledgerData={ledgerData}
-                />
-
-                {view !== 'subscriptions' && (
-                <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
-                    <div className="flex justify-between items-center max-w-md mx-auto">
-                    <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
-                    <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
+                ) : (
+                    <>
+                    {view === 'dashboard' && (
+                        <DashboardView 
+                            ledgerData={ledgerData}
+                            currentProjectId={currentProjectId}
+                            setCurrentProjectId={setCurrentProjectId}
+                            privacyMode={privacyMode}
+                            setPrivacyMode={setPrivacyMode}
+                            setIsEditTxModalOpen={setIsEditTxModalOpen}
+                            setEditingTx={setEditingTx}
+                            user={user}
+                            handleSettleUp={handleSettleUp}
+                            handleOpenAddExpense={handleOpenAddExpense} 
+                        />
+                    )}
+                    {view === 'stats' && (
+                        <StatsView 
+                            ledgerData={ledgerData}
+                            currentProjectId={currentProjectId}
+                            statsMonth={statsMonth}
+                            setStatsMonth={setStatsMonth}
+                            privacyMode={privacyMode}
+                            setEditingTx={setEditingTx}
+                            setIsEditTxModalOpen={setIsEditTxModalOpen}
+                        />
+                    )}
+                    {view === 'projects' && (
+                        <ProjectsView 
+                            ledgerData={ledgerData}
+                            isEditingProject={isEditingProject}
+                            setIsEditingProject={setIsEditingProject}
+                            editingProjectData={editingProjectData}
+                            setEditingProjectData={setEditingProjectData}
+                            handleSaveProject={handleSaveProject}
+                            handleDeleteProject={handleDeleteProject}
+                        />
+                    )}
+                    {view === 'settings' && (
+                        <SettingsView 
+                            ledgerData={ledgerData}
+                            user={user}
+                            setView={setView} 
+                            isEditingCategory={isEditingCategory}
+                            setIsEditingCategory={setIsEditingCategory}
+                            editingCategoryData={editingCategoryData}
+                            setEditingCategoryData={setEditingCategoryData}
+                            handleSaveCategory={handleSaveCategory}
+                            handleDeleteCategory={handleDeleteCategory}
+                            handleExport={handleExport}
+                            handleResetAccount={handleResetAccount}
+                            handleLogout={handleLogout}
+                            isAvatarModalOpen={isAvatarModalOpen}
+                            setIsAvatarModalOpen={setIsAvatarModalOpen}
+                            myNickname={myNickname}
+                            setMyNickname={setMyNickname}
+                            updateNickname={updateNickname}
+                            tempAvatar={tempAvatar}
+                            handleAvatarSelect={handleAvatarSelect}
+                            confirmAvatarUpdate={confirmAvatarUpdate}
+                            handleFixIdentity={handleFixIdentity}
+                            ledgerCode={ledgerCode}
+                            updateLedgerCurrency={updateLedgerCurrency}
+                            currentProjectId={currentProjectId}
+                        />
+                    )}
+                    {view === 'subscriptions' && (
+                        <SubscriptionsView
+                            ledgerData={ledgerData}
+                            user={user}
+                            setView={setView}
+                            handleDeleteSubscription={handleDeleteSubscription}
+                        />
+                    )}
                     
-                    <div className="relative -top-6">
-                        {(() => {
-                            const inputMode = ledgerData.settings?.defaultInputMode || 'standard';
-                            if (inputMode === 'dual') {
-                                return (
-                                    <div className="flex gap-2">
-                                        <button onClick={() => handleOpenAddExpense('manual')} className="w-12 h-12 bg-gray-800 rounded-full flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform"><Plus size={24} /></button>
-                                        <button onClick={() => handleOpenAddExpense('ai')} className="w-12 h-12 bg-rose-500 rounded-full flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform"><Sparkles size={24} /></button>
-                                    </div>
-                                );
-                            } else if (inputMode === 'ai_priority') {
-                                 return <button onClick={() => handleOpenAddExpense('ai')} className="w-16 h-16 bg-rose-500 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Sparkles size={32} /></button>;
-                            } else {
-                                 return <button onClick={() => handleOpenAddExpense('manual')} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>;
-                            }
-                        })()}
-                    </div>
+                    <EditTransactionModal 
+                        isOpen={isEditTxModalOpen}
+                        onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
+                        editingTx={editingTx}
+                        setEditingTx={setEditingTx}
+                        handleUpdateTransaction={handleUpdateTransaction}
+                        handleDeleteTransaction={handleDeleteTransaction}
+                        ledgerData={ledgerData}
+                    />
 
-                    <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
-                    <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' || view === 'subscriptions' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' || view === 'subscriptions' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
+                    {view !== 'subscriptions' && (
+                    <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
+                        <div className="flex justify-between items-center max-w-md mx-auto">
+                        <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
+                        <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
+                        
+                        {/* 單一大按鈕 - 移除複雜的雙按鈕邏輯 */}
+                        <div className="relative -top-6">
+                            <button 
+                                onClick={() => setView('add')} 
+                                className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"
+                            >
+                                <Plus size={32} />
+                            </button>
+                        </div>
+
+                        <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
+                        <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' || view === 'subscriptions' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' || view === 'subscriptions' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
+                        </div>
                     </div>
-                </div>
+                    )}
+                    </>
                 )}
-                </>
-            )}
-        </>
-      )}
+            </>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import React from 'react';
-import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins, Plus, Sparkles } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue } from '../utils/helpers';
-import { DEFAULT_CATEGORIES } from '../utils/constants';
 
 export default function DashboardView({
   ledgerData,
@@ -12,8 +11,7 @@ export default function DashboardView({
   setIsEditTxModalOpen,
   setEditingTx,
   user,
-  handleSettleUp,
-  handleOpenAddExpense
+  handleSettleUp
 }) {
     if (!ledgerData) return null;
     const projectTxs = ledgerData.transactions.filter(t => (t.projectId || 'daily') === currentProjectId);
@@ -75,35 +73,23 @@ export default function DashboardView({
     const settlement = (myPaid + settledAmount) - myLiability; 
 
     const currentProjectName = currentProject?.name || '日常開銷';
-    const getHouseIcon = (level) => { if (level < 5) return '⛺️'; if (level < 15) return '🏠'; if (level < 30) return '🏡'; return '🏰'; };
-
     const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
     const partnerName = otherUserId ? (ledgerData.users[otherUserId].name || '對方') : '對方';
 
-    // Input Mode - Fix: Default to 'standard'
-    const inputMode = ledgerData.settings?.defaultInputMode || 'standard';
-    const paddingBottomClass = inputMode === 'dual' ? 'pb-32' : 'pb-24';
-
     return (
-      <div className={`${paddingBottomClass} pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative`}>
+      <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
         <div className="flex justify-between items-center mb-4">
+           {/* 簡化後的 Header：只保留專案切換與隱私開關 */}
            <div className="relative">
              <select value={currentProjectId} onChange={(e) => setCurrentProjectId(e.target.value)} className="appearance-none bg-gray-900 text-white pl-4 pr-8 py-2 rounded-full font-bold text-sm outline-none shadow-lg shadow-gray-200">
                 {ledgerData.projects?.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
              </select>
              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white"><ChevronDown size={14} /></div>
            </div>
-           <div className="flex items-center gap-2">
-             <div className="bg-rose-100 px-3 py-1.5 rounded-full flex flex-col items-end gap-0.5">
-               <div className="flex items-center gap-1">
-                 <span className="text-lg leading-none">{getHouseIcon(ledgerData.gamification?.level || 1)}</span>
-                 <span className="text-xs font-bold text-rose-600 leading-none">Lv.{ledgerData.gamification?.level || 1}</span>
-               </div>
-             </div>
-             <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 bg-white rounded-full shadow-sm border border-gray-100">
-               {privacyMode ? <EyeOff size={16} className="text-gray-400"/> : <Eye size={16} className="text-rose-500"/>}
-             </button>
-           </div>
+           
+           <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 bg-white rounded-full shadow-sm border border-gray-100 active:scale-95 transition-transform">
+             {privacyMode ? <EyeOff size={16} className="text-gray-400"/> : <Eye size={16} className="text-rose-500"/>}
+           </button>
         </div>
         
         {/* Settlement Card */}

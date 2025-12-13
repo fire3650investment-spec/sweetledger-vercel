@@ -71,6 +71,7 @@ export const CHARACTERS = {
   bird: { id: 'bird', name: '啾啾', icon: 'bird', prompt: '你是一隻愛說八卦的鳥，對數字很敏感，句尾加「啾」。', greeting: '啾啾！我好像看到錢包變瘦了？🐦' },
 };
 
+// 簡化後的初始狀態：移除 gamification 與 inputMode
 export const INITIAL_LEDGER_STATE = {
   users: {}, 
   transactions: [],
@@ -83,11 +84,9 @@ export const INITIAL_LEDGER_STATE = {
     { id: 'private', name: '私人帳本', icon: 'project_private' }
   ],
   rates: { "JPY": 0.23 },
-  gamification: { xp: 0, level: 1, streak: 1, houseType: 'tent' },
   currency: 'TWD',
   settings: {
     character: 'cat',
     selectedCategories: DEFAULT_CATEGORIES.map(c => c.id),
-    defaultInputMode: 'standard' // Fix: Change default from 'dual' to 'standard'
   }
 };
