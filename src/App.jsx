@@ -1,29 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from 'firebase/app';
 import { 
-  getAuth, 
-  onAuthStateChanged,
-  signInWithCustomToken,
-  GoogleAuthProvider,
-  signInWithPopup,
-  signOut
-} from 'firebase/auth';
-import { 
-  getFirestore, 
-  collection, 
   doc, 
-  setDoc, 
-  getDoc, 
-  onSnapshot, 
   updateDoc, 
-  arrayUnion
+  arrayUnion,
+  // 移除 getAuth, onAuthStateChanged 等，因已移至 Context
+  // 移除 initializeApp, getFirestore 等
 } from 'firebase/firestore';
 import { 
-  Home, PieChart, Settings, Plus, Briefcase, Sparkles
+  Home, PieChart, Settings, Plus, Briefcase 
 } from 'lucide-react';
 
-import { INITIAL_LEDGER_STATE, DEFAULT_CATEGORIES, CATEGORIES, COLORS } from './utils/constants';
+import { DEFAULT_CATEGORIES, CATEGORIES, COLORS } from './utils/constants';
 import { formatCurrency, generateId, callGemini } from './utils/helpers';
+// 引入新的 Context Hooks 與 Firebase 實例
+import { db, appId } from './utils/firebase';
+import { useAuth } from './contexts/AuthContext';
+import { useLedger } from './contexts/LedgerContext';
 
 import DashboardView from './components/DashboardView';
 import AddExpenseView from './components/AddExpenseView';
@@ -34,57 +26,29 @@ import OnboardingView from './components/OnboardingView';
 import EditTransactionModal from './components/EditTransactionModal';
 import SubscriptionsView from './components/SubscriptionsView';
 
-// --- Configuration ---
-let firebaseConfigStr = import.meta.env.VITE_FIREBASE_CONFIG;
-if (!firebaseConfigStr || firebaseConfigStr === '{}') {
-    firebaseConfigStr = window.__firebase_config;
-}
-
-let app = null;
-try {
-    const config = firebaseConfigStr ? JSON.parse(firebaseConfigStr) : {};
-    if (Object.keys(config).length > 0) {
-        app = initializeApp(config);
-    } else {
-        console.warn("Firebase config is empty.");
-    }
-} catch (e) {
-    console.error("Firebase Config Parse/Init Error:", e);
-}
-
-const auth = app ? getAuth(app) : null;
-const db = app ? getFirestore(app) : null;
-const appId = 'sweet-ledger-beta';
-
 export default function SweetLedger() {
-  if (!app) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center text-gray-600 bg-gray-50 z-[200] relative">
-        <h2 className="text-xl font-bold mb-2 text-gray-800">尚未連接 Firebase</h2>
-        <p>請檢查 Vercel 的 Environment Variables 設定。</p>
-        <div className="mt-4 text-left text-xs bg-gray-100 p-4 rounded overflow-auto w-full max-w-sm">
-            <p><strong>Debug Info:</strong></p>
-            <p>VITE_FIREBASE_CONFIG: {import.meta.env.VITE_FIREBASE_CONFIG ? 'Found' : 'Missing'}</p>
-            <p>window.__firebase_config: {window.__firebase_config ? 'Found' : 'Missing'}</p>
-        </div>
-      </div>
-    );
-  }
+  // 1. 從 Context 取得狀態與方法
+  const { user, login, logout } = useAuth();
+  const { 
+    ledgerCode, 
+    setLedgerCode, 
+    ledgerData, 
+    isInitializing, 
+    loading: ledgerLoading,
+    createLedger, 
+    joinLedger 
+  } = useLedger();
 
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true); 
-  const [isInitializing, setIsInitializing] = useState(true);
+  // 2. UI 狀態 (UI State) - 這些屬於 View 層級，保留在 App.jsx
   const [view, setView] = useState('onboarding'); 
-  const [ledgerCode, setLedgerCode] = useState('');
-  const [ledgerData, setLedgerData] = useState(null);
   const [privacyMode, setPrivacyMode] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [currentProjectId, setCurrentProjectId] = useState('daily'); 
 
+  // Add Expense State
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
-  const [aiInput, setAiInput] = useState('');
+  const [aiInput, setAiInput] = useState(''); // 保留變數但目前可能未使用，視需求
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   
   const [currency, setCurrency] = useState('TWD'); 
@@ -96,6 +60,7 @@ export default function SweetLedger() {
   const [customSplitGuest, setCustomSplitGuest] = useState('');
   const [isSubmittingTransaction, setIsSubmittingTransaction] = useState(false);
 
+  // Modals & Sub-views State
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiModalInput, setAiModalInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -121,168 +86,30 @@ export default function SweetLedger() {
 
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
-  const hasCheckedSubsRef = useRef(false);
 
+  // 3. Effects
+  // 當使用者登入且有資料時，自動切換到 Dashboard，並設定預設付款人
   useEffect(() => {
-    if (user && !payer) {
-        setPayer(user.uid);
-    }
-  }, [user]);
-
-  // Auth
-  useEffect(() => {
-    const initAuth = async () => {
-      let token = import.meta.env.VITE_AUTH_TOKEN;
-      if (!token) token = window.__initial_auth_token;
-
-      if (token && token.length > 2 && token !== '""') {
-         try {
-             await signInWithCustomToken(auth, token);
-             return;
-         } catch (e) {
-             console.warn("Custom Token failed, trying standard auth flow...");
-         }
-      }
-    };
-    
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setAuthLoading(false); 
-      const savedCode = localStorage.getItem('sweet_ledger_code');
-      if (savedCode && u) { 
-        setLedgerCode(savedCode);
+    if (user && ledgerCode) {
         setView('dashboard');
-        setPayer(u.uid);
-      } else {
-        setIsInitializing(false);
-      }
-    });
-
-    initAuth();
-    return () => unsubscribe();
-  }, []);
-
-  // Data Loading
-  useEffect(() => {
-    if (!user || !ledgerCode) return;
-
-    const cacheKey = `sweet_ledger_data_${ledgerCode}`;
-    try {
-        const cachedData = localStorage.getItem(cacheKey);
-        if (cachedData) {
-            const parsed = JSON.parse(cachedData);
-            if (parsed) {
-                console.log("Loaded from cache");
-                setLedgerData(parsed);
-                requestAnimationFrame(() => setIsInitializing(false));
-                
-                if (parsed.currency) setCurrency(parsed.currency);
-                if (parsed.users && parsed.users[user.uid]) {
-                    setMyNickname(parsed.users[user.uid].name);
-                }
-            }
-        }
-    } catch (e) {
-        console.error("Cache read error", e);
+        if (!payer) setPayer(user.uid);
+    } else if (!isInitializing && !ledgerCode) {
+        setView('onboarding');
     }
+  }, [user, ledgerCode, isInitializing]);
 
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        localStorage.setItem(cacheKey, JSON.stringify(data));
-        setLedgerData(data);
-        if (data.currency) setCurrency(data.currency);
-        if (data.users && data.users[user.uid]) {
-            setMyNickname(data.users[user.uid].name);
-        }
-        setIsInitializing(false);
-      }
-    });
-    return () => unsubscribe();
-  }, [user, ledgerCode]);
-
-  // Smart Auto-Sub Check
+  // 同步使用者暱稱與幣別設定 (從 ledgerData 讀取)
   useEffect(() => {
-    if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0 || !ledgerCode) return;
-
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const lastCheckKey = `last_subs_check_${ledgerCode}`;
-    const lastCheckDate = localStorage.getItem(lastCheckKey);
-
-    if (lastCheckDate === todayStr) {
-        return; 
-    }
-
-    const timer = setTimeout(async () => {
-        let updatesNeeded = false;
-        let newTransactions = [...(ledgerData.transactions || [])];
-        let newSubscriptions = [...ledgerData.subscriptions];
-
-        const now = new Date();
-        now.setHours(0,0,0,0);
-
-        newSubscriptions = newSubscriptions.map(sub => {
-            let nextDate = new Date(sub.nextPaymentDate);
-            let updated = false;
-            let loopCount = 0;
-            
-            while (nextDate <= now && loopCount < 12) {
-                updated = true;
-                updatesNeeded = true;
-                
-                const { nextPaymentDate, cycle, payDay, mode, ...txBase } = sub;
-                
-                const tx = {
-                    ...txBase,
-                    id: generateId(),
-                    date: nextDate.toISOString(),
-                    note: `[自動扣款] ${sub.name}`,
-                    isSettlement: false
-                };
-                newTransactions.push(tx);
-
-                if (sub.cycle === 'monthly') {
-                    const currentMonth = nextDate.getMonth();
-                    const nextMonth = currentMonth + 1;
-                    nextDate.setMonth(nextMonth);
-                    if (sub.payDay) {
-                        const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
-                        const targetDay = Math.min(sub.payDay, daysInNextMonth);
-                        nextDate.setDate(targetDay);
-                    }
-                } else if (sub.cycle === 'weekly') {
-                    nextDate.setDate(nextDate.getDate() + 7);
-                } else {
-                    nextDate.setMonth(nextDate.getMonth() + 1);
-                }
-                
-                loopCount++;
-            }
-            
-            if (updated) {
-                return { ...sub, nextPaymentDate: nextDate.toISOString() };
-            }
-            return sub;
-        });
-
-        if (updatesNeeded) {
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-            await updateDoc(docRef, { 
-                transactions: newTransactions,
-                subscriptions: newSubscriptions
-            });
+    if (ledgerData && user) {
+        if (ledgerData.currency) setCurrency(ledgerData.currency);
+        if (ledgerData.users && ledgerData.users[user.uid]) {
+            setMyNickname(ledgerData.users[user.uid].name);
         }
-        
-        localStorage.setItem(lastCheckKey, todayStr);
+    }
+  }, [ledgerData, user]);
 
-    }, 5000); 
-
-    return () => clearTimeout(timer);
-
-  }, [ledgerData]); 
-
-  // --- Handlers (Unchanged) ---
+  // 4. Handlers (保留寫入邏輯，但引用新的 db 與 ledgerCode)
+  
   const handleCustomSplitChange = (field, value) => {
     const total = parseFloat(amount) || 0;
     const val = parseFloat(value) || 0;
@@ -297,20 +124,9 @@ export default function SweetLedger() {
     }
   };
 
-  const handleGoogleLogin = async () => {
-    try {
-        const provider = new GoogleAuthProvider();
-        await signInWithPopup(auth, provider);
-    } catch (error) {
-        console.error("Google Login Error:", error);
-        alert(`Google 登入失敗: ${error.message}`);
-    }
-  };
-
-  const handleLogout = async () => {
+  const handleLogoutWrapper = async () => {
       if(confirm('確定要登出嗎？')) {
-          await signOut(auth);
-          setUser(null);
+          await logout();
           setView('onboarding');
       }
   };
@@ -318,7 +134,7 @@ export default function SweetLedger() {
   const handleAvatarSelect = (key) => setTempAvatar(key);
 
   const confirmAvatarUpdate = async () => {
-    if (!ledgerCode || !tempAvatar) return;
+    if (!ledgerCode || !tempAvatar || !user) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { [`users.${user.uid}.avatar`]: tempAvatar });
     setIsAvatarModalOpen(false);
@@ -343,12 +159,6 @@ export default function SweetLedger() {
     }
   };
 
-  const updateInputMode = async (mode) => {
-    if (!ledgerCode) return;
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    await updateDoc(docRef, { 'settings.defaultInputMode': mode });
-  };
-
   const handleOpenAddExpense = (mode) => {
       setView('add');
       if (mode === 'ai') {
@@ -359,7 +169,7 @@ export default function SweetLedger() {
   };
   
   const updateNickname = async () => {
-    if (!ledgerCode || !myNickname) return;
+    if (!ledgerCode || !myNickname || !user) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { [`users.${user.uid}.name`]: myNickname });
     alert("暱稱已更新！");
@@ -508,48 +318,6 @@ export default function SweetLedger() {
             alert("結清失敗");
         }
     }
-  };
-
-  const createLedger = async () => {
-    if (!user) { alert("請先登入"); return; }
-    setLoading(true);
-    try {
-        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const userName = user.displayName || 'Host';
-        const newLedger = {
-            ...INITIAL_LEDGER_STATE,
-            users: { [user.uid]: { name: userName, avatar: 'cat', role: 'host' } }
-        };
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
-        localStorage.setItem('sweet_ledger_code', code);
-        setLedgerCode(code);
-        setView('dashboard');
-    } catch (e) {
-        console.error("Create Error:", e);
-        alert(`建立失敗: ${e.message}`);
-    }
-    setLoading(false);
-  };
-
-  const joinLedger = async (code) => {
-    if (!user) { alert("請先登入"); return; }
-    setLoading(true);
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code);
-    const docSnap = await getDoc(docRef);
-    if (docSnap.exists()) {
-      const currentData = docSnap.data();
-      if (!currentData.users || !currentData.users[user.uid]) {
-          const userName = user.displayName || 'Guest';
-          const updatedUsers = { ...currentData.users, [user.uid]: { name: userName, avatar: 'dog', role: 'guest' } };
-          await updateDoc(docRef, { users: updatedUsers });
-      }
-      localStorage.setItem('sweet_ledger_code', code);
-      setLedgerCode(code);
-      setView('dashboard');
-    } else {
-      alert("找不到這個帳本代碼！");
-    }
-    setLoading(false);
   };
 
   const addTransaction = async () => {
@@ -722,15 +490,6 @@ export default function SweetLedger() {
     }
   };
 
-  const handleImageUpload = (e) => { 
-      const file = e.target.files[0]; 
-      if (file) { 
-          const reader = new FileReader(); 
-          reader.onloadend = () => { setSelectedImage(reader.result); }; 
-          reader.readAsDataURL(file); 
-      } 
-  };
-  
   const handleExport = () => {
     if (!ledgerData) return;
     let csvContent = "data:text/csv;charset=utf-8,";
@@ -747,31 +506,39 @@ export default function SweetLedger() {
     link.click();
   };
 
+  // 5. Render
+  // App Shell Loading State
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white text-rose-500 animate-in fade-in">
+         <div style={{fontSize: '4rem', animation: 'sweet-bounce 1s infinite'}}>🍰</div>
+         <p className="mt-4 font-bold animate-pulse">SweetLedger Loading...</p>
+      </div>
+    );
+  }
+
+  // 檢查是否缺少 Firebase Config (通常是部署環境問題)
+  if (!db) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center text-gray-600 bg-gray-50 z-[200]">
+            <h2 className="text-xl font-bold mb-2 text-gray-800">尚未連接 Firebase</h2>
+            <p>請檢查 Vercel 的 Environment Variables 設定。</p>
+        </div>
+      );
+  }
+
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-rose-100 pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500 relative">
-      <div 
-        className={`fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white transition-opacity duration-700 ease-out ${isInitializing ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
-      >
-         <div style={{fontSize: '4rem', animation: 'sweet-bounce 1s infinite'}}>🍰</div>
-         <p style={{
-           marginTop: '1rem',
-           color: '#db2777',
-           fontWeight: 'bold',
-           fontSize: '0.875rem',
-           animation: 'sweet-fade 1.5s infinite alternate'
-         }}>SweetLedger Loading...</p>
-      </div>
-
-      <div className={`transition-opacity duration-700 delay-100 ${!isInitializing ? 'opacity-100' : 'opacity-0'}`}>
+      
         {view === 'onboarding' && (
             <OnboardingView 
-            user={user}
-            handleGoogleLogin={handleGoogleLogin}
-            createLedger={createLedger}
-            joinLedger={joinLedger}
-            ledgerCode={ledgerCode}
-            setLedgerCode={setLedgerCode}
-            loading={loading}
+                user={user}
+                handleGoogleLogin={login}
+                createLedger={() => createLedger(user)}
+                joinLedger={(code) => joinLedger(code, user)}
+                ledgerCode={ledgerCode}
+                setLedgerCode={setLedgerCode}
+                loading={ledgerLoading}
             />
         )}
         
@@ -827,7 +594,7 @@ export default function SweetLedger() {
                     handleDeleteSubscription={handleDeleteSubscription}
                 /></div>
 
-                {/* Tab Views Container (Always mounted for scroll persistence) */}
+                {/* Tab Views Container */}
                 <div className={['dashboard', 'stats', 'projects', 'settings'].includes(view) ? 'block h-full' : 'hidden'}>
                     <div className={view === 'dashboard' ? 'block' : 'hidden'}><DashboardView 
                         ledgerData={ledgerData}
@@ -871,7 +638,7 @@ export default function SweetLedger() {
                         handleDeleteCategory={handleDeleteCategory}
                         handleExport={handleExport}
                         handleResetAccount={handleResetAccount}
-                        handleLogout={handleLogout}
+                        handleLogout={handleLogoutWrapper}
                         isAvatarModalOpen={isAvatarModalOpen}
                         setIsAvatarModalOpen={setIsAvatarModalOpen}
                         myNickname={myNickname}
@@ -917,7 +684,6 @@ export default function SweetLedger() {
                 />
             </>
         )}
-      </div>
     </div>
   );
 }
