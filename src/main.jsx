@@ -2,10 +2,15 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import './index.css'
+import { AuthProvider } from './contexts/AuthContext'
+import { LedgerProvider } from './contexts/LedgerContext'
 
-// 渲染 App 元件 (SweetLedger)
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <AuthProvider>
+      <LedgerProvider>
+        <App />
+      </LedgerProvider>
+    </AuthProvider>
   </React.StrictMode>,
 )
