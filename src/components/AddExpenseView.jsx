@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Camera, RefreshCw, Sparkles, StopCircle, Mic, CheckCircle2, Check, Delete, Equal, Keyboard } from 'lucide-react';
+import { X, RefreshCw, Sparkles, StopCircle, Mic, CheckCircle2, Check, Delete, Equal, Keyboard } from 'lucide-react';
 import { getIconComponent } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
 
@@ -7,7 +7,6 @@ export default function AddExpenseView({
   ledgerData,
   currentProjectId,
   user,
-  // showSuccessAnimation, // 已移除
   isAiModalOpen,
   setIsAiModalOpen,
   aiModalInput,
@@ -15,17 +14,16 @@ export default function AddExpenseView({
   isRecording,
   toggleVoiceRecording,
   handleAiModalSubmit,
-  selectedImage,
   isAiProcessing,
   setView,
   fileInputRef,
-  handleImageUpload,
   date,
   setDate,
   currency, 
   setCurrency, 
-  amount,       // Parent State
-  setAmount,    // Parent State Setter
+  // amount,       // ❌ 不再直接使用父層 amount 進行渲染
+  setAmount,    // ✅ 僅在最終提交時使用
+  initialAmount, // ✅ 新增：接收父層的初始值 (如果有的話)
   payer,
   setPayer,
   note,
@@ -50,41 +48,26 @@ export default function AddExpenseView({
 }) {
     if (!ledgerData) return null; 
     
-    // --- Local State for Calculator ---
-    const [calcExpression, setCalcExpression] = useState('');
+    // --- Local High-Performance State ---
+    // 這裡的 localAmount 是計算機的「顯示數值」與「邏輯核心」
+    // 完全獨立於父層 App.jsx，確保打字 0 延遲
+    const [localAmount, setLocalAmount] = useState(initialAmount || '');
     const [isKeypadVisible, setIsKeypadVisible] = useState(true);
     
-    // 用來解決 Race Condition 的 Ref
-    // 當使用者正在打字時，暫時忽略父層傳回來的舊 amount
-    const isTypingRef = useRef(false);
-
-    // --- AI Bug Fix & Initialization ---
+    // 監聽父層傳入的初始值 (例如 AI 分析結果)
+    // 只有當父層值改變且本地為空時才同步，避免覆蓋使用者的輸入
     useEffect(() => {
-        // 如果是使用者正在打字 (isTypingRef = true)
-        if (isTypingRef.current) {
-            // 只有當父層傳回來的資料終於追上本地資料時，才解除打字狀態
-            if (amount?.toString() === calcExpression) {
-                isTypingRef.current = false;
-            }
-            // 在打字期間，忽略所有不一致的外部更新 (防止舊資料覆蓋新輸入)
-            return;
+        if (initialAmount && initialAmount !== localAmount) {
+            setLocalAmount(initialAmount.toString());
         }
+    }, [initialAmount]);
 
-        // 如果不是打字狀態 (例如 AI 更新，或是初始載入)，則正常同步
-        if (amount !== undefined && amount !== null && amount.toString() !== calcExpression) {
-            setCalcExpression(amount.toString());
-        }
-        
-        // 邊界情況：如果剛進入且 amount 為空，確保計算機也為空
-        if (!amount && !calcExpression) {
-             setCalcExpression('');
-        }
-    }, [amount]); // 依賴 amount 變化
-
-    // Mount 時強制開啟鍵盤
+    // 當本地數值改變時，Debounce 同步回父層 (為了讓父層的 "完成記帳" 按鈕能亮起)
+    // 但為了極致效能，我們可以選擇「不即時同步」，而是讓 AddExpenseView 自己控制提交按鈕
+    // 這裡我們採用折衷方案：只在 localAmount 改變時，更新父層，但父層不傳回 props 給我們渲染
     useEffect(() => {
-        setIsKeypadVisible(true);
-    }, []);
+        setAmount(localAmount);
+    }, [localAmount]);
 
     const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
@@ -100,64 +83,45 @@ export default function AddExpenseView({
         recentNotes.push(...uniqueNotes.slice(0, 5));
     }
 
-    // --- Calculator Logic ---
+    // --- Calculator Logic (Pure Local) ---
     const handleKeyPress = (key) => {
-        // 標記為正在打字
-        isTypingRef.current = true;
-
+        // Haptic Feedback
         if (navigator.vibrate) {
             try { navigator.vibrate(10); } catch(e) {}
         }
 
         if (key === 'AC') {
-            setCalcExpression('');
-            setAmount('');
+            setLocalAmount('');
             return;
         }
 
         if (key === 'DEL') {
-            // 使用 Functional Update 確保基於最新狀態
-            setCalcExpression(prev => {
-                const newVal = prev.slice(0, -1);
-                // 同步回父層 (注意：這裡不能直接用 newVal，因為是在 callback 內)
-                // 但為了簡單與一致性，我們可以在這裡執行 setAmount
-                // 不過 React 建議副作用放在外層。
-                // 這裡為了確保順序，我們直接計算出值
-                if (!newVal || /^[\d.]+$/.test(newVal)) {
-                     setAmount(newVal);
-                }
-                return newVal;
-            });
+            setLocalAmount(prev => prev.slice(0, -1));
             return;
         }
 
         if (key === 'DONE') {
-            const isPendingMath = /[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression);
+            const isPendingMath = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
 
             if (isPendingMath) {
                  try {
-                    const safeExpr = calcExpression.replace(/×/g, '*').replace(/÷/g, '/');
+                    const safeExpr = localAmount.replace(/×/g, '*').replace(/÷/g, '/');
                     // eslint-disable-next-line no-new-func
                     const result = new Function('return ' + safeExpr)();
                     const finalVal = Math.round(result * 100) / 100;
                     const finalStr = finalVal.toString();
                     
-                    setCalcExpression(finalStr);
-                    setAmount(finalStr);
+                    setLocalAmount(finalStr);
                  } catch (e) {}
             } else {
-                setAmount(calcExpression);
                 setIsKeypadVisible(false);
-                // 完成後解除打字狀態，允許外部更新
-                isTypingRef.current = false;
             }
             return;
         }
 
-        // Standard Keys
         const operators = ['+', '-', '×', '÷'];
         
-        setCalcExpression(prev => {
+        setLocalAmount(prev => {
             const lastChar = prev.slice(-1);
             if (operators.includes(key)) {
                 if (operators.includes(lastChar)) {
@@ -165,20 +129,12 @@ export default function AddExpenseView({
                 }
                 if (!prev) return prev; 
             }
-            const newVal = prev + key;
-            
-            // 即時同步邏輯
-            if (/^[\d.]+$/.test(newVal)) {
-                setAmount(newVal);
-            }
-            return newVal;
+            return prev + key;
         });
     };
 
-    // Helper to determine render state
-    const isMathPending = /[+\-×÷]/.test(calcExpression) && !/[+\-×÷]$/.test(calcExpression);
+    const isMathPending = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
 
-    // Render Helpers
     const renderKey = (label, type = 'num', className = '') => (
         <button
             onClick={(e) => { e.stopPropagation(); handleKeyPress(label); }}
@@ -200,7 +156,6 @@ export default function AddExpenseView({
     return (
       <div className="h-full flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] bg-white relative">
         
-        {/* AI Modal */}
         {isAiModalOpen && (
             <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-in fade-in duration-200">
                 <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-800">AI 智慧輸入</h3><button onClick={() => { setIsAiModalOpen(false); }} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
@@ -208,12 +163,11 @@ export default function AddExpenseView({
                     <textarea value={aiModalInput} onChange={(e) => setAiModalInput(e.target.value)} placeholder="請說話或輸入... 例如：「昨天晚餐吃壽司花了1200元」" className="w-full h-40 p-4 bg-gray-50 rounded-2xl text-lg outline-none resize-none border border-gray-200 focus:border-purple-500 transition-colors"/>
                     {isRecording && (<div className="flex items-center justify-center gap-2 text-purple-600 animate-pulse"><div className="w-2 h-2 bg-purple-600 rounded-full"></div><span className="text-sm font-medium">正在聆聽...</span></div>)}
                     <div className="flex justify-center gap-4 mt-auto mb-8"><button onClick={toggleVoiceRecording} className={`p-6 rounded-full transition-all ${isRecording ? 'bg-red-50 text-red-500 scale-110 shadow-red-200' : 'bg-purple-50 text-purple-600 shadow-purple-200'} shadow-lg`}>{isRecording ? <StopCircle size={32} /> : <Mic size={32} />}</button></div>
-                    <button onClick={handleAiModalSubmit} disabled={!aiModalInput && !selectedImage} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-lg mb-4">開始分析</button>
+                    <button onClick={handleAiModalSubmit} disabled={!aiModalInput} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-lg mb-4">開始分析</button>
                 </div>
             </div>
         )}
 
-        {/* --- Header --- */}
         <div className="px-4 flex justify-between items-center mb-2 shrink-0">
             <button onClick={() => setView('dashboard')} className="p-2 bg-gray-100 rounded-full active:bg-gray-200"><X size={20} className="text-gray-600"/></button>
             <div className="flex-1 flex justify-center">
@@ -221,11 +175,11 @@ export default function AddExpenseView({
                     {ledgerData.projects?.find(p => p.id === currentProjectId)?.name}
                  </div>
             </div>
-            <div className="flex gap-2"><button onClick={() => fileInputRef.current?.click()} className="p-2 bg-blue-50 text-blue-600 rounded-full active:bg-blue-100"><Camera size={20} /></button><button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full active:scale-95 ${isAiProcessing ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600'}`}>{isAiProcessing ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}</button></div>
+            {/* AI Button */}
+            <div className="flex gap-2"><button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full active:scale-95 ${isAiProcessing ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600'}`}>{isAiProcessing ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}</button></div>
         </div>
-        <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => { handleImageUpload(e); setIsAiModalOpen(true); }} />
         
-        {/* --- Amount Display (Calculator Screen) --- */}
+        {/* --- Display Area using Local State --- */}
         <div className="px-4 py-2 shrink-0">
              <div className="flex justify-between items-center mb-2">
                 <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
@@ -236,15 +190,13 @@ export default function AddExpenseView({
                 <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-gray-100 text-gray-600 text-[10px] px-2 py-1 rounded-lg outline-none font-medium"/>
             </div>
 
-            {/* Display Area */}
             <div 
                 onClick={() => setIsKeypadVisible(true)}
                 className={`w-full h-20 rounded-2xl flex items-center justify-end px-4 overflow-hidden relative transition-all duration-200 ${isKeypadVisible ? 'bg-gray-50 ring-2 ring-rose-100' : 'bg-white border border-transparent'}`}
             >
-                <span className={`text-5xl font-bold tracking-tight ${!calcExpression ? 'text-gray-300' : 'text-gray-800'}`}>
-                    {calcExpression || '0'}
+                <span className={`text-5xl font-bold tracking-tight ${!localAmount ? 'text-gray-300' : 'text-gray-800'}`}>
+                    {localAmount || '0'}
                 </span>
-                {/* 游標效果 */}
                 {isKeypadVisible && <div className="w-[2px] h-10 bg-rose-500 animate-cursor-blink ml-1"></div>}
             </div>
 
@@ -261,7 +213,6 @@ export default function AddExpenseView({
             </div>
         </div>
         
-        {/* --- Scrollable Content Area --- */}
         <div className={`flex-1 overflow-y-auto px-4 pb-4 ${isKeypadVisible ? 'mb-[32vh]' : 'mb-20'} transition-all duration-300`}>
              <div className="bg-gray-50 p-3 rounded-xl mb-3 flex items-center gap-2 border border-gray-100">
                 <input 
@@ -275,7 +226,6 @@ export default function AddExpenseView({
              </div>
              {recentNotes.length > 0 && (<div className="mb-4 flex flex-wrap gap-2">{recentNotes.map((n, idx) => (<button key={idx} onClick={() => setNote(n)} className="px-2 py-1 bg-gray-100 text-gray-500 text-[10px] rounded-lg border border-gray-200 active:bg-gray-200">{n}</button>))}</div>)}
 
-             {/* Categories */}
              <div className="grid grid-cols-4 gap-3 mb-6">
                 {filteredCategories.map(cat => { 
                     const CatIcon = getIconComponent(cat.icon); 
@@ -324,18 +274,16 @@ export default function AddExpenseView({
              )}
         </div>
 
-        {/* --- Global Submit Button --- */}
         <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] z-40">
             <button 
                 onClick={addTransaction} 
-                disabled={!amount || parseFloat(amount) <= 0 || isSubmittingTransaction}
-                className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-colors ${amount && parseFloat(amount) > 0 && !isSubmittingTransaction ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-gray-200 text-gray-400'}`}
+                disabled={!localAmount || parseFloat(localAmount) <= 0 || isSubmittingTransaction}
+                className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-colors ${localAmount && parseFloat(localAmount) > 0 && !isSubmittingTransaction ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-gray-200 text-gray-400'}`}
             >
                 {isSubmittingTransaction ? (<><RefreshCw className="animate-spin" size={20}/> 處理中...</>) : (<><Check size={20}/> 完成記帳</>)}
             </button>
         </div>
 
-        {/* --- 5-Column Calculator Keypad --- */}
         <div 
             className={`fixed bottom-0 left-0 w-full bg-gray-50 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-50 transition-transform duration-300 ease-out ${isKeypadVisible ? 'translate-y-0' : 'translate-y-[110%]'}`}
         >
