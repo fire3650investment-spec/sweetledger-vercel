@@ -34,18 +34,44 @@ import OnboardingView from './components/OnboardingView';
 import EditTransactionModal from './components/EditTransactionModal';
 import SubscriptionsView from './components/SubscriptionsView';
 
-const firebaseConfig = JSON.parse(window.__firebase_config || '{}');
-const app = Object.keys(firebaseConfig).length > 0 ? initializeApp(firebaseConfig) : null;
+// --- Configuration Fix ---
+// 1. 嘗試從環境變數讀取 (Vite 標準)
+let firebaseConfigStr = import.meta.env.VITE_FIREBASE_CONFIG;
+
+// 2. 如果沒有，嘗試從 window 物件讀取 (部署注入)
+if (!firebaseConfigStr || firebaseConfigStr === '{}') {
+    firebaseConfigStr = window.__firebase_config;
+}
+
+let app = null;
+try {
+    // 3. 解析並初始化
+    const config = firebaseConfigStr ? JSON.parse(firebaseConfigStr) : {};
+    if (Object.keys(config).length > 0) {
+        app = initializeApp(config);
+    } else {
+        console.warn("Firebase config is empty.");
+    }
+} catch (e) {
+    console.error("Firebase Config Parse/Init Error:", e);
+}
+
 const auth = app ? getAuth(app) : null;
 const db = app ? getFirestore(app) : null;
 const appId = 'sweet-ledger-beta';
 
 export default function SweetLedger() {
+  // 如果 Firebase 初始化失敗，顯示錯誤畫面而不是白屏
   if (!app) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center text-gray-600 bg-gray-50">
+      <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center text-gray-600 bg-gray-50 z-[200] relative">
         <h2 className="text-xl font-bold mb-2 text-gray-800">尚未連接 Firebase</h2>
         <p>請檢查 Vercel 的 Environment Variables 設定。</p>
+        <div className="mt-4 text-left text-xs bg-gray-100 p-4 rounded overflow-auto w-full max-w-sm">
+            <p><strong>Debug Info:</strong></p>
+            <p>VITE_FIREBASE_CONFIG: {import.meta.env.VITE_FIREBASE_CONFIG ? 'Found' : 'Missing'}</p>
+            <p>window.__firebase_config: {window.__firebase_config ? 'Found' : 'Missing'}</p>
+        </div>
       </div>
     );
   }
@@ -111,7 +137,10 @@ export default function SweetLedger() {
   // Auth Initialization
   useEffect(() => {
     const initAuth = async () => {
-      const token = window.__initial_auth_token;
+      // 嘗試讀取 Token，增加容錯
+      let token = import.meta.env.VITE_AUTH_TOKEN;
+      if (!token) token = window.__initial_auth_token;
+
       if (token && token.length > 2 && token !== '""') {
          try {
              await signInWithCustomToken(auth, token);
@@ -315,8 +344,21 @@ export default function SweetLedger() {
     }
   };
 
-  // Removed updateInputMode and handleOpenAddExpense logic as we simplified the flow
+  const updateInputMode = async (mode) => {
+    if (!ledgerCode) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { 'settings.defaultInputMode': mode });
+  };
 
+  const handleOpenAddExpense = (mode) => {
+      setView('add');
+      if (mode === 'ai') {
+          setIsAiModalOpen(true);
+      } else {
+          setIsAiModalOpen(false);
+      }
+  };
+  
   const updateNickname = async () => {
     if (!ledgerCode || !myNickname) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
