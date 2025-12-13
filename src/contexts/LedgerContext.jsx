@@ -1,5 +1,12 @@
+// src/contexts/LedgerContext.jsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { doc, onSnapshot, updateDoc, getDoc, setDoc } from 'firebase/firestore';
+import { 
+  doc, 
+  onSnapshot, 
+  updateDoc, 
+  setDoc, 
+  getDoc 
+} from 'firebase/firestore';
 import { db, appId } from '../utils/firebase';
 import { useAuth } from './AuthContext';
 import { INITIAL_LEDGER_STATE } from '../utils/constants';
@@ -7,76 +14,67 @@ import { generateId } from '../utils/helpers';
 
 const LedgerContext = createContext();
 
-export function useLedger() {
-  return useContext(LedgerContext);
-}
+export const useLedger = () => useContext(LedgerContext);
 
-export function LedgerProvider({ children }) {
+export const LedgerProvider = ({ children }) => {
   const { user } = useAuth();
   const [ledgerCode, setLedgerCode] = useState('');
   const [ledgerData, setLedgerData] = useState(null);
-  const [isInitializing, setIsInitializing] = useState(true);
-  const [loading, setLoading] = useState(false); // 用於建立/加入時的 loading 狀態
+  const [isLedgerInitializing, setIsLedgerInitializing] = useState(true);
 
-  // 1. 初始化：嘗試從 localStorage 或 User 狀態恢復 Ledger Code
+  // 1. 初始化：嘗試從 LocalStorage 恢復上次的 Ledger Code
   useEffect(() => {
     const savedCode = localStorage.getItem('sweet_ledger_code');
     if (savedCode) {
       setLedgerCode(savedCode);
     } else {
-      // 如果沒有 code，但 auth 已就緒，視為初始化完成 (進入 Onboarding)
-      setIsInitializing(false);
+      setIsLedgerInitializing(false);
     }
   }, []);
 
-  // 2. 資料監聽：當有 Ledger Code 時，啟動 Firestore 監聽與快取機制
+  // 2. 監聽 Firestore 資料流 & 快取機制
   useEffect(() => {
-    if (!ledgerCode || !db) return;
+    if (!ledgerCode) {
+      setLedgerData(null);
+      return;
+    }
 
+    // 嘗試讀取快取 (讓 UI 瞬間顯示)
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
-    
-    // A. 優先讀取快取 (Optimistic Loading)
     try {
         const cachedData = localStorage.getItem(cacheKey);
         if (cachedData) {
-            const parsed = JSON.parse(cachedData);
-            if (parsed) {
-                console.log("Loaded from cache");
-                setLedgerData(parsed);
-                // 使用 requestAnimationFrame 避免阻塞渲染
-                requestAnimationFrame(() => setIsInitializing(false));
-            }
+            setLedgerData(JSON.parse(cachedData));
         }
     } catch (e) {
         console.error("Cache read error", e);
     }
 
-    // B. 建立即時監聽
+    // 建立 Firestore 即時監聽
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
-        setIsInitializing(false);
       } else {
-        // Code 存在但文件不存在 (可能被刪除)，重置
-        console.warn("Ledger not found, resetting code.");
-        localStorage.removeItem('sweet_ledger_code');
+        // 找不到帳本 (可能被刪除)，清除狀態
+        console.warn("Ledger not found");
         setLedgerCode('');
         setLedgerData(null);
-        setIsInitializing(false);
+        localStorage.removeItem('sweet_ledger_code');
       }
+      setIsLedgerInitializing(false);
     }, (error) => {
-        console.error("Snapshot Error:", error);
-        setIsInitializing(false);
+      console.error("Snapshot error:", error);
+      setIsLedgerInitializing(false);
     });
 
     return () => unsubscribe();
   }, [ledgerCode]);
 
-  // 3. 智慧型自動扣款檢查 (Smart Auto-Sub Check)
-  // 邏輯：每天只檢查一次，且延遲 5 秒執行，避免拖慢啟動速度
+  // 3. 智慧自動扣款檢查 (Smart Auto-Sub Check)
+  // 從 App.jsx 移植過來的核心邏輯
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0 || !ledgerCode) return;
 
@@ -84,9 +82,7 @@ export function LedgerProvider({ children }) {
     const lastCheckKey = `last_subs_check_${ledgerCode}`;
     const lastCheckDate = localStorage.getItem(lastCheckKey);
 
-    if (lastCheckDate === todayStr) {
-        return; 
-    }
+    if (lastCheckDate === todayStr) return; // 今天檢查過了
 
     const timer = setTimeout(async () => {
         let updatesNeeded = false;
@@ -99,9 +95,9 @@ export function LedgerProvider({ children }) {
         newSubscriptions = newSubscriptions.map(sub => {
             let nextDate = new Date(sub.nextPaymentDate);
             let updated = false;
-            let loopCount = 0; // 安全閥，避免無限迴圈
+            let loopCount = 0;
             
-            // 補齊所有過期的扣款
+            // 補上所有漏掉的週期
             while (nextDate <= now && loopCount < 12) {
                 updated = true;
                 updatesNeeded = true;
@@ -110,14 +106,14 @@ export function LedgerProvider({ children }) {
                 
                 const tx = {
                     ...txBase,
-                    id: generateId(),
+                    id: generateId(), // 需從 helpers 匯入
                     date: nextDate.toISOString(),
                     note: `[自動扣款] ${sub.name}`,
                     isSettlement: false
                 };
                 newTransactions.push(tx);
 
-                // 計算下一次扣款日
+                // 計算下一次日期
                 if (sub.cycle === 'monthly') {
                     const currentMonth = nextDate.getMonth();
                     const nextMonth = currentMonth + 1;
@@ -130,7 +126,6 @@ export function LedgerProvider({ children }) {
                 } else if (sub.cycle === 'weekly') {
                     nextDate.setDate(nextDate.getDate() + 7);
                 } else {
-                    // Fallback default
                     nextDate.setMonth(nextDate.getMonth() + 1);
                 }
                 
@@ -144,16 +139,12 @@ export function LedgerProvider({ children }) {
         });
 
         if (updatesNeeded) {
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-                await updateDoc(docRef, { 
-                    transactions: newTransactions,
-                    subscriptions: newSubscriptions
-                });
-                console.log("Auto-subscriptions updated.");
-            } catch(e) {
-                console.error("Auto-sub update failed:", e);
-            }
+            console.log("Auto-subscriptions processed.");
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+            await updateDoc(docRef, { 
+                transactions: newTransactions,
+                subscriptions: newSubscriptions
+            });
         }
         
         localStorage.setItem(lastCheckKey, todayStr);
@@ -161,64 +152,46 @@ export function LedgerProvider({ children }) {
     }, 5000); 
 
     return () => clearTimeout(timer);
+  }, [ledgerData, ledgerCode]);
 
-  }, [ledgerData, ledgerCode]); 
 
-  // --- Actions ---
-
+  // Actions (建立與加入帳本)
   const createLedger = async (currentUser) => {
-    if (!currentUser || !db) return;
-    setLoading(true);
-    try {
-        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const userName = currentUser.displayName || 'Host';
-        const newLedger = {
-            ...INITIAL_LEDGER_STATE,
-            users: { [currentUser.uid]: { name: userName, avatar: 'cat', role: 'host' } }
-        };
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
-        localStorage.setItem('sweet_ledger_code', code);
-        setLedgerCode(code);
-    } catch (e) {
-        console.error("Create Error:", e);
-        alert(`建立失敗: ${e.message}`);
-    } finally {
-        setLoading(false);
-    }
+    if (!currentUser) throw new Error("請先登入");
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const userName = currentUser.displayName || 'Host';
+    const newLedger = {
+        ...INITIAL_LEDGER_STATE,
+        users: { [currentUser.uid]: { name: userName, avatar: 'cat', role: 'host' } }
+    };
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
+    localStorage.setItem('sweet_ledger_code', code);
+    setLedgerCode(code);
+    return code;
   };
 
   const joinLedger = async (code, currentUser) => {
-    if (!currentUser || !db) return;
-    setLoading(true);
-    const upperCode = code.toUpperCase();
-    try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', upperCode);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            const currentData = docSnap.data();
-            // 如果使用者不在名單內，自動加入
-            if (!currentData.users || !currentData.users[currentUser.uid]) {
-                const userName = currentUser.displayName || 'Guest';
-                const updatedUsers = { 
-                    ...currentData.users, 
-                    [currentUser.uid]: { name: userName, avatar: 'dog', role: 'guest' } 
-                };
-                await updateDoc(docRef, { users: updatedUsers });
-            }
-            localStorage.setItem('sweet_ledger_code', upperCode);
-            setLedgerCode(upperCode);
-        } else {
-            alert("找不到這個帳本代碼！");
-        }
-    } catch(e) {
-        console.error("Join Error:", e);
-        alert("加入失敗，請檢查網路");
-    } finally {
-        setLoading(false);
+    if (!currentUser) throw new Error("請先登入");
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code);
+    const docSnap = await getDoc(docRef);
+    
+    if (docSnap.exists()) {
+      const currentData = docSnap.data();
+      // 如果使用者不在名單內，加入之
+      if (!currentData.users || !currentData.users[currentUser.uid]) {
+          const userName = currentUser.displayName || 'Guest';
+          const updatedUsers = { ...currentData.users, [currentUser.uid]: { name: userName, avatar: 'dog', role: 'guest' } };
+          await updateDoc(docRef, { users: updatedUsers });
+      }
+      localStorage.setItem('sweet_ledger_code', code);
+      setLedgerCode(code);
+      return true;
+    } else {
+      throw new Error("找不到這個帳本代碼！");
     }
   };
   
-  const resetLedgerState = () => {
+  const disconnectLedger = () => {
       setLedgerCode('');
       setLedgerData(null);
       localStorage.removeItem('sweet_ledger_code');
@@ -226,13 +199,12 @@ export function LedgerProvider({ children }) {
 
   const value = {
     ledgerCode,
-    setLedgerCode, // 暴露給 Onboarding 手動輸入用
     ledgerData,
-    isInitializing,
-    loading,
+    isLedgerInitializing,
     createLedger,
     joinLedger,
-    resetLedgerState
+    disconnectLedger,
+    setLedgerCode // 暫時暴露，以相容部分 UI 操作
   };
 
   return (
@@ -240,4 +212,4 @@ export function LedgerProvider({ children }) {
       {children}
     </LedgerContext.Provider>
   );
-}
+};
