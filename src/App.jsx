@@ -35,17 +35,13 @@ import EditTransactionModal from './components/EditTransactionModal';
 import SubscriptionsView from './components/SubscriptionsView';
 
 // --- Configuration Fix ---
-// 1. 嘗試從環境變數讀取 (Vite 標準)
 let firebaseConfigStr = import.meta.env.VITE_FIREBASE_CONFIG;
-
-// 2. 如果沒有，嘗試從 window 物件讀取 (部署注入)
 if (!firebaseConfigStr || firebaseConfigStr === '{}') {
     firebaseConfigStr = window.__firebase_config;
 }
 
 let app = null;
 try {
-    // 3. 解析並初始化
     const config = firebaseConfigStr ? JSON.parse(firebaseConfigStr) : {};
     if (Object.keys(config).length > 0) {
         app = initializeApp(config);
@@ -61,7 +57,6 @@ const db = app ? getFirestore(app) : null;
 const appId = 'sweet-ledger-beta';
 
 export default function SweetLedger() {
-  // 如果 Firebase 初始化失敗，顯示錯誤畫面而不是白屏
   if (!app) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center text-gray-600 bg-gray-50 z-[200] relative">
@@ -134,10 +129,9 @@ export default function SweetLedger() {
     }
   }, [user]);
 
-  // Auth Initialization
+  // Auth Initialization Strategy
   useEffect(() => {
     const initAuth = async () => {
-      // 嘗試讀取 Token，增加容錯
       let token = import.meta.env.VITE_AUTH_TOKEN;
       if (!token) token = window.__initial_auth_token;
 
@@ -208,25 +202,40 @@ export default function SweetLedger() {
     return () => unsubscribe();
   }, [user, ledgerCode]);
 
-  // --- AUTOMATIC SUBSCRIPTION CHECKER ---
+  // --- 智慧型自動扣款檢查 (Smart Auto-Subscription Check) ---
+  // 策略：每日一檢 + 延遲執行 (避免阻塞啟動)
   useEffect(() => {
-    const checkSubscriptions = async () => {
-        if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0) return;
-        if (hasCheckedSubsRef.current && Math.random() > 0.1) return; 
+    // 如果資料還沒準備好，直接略過
+    if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0 || !ledgerCode) return;
 
-        const now = new Date();
-        now.setHours(0,0,0,0); 
+    // 1. 檢查今日是否已執行過 (Local Lock)
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const lastCheckKey = `last_subs_check_${ledgerCode}`;
+    const lastCheckDate = localStorage.getItem(lastCheckKey);
+
+    if (lastCheckDate === todayStr) {
+        console.log("Auto-sub checked today, skipping.");
+        return; // 今日已檢查，跳過運算
+    }
+
+    // 2. 延遲 5 秒執行 (Defer Execution)，確保 UI 完全 Ready
+    const timer = setTimeout(async () => {
+        console.log("Running smart auto-subscription check...");
         
         let updatesNeeded = false;
         let newTransactions = [...(ledgerData.transactions || [])];
         let newSubscriptions = [...ledgerData.subscriptions];
+
+        const now = new Date();
+        now.setHours(0,0,0,0);
 
         newSubscriptions = newSubscriptions.map(sub => {
             let nextDate = new Date(sub.nextPaymentDate);
             let updated = false;
             let loopCount = 0;
             
-            while (nextDate <= new Date() && loopCount < 12) {
+            // 安全限制：最多補 12 次 (避免無限迴圈)
+            while (nextDate <= now && loopCount < 12) {
                 updated = true;
                 updatesNeeded = true;
                 
@@ -241,6 +250,7 @@ export default function SweetLedger() {
                 };
                 newTransactions.push(tx);
 
+                // 計算下一次扣款日
                 if (sub.cycle === 'monthly') {
                     const currentMonth = nextDate.getMonth();
                     const nextMonth = currentMonth + 1;
@@ -265,23 +275,24 @@ export default function SweetLedger() {
             return sub;
         });
 
+        // 3. 如果有更新，寫入 Firebase 並更新 Local Lock
         if (updatesNeeded) {
-            console.log("Auto-processing subscriptions...", newTransactions.length - ledgerData.transactions.length, "new transactions.");
+            console.log("Auto-sub updates needed, writing to DB...");
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-            hasCheckedSubsRef.current = true;
             await updateDoc(docRef, { 
                 transactions: newTransactions,
                 subscriptions: newSubscriptions
             });
         }
-    };
-    
-    const timer = setTimeout(() => {
-        checkSubscriptions();
-    }, 2000);
+        
+        // 無論有無更新，都標記今日已檢查
+        localStorage.setItem(lastCheckKey, todayStr);
+
+    }, 5000); // 延遲 5000ms
+
     return () => clearTimeout(timer);
 
-  }, [ledgerData]); 
+  }, [ledgerData]); // 當 ledgerData 載入後觸發 (但會被 Lock 和 Timeout 擋住)
 
   // --- Handlers ---
   const handleCustomSplitChange = (field, value) => {
@@ -370,7 +381,6 @@ export default function SweetLedger() {
       const confirmStr = prompt("警告：此操作將刪除所有交易紀錄且無法復原！\n請輸入 RESET 確認重置：");
       if (confirmStr === "RESET") {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        // Removed gamification reset
         await updateDoc(docRef, { 
             transactions: [], 
             subscriptions: [],
@@ -751,7 +761,6 @@ export default function SweetLedger() {
     link.click();
   };
 
-  // Overlay approach
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans selection:bg-rose-100 pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500 relative">
       <div 
