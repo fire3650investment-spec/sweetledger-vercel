@@ -1,47 +1,103 @@
-import React from 'react';
-import { renderAvatar } from '../utils/helpers';
+import React, { useState } from 'react';
+import { LogIn, ArrowRight, Heart } from 'lucide-react';
 
 export default function OnboardingView({ 
-  user, 
-  handleGoogleLogin, 
-  createLedger, 
-  joinLedger, 
-  ledgerCode, 
-  setLedgerCode, 
-  loading 
+    handleGoogleLogin, 
+    loading, 
+    onJoinWithCode // New prop for direct join attempt
 }) {
-  return (
-    <div className="min-h-screen bg-pink-50 flex flex-col items-center justify-center p-6 text-center">
-        <div className="bg-white p-8 rounded-3xl shadow-xl max-w-sm w-full">
-        <div className="text-6xl mb-4">🍰</div>
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">情侶記帳</h1>
-        <p className="text-gray-500 mb-8">讓記帳成為情侶間的小樂趣</p>
-        
-        {/* Google Login Button */}
-        {!user ? (
-           <button 
-             onClick={handleGoogleLogin}
-             className="w-full bg-white border border-gray-200 text-gray-700 py-4 rounded-xl font-bold text-lg mb-4 shadow-sm flex items-center justify-center gap-3 active:scale-95 transition-transform"
-           >
-             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-6 h-6" alt="Google"/>
-             使用 Google 登入
-           </button>
-        ) : (
-           <div className="w-full space-y-4">
-               <div className="flex items-center justify-center gap-2 mb-4">
-                   {renderAvatar(user.photoURL, "w-8 h-8")}
-                   <span className="text-sm font-bold text-gray-600">嗨，{user.displayName}</span>
-               </div>
-               <button onClick={createLedger} className="w-full bg-rose-500 text-white py-4 rounded-xl font-bold text-lg shadow-lg shadow-rose-200 active:scale-95 transition-transform">{loading ? "建立中..." : "建立新帳本"}</button>
-           </div>
-        )}
+  const [inputCode, setInputCode] = useState('');
 
-        <div className="relative my-6"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div><div className="relative flex justify-center text-sm"><span className="px-2 bg-white text-gray-500">或</span></div></div>
-        <div className="flex gap-2 w-full">
-            <input type="text" placeholder="輸入邀請碼" className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-rose-500" onChange={(e) => setLedgerCode(e.target.value.toUpperCase())} />
-            <button onClick={() => { if(!user) { alert("請先登入 Google 帳號"); return; } joinLedger(ledgerCode); }} className="bg-gray-800 text-white px-6 rounded-xl font-bold active:scale-95 transition-transform whitespace-nowrap flex-shrink-0">加入</button>
+  const handleJoinClick = () => {
+    if (inputCode && onJoinWithCode) {
+        onJoinWithCode(inputCode);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col relative overflow-hidden bg-white">
+      {/* Background Decor */}
+      <div className="absolute top-[-10%] right-[-10%] w-[80vw] h-[80vw] bg-rose-50 rounded-full blur-3xl opacity-60 pointer-events-none" />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[80vw] h-[80vw] bg-blue-50 rounded-full blur-3xl opacity-60 pointer-events-none" />
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col items-center justify-center p-8 z-10 text-center">
+        
+        {/* Logo Area */}
+        <div className="mb-12 space-y-4">
+            <div className="w-20 h-20 bg-gradient-to-tr from-rose-400 to-rose-600 rounded-3xl rotate-3 shadow-xl shadow-rose-200 flex items-center justify-center mx-auto">
+                 <span className="text-4xl">🍰</span>
+            </div>
+            <div>
+                <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">
+                    Sweet<span className="text-rose-500">Ledger</span>
+                </h1>
+                <p className="text-gray-500 mt-2 text-sm font-medium">專屬情侶的記帳小天地</p>
+            </div>
         </div>
+
+        {/* Actions Area */}
+        <div className="w-full max-w-xs space-y-8">
+            
+            {/* Primary: Login */}
+            <div className="space-y-3">
+                <button 
+                    onClick={handleGoogleLogin}
+                    disabled={loading}
+                    className="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold shadow-xl shadow-gray-200 flex items-center justify-center gap-3 active:scale-95 transition-transform disabled:opacity-70"
+                >
+                    {loading ? (
+                        <span className="animate-pulse">處理中...</span>
+                    ) : (
+                        <>
+                            <LogIn size={20} />
+                            使用 Google 登入
+                        </>
+                    )}
+                </button>
+                <p className="text-[10px] text-gray-400">登入後將自動找回您的帳本</p>
+            </div>
+
+            <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-100"></div>
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-gray-300">OR</span>
+                </div>
+            </div>
+
+            {/* Secondary: Join with Code */}
+            <div className="space-y-2">
+                <div className="flex gap-2">
+                    <input 
+                        type="text" 
+                        value={inputCode}
+                        onChange={(e) => setInputCode(e.target.value.toUpperCase())}
+                        placeholder="輸入邀請碼"
+                        className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-center text-sm font-bold tracking-widest focus:outline-none focus:ring-2 focus:ring-rose-500 transition-all placeholder:font-normal placeholder:tracking-normal"
+                        maxLength={6}
+                    />
+                    <button 
+                        onClick={handleJoinClick}
+                        disabled={!inputCode || loading}
+                        className="bg-rose-100 text-rose-600 px-4 rounded-xl font-bold disabled:opacity-50 active:scale-95 transition-transform"
+                    >
+                        <ArrowRight size={20} />
+                    </button>
+                </div>
+                <p className="text-[10px] text-gray-400">已有另一半的邀請碼？輸入並加入</p>
+            </div>
+
         </div>
+      </div>
+
+      {/* Footer */}
+      <div className="p-6 text-center">
+        <p className="text-xs text-gray-300 flex items-center justify-center gap-1">
+            Made with <Heart size={10} className="fill-rose-300 text-rose-300" /> for Couples
+        </p>
+      </div>
     </div>
   );
 }

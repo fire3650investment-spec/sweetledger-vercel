@@ -1,4 +1,3 @@
-// src/contexts/LedgerContext.jsx
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { 
   doc, 
@@ -36,6 +35,10 @@ export const LedgerProvider = ({ children }) => {
   useEffect(() => {
     if (!ledgerCode) {
       setLedgerData(null);
+      // 如果沒有 Code，但之前可能在 loading，這裡要結束 loading
+      if (!localStorage.getItem('sweet_ledger_code')) {
+          setIsLedgerInitializing(false);
+      }
       return;
     }
 
@@ -73,8 +76,7 @@ export const LedgerProvider = ({ children }) => {
     return () => unsubscribe();
   }, [ledgerCode]);
 
-  // 3. 智慧自動扣款檢查 (Smart Auto-Sub Check)
-  // 從 App.jsx 移植過來的核心邏輯
+  // 3. 智慧自動扣款檢查
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0 || !ledgerCode) return;
 
@@ -82,7 +84,7 @@ export const LedgerProvider = ({ children }) => {
     const lastCheckKey = `last_subs_check_${ledgerCode}`;
     const lastCheckDate = localStorage.getItem(lastCheckKey);
 
-    if (lastCheckDate === todayStr) return; // 今天檢查過了
+    if (lastCheckDate === todayStr) return; 
 
     const timer = setTimeout(async () => {
         let updatesNeeded = false;
@@ -97,7 +99,6 @@ export const LedgerProvider = ({ children }) => {
             let updated = false;
             let loopCount = 0;
             
-            // 補上所有漏掉的週期
             while (nextDate <= now && loopCount < 12) {
                 updated = true;
                 updatesNeeded = true;
@@ -106,14 +107,13 @@ export const LedgerProvider = ({ children }) => {
                 
                 const tx = {
                     ...txBase,
-                    id: generateId(), // 需從 helpers 匯入
+                    id: generateId(), 
                     date: nextDate.toISOString(),
                     note: `[自動扣款] ${sub.name}`,
                     isSettlement: false
                 };
                 newTransactions.push(tx);
 
-                // 計算下一次日期
                 if (sub.cycle === 'monthly') {
                     const currentMonth = nextDate.getMonth();
                     const nextMonth = currentMonth + 1;
@@ -154,17 +154,45 @@ export const LedgerProvider = ({ children }) => {
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode]);
 
+  // --- Actions ---
 
-  // Actions (建立與加入帳本)
+  // [NEW] 檢查使用者是否已綁定帳本 (用於跨裝置同步)
+  const checkUserBinding = async (uid) => {
+      try {
+          const userDocRef = doc(db, 'users', uid); // Root level users collection
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+              const data = userDoc.data();
+              if (data.ledgerCode) {
+                  return data.ledgerCode;
+              }
+          }
+      } catch (e) {
+          console.error("Check binding failed:", e);
+      }
+      return null;
+  };
+
   const createLedger = async (currentUser) => {
     if (!currentUser) throw new Error("請先登入");
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     const userName = currentUser.displayName || 'Host';
+    
+    // 1. 建立帳本文件
     const newLedger = {
         ...INITIAL_LEDGER_STATE,
         users: { [currentUser.uid]: { name: userName, avatar: 'cat', role: 'host' } }
     };
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
+    
+    // 2. [NEW] 綁定使用者到 users collection
+    await setDoc(doc(db, 'users', currentUser.uid), {
+        email: currentUser.email,
+        ledgerCode: code,
+        role: 'host',
+        updatedAt: new Date().toISOString()
+    });
+
     localStorage.setItem('sweet_ledger_code', code);
     setLedgerCode(code);
     return code;
@@ -183,6 +211,15 @@ export const LedgerProvider = ({ children }) => {
           const updatedUsers = { ...currentData.users, [currentUser.uid]: { name: userName, avatar: 'dog', role: 'guest' } };
           await updateDoc(docRef, { users: updatedUsers });
       }
+
+      // [NEW] 綁定使用者到 users collection
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        email: currentUser.email,
+        ledgerCode: code,
+        role: 'guest', // 或保留原狀
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
+
       localStorage.setItem('sweet_ledger_code', code);
       setLedgerCode(code);
       return true;
@@ -204,7 +241,8 @@ export const LedgerProvider = ({ children }) => {
     createLedger,
     joinLedger,
     disconnectLedger,
-    setLedgerCode // 暫時暴露，以相容部分 UI 操作
+    setLedgerCode,
+    checkUserBinding // Exported
   };
 
   return (
