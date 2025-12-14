@@ -1,334 +1,324 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, RefreshCw, Sparkles, StopCircle, Mic, CheckCircle2, Check, Delete, Equal, Keyboard } from 'lucide-react';
-import { getIconComponent } from '../utils/helpers';
-import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
+import { 
+  X, Calendar, Check, Delete, Mic, Image as ImageIcon, 
+  Sparkles, Repeat, Users, User, Type, ArrowUp
+} from 'lucide-react';
+import { CATEGORIES, COLORS, DEFAULT_CATEGORIES } from '../utils/constants';
 
 export default function AddExpenseView({
   ledgerData,
-  currentProjectId,
   user,
-  isAiModalOpen,
-  setIsAiModalOpen,
-  aiModalInput,
-  setAiModalInput,
-  isRecording,
-  toggleVoiceRecording,
-  handleAiModalSubmit,
-  isAiProcessing,
+  currentProjectId,
   setView,
-  fileInputRef,
-  date,
-  setDate,
-  currency, 
-  setCurrency, 
-  // amount,       // ❌ 不再直接使用父層 amount 進行渲染
-  setAmount,    // ✅ 僅在最終提交時使用
-  initialAmount, // ✅ 新增：接收父層的初始值 (如果有的話)
-  payer,
-  setPayer,
-  note,
-  setNote,
-  selectedCategory,
-  setSelectedCategory,
-  splitType,
-  setSplitType,
-  customSplitHost,
-  setCustomSplitHost,
-  customSplitGuest,
-  setCustomSplitGuest,
+  // Date & Currency
+  date, setDate,
+  currency, setCurrency,
+  // Amount & Note
+  amount, setAmount,
+  note, setNote,
+  // Category
+  selectedCategory, setSelectedCategory,
+  // Split & Payer
+  payer, setPayer,
+  splitType, setSplitType,
+  customSplitHost, setCustomSplitHost,
+  customSplitGuest, setCustomSplitGuest,
   handleCustomSplitChange,
-  isSubscription,
-  setIsSubscription,
-  subCycle,
-  setSubCycle,
-  subPayDay,
-  setSubPayDay,
+  // Subscription
+  isSubscription, setIsSubscription,
+  subCycle, setSubCycle,
+  subPayDay, setSubPayDay,
+  // Actions
   addTransaction,
-  isSubmittingTransaction
+  isSubmittingTransaction,
+  // AI Props (保留介面但不干擾主流程)
+  isAiModalOpen, setIsAiModalOpen,
+  aiModalInput, setAiModalInput,
+  isRecording, toggleVoiceRecording,
+  handleAiModalSubmit, isAiProcessing,
+  fileInputRef
 }) {
-    if (!ledgerData) return null; 
-    
-    // --- Local High-Performance State ---
-    const [localAmount, setLocalAmount] = useState(initialAmount || '');
-    const [isKeypadVisible, setIsKeypadVisible] = useState(true);
-    
-    // 監聽父層傳入的初始值
-    // Fix: 當父層重置為空字串時 (例如記帳完成)，強制清空本地狀態
-    useEffect(() => {
-        if (initialAmount !== undefined) {
-             // 如果父層是空，且本地不是空 (代表被重置了)，則清空
-             if (!initialAmount && localAmount) {
-                 setLocalAmount('');
-                 setIsKeypadVisible(true); // 重置鍵盤狀態
-             }
-             // 如果父層有值 (例如 AI)，且與本地不同，則同步
-             else if (initialAmount && initialAmount.toString() !== localAmount) {
-                 setLocalAmount(initialAmount.toString());
-             }
-        }
-    }, [initialAmount]);
+  // --- Local State for UI UX ---
+  const [isNoteFocused, setIsNoteFocused] = useState(false); // 專注模式狀態
+  const noteInputRef = useRef(null);
+  
+  // 安全獲取分類列表
+  const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
 
-    // 當本地數值改變時，Debounce 同步回父層
-    useEffect(() => {
-        setAmount(localAmount);
-    }, [localAmount]);
-
-    const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
-    const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
-    const filteredCategories = currentCats.filter(cat => selectedCategoryIds.includes(cat.id)); 
-    
-    const recentNotes = [];
-    if (ledgerData.transactions) {
-        const notes = ledgerData.transactions
-            .filter(t => t.category.id === selectedCategory.id && t.note)
-            .map(t => t.note);
-        const uniqueNotes = [...new Set(notes)];
-        recentNotes.push(...uniqueNotes.slice(0, 5));
+  // 數字鍵盤邏輯
+  const handleNumPad = (val) => {
+    if (val === 'backspace') {
+      setAmount(prev => prev.slice(0, -1));
+    } else if (val === 'clear') {
+        setAmount('');
+    } else if (val === '.') {
+      if (!amount.includes('.')) setAmount(prev => prev + '.');
+    } else {
+      // 限制長度避免溢出
+      if (amount.length < 9) setAmount(prev => prev + val);
     }
+  };
 
-    // --- Close Handler ---
-    // Fix: 點擊 X 時，手動重置所有狀態，確保下次進來是乾淨的
-    const handleClose = () => {
-        setLocalAmount('');
-        setAmount(''); // 通知父層清空
-        setNote('');
-        setIsKeypadVisible(true);
-        setView('dashboard');
-    };
+  // 處理送出
+  const handleSubmit = async () => {
+      if (!amount || parseFloat(amount) === 0) return;
+      // 收起鍵盤 (如果是原生鍵盤)
+      if (noteInputRef.current) noteInputRef.current.blur();
+      setIsNoteFocused(false);
+      
+      await addTransaction();
+  };
 
-    // --- Calculator Logic (Pure Local) ---
-    const handleKeyPress = (key) => {
-        if (navigator.vibrate) {
-            try { navigator.vibrate(10); } catch(e) {}
-        }
-
-        if (key === 'AC') {
-            setLocalAmount('');
-            return;
-        }
-
-        if (key === 'DEL') {
-            setLocalAmount(prev => prev.slice(0, -1));
-            return;
-        }
-
-        if (key === 'DONE') {
-            const isPendingMath = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
-
-            if (isPendingMath) {
-                 try {
-                    const safeExpr = localAmount.replace(/×/g, '*').replace(/÷/g, '/');
-                    // eslint-disable-next-line no-new-func
-                    const result = new Function('return ' + safeExpr)();
-                    const finalVal = Math.round(result * 100) / 100;
-                    const finalStr = finalVal.toString();
-                    
-                    setLocalAmount(finalStr);
-                 } catch (e) {}
-            } else {
-                setIsKeypadVisible(false);
-            }
-            return;
-        }
-
-        const operators = ['+', '-', '×', '÷'];
+  // 渲染分類區 (5欄 x N行)
+  const renderCategories = () => (
+    <div className={`
+        grid grid-cols-5 gap-2 p-3 overflow-y-auto overscroll-contain transition-all duration-300
+        ${isNoteFocused ? 'h-0 opacity-0 overflow-hidden p-0 m-0' : 'max-h-[35vh] opacity-100'}
+    `}>
+      {categories.map((cat) => {
+        const isSelected = selectedCategory?.id === cat.id;
+        // 確保顏色存在，避免錯誤
+        const colorClass = cat.color || 'bg-gray-100';
+        const iconName = cat.icon || 'help-circle';
         
-        setLocalAmount(prev => {
-            const lastChar = prev.slice(-1);
-            if (operators.includes(key)) {
-                if (operators.includes(lastChar)) {
-                    return prev.slice(0, -1) + key;
-                }
-                if (!prev) return prev; 
-            }
-            return prev + key;
-        });
-    };
+        return (
+          <button
+            key={cat.id}
+            onClick={() => setSelectedCategory(cat)}
+            className="flex flex-col items-center justify-center gap-1 py-2 active:scale-95 transition-transform"
+          >
+            <div className={`
+              w-10 h-10 rounded-2xl flex items-center justify-center text-xl shadow-sm transition-all duration-200
+              ${isSelected 
+                ? `bg-gray-900 text-white shadow-md scale-105 ring-2 ring-offset-1 ring-gray-900` 
+                : 'bg-white border border-gray-100 text-gray-400 hover:border-gray-300'}
+            `}>
+              {/* 這裡可以使用圖示 mapping，目前先用 emoji 或簡單圖示替代 */}
+               {/* 實際專案建議引入 Icon Component Mapping */}
+               <span className={isSelected ? 'grayscale-0' : 'grayscale opacity-70'}>
+                 {/* 簡單的 Icon 對應，若無對應則顯示首字 */}
+                 {cat.icon === 'food' ? '🍔' : 
+                  cat.icon === 'transport' ? '🚌' : 
+                  cat.icon === 'shopping' ? '🛍️' : 
+                  cat.icon === 'entertainment' ? '🎮' : 
+                  cat.icon === 'house' ? '🏠' : 
+                  cat.name ? cat.name[0] : '?'}
+               </span>
+            </div>
+            <span className={`text-[10px] font-medium truncate w-full text-center ${isSelected ? 'text-gray-900' : 'text-gray-400'}`}>
+              {cat.name}
+            </span>
+          </button>
+        );
+      })}
+      
+      {/* 新增分類按鈕 (保留功能) */}
+      <button 
+        onClick={() => setView('settings')}
+        className="flex flex-col items-center justify-center gap-1 py-2 opacity-50 hover:opacity-100"
+      >
+        <div className="w-10 h-10 rounded-2xl bg-gray-50 border border-dashed border-gray-300 flex items-center justify-center text-gray-400">
+            <span className="text-lg">+</span>
+        </div>
+        <span className="text-[10px] text-gray-400">編輯</span>
+      </button>
+    </div>
+  );
 
-    const isMathPending = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
-
-    const renderKey = (label, type = 'num', className = '') => (
-        <button
-            onClick={(e) => { e.stopPropagation(); handleKeyPress(label); }}
-            className={`
-                btn-press rounded-xl text-xl font-bold flex items-center justify-center select-none
-                ${className}
-                ${type === 'num' ? 'bg-white text-gray-800 btn-num' : ''}
-                ${type === 'op' ? 'bg-rose-50 text-rose-600 btn-op' : ''}
-                ${type === 'ac' ? 'bg-gray-200 text-gray-600 btn-num' : ''}
-                ${type === 'primary' ? 'bg-gray-900 text-white shadow-md' : ''}
-            `}
-            style={{ height: '42px' }} 
+  // 渲染設定膠囊區 (付款人 / 分帳 / 固定)
+  const renderCapsules = () => (
+    <div className={`
+        flex items-center gap-2 px-4 py-2 overflow-x-auto no-scrollbar transition-all duration-300
+        ${isNoteFocused ? 'h-0 opacity-0 overflow-hidden py-0' : 'h-auto opacity-100'}
+    `}>
+        {/* 1. 付款人膠囊 */}
+        <button 
+            onClick={() => {
+                const uids = Object.keys(ledgerData?.users || {});
+                const nextIndex = (uids.indexOf(payer) + 1) % uids.length;
+                setPayer(uids[nextIndex]);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 rounded-full text-xs font-medium text-gray-600 active:bg-gray-200 shrink-0"
         >
-            {label === 'DEL' ? <Delete size={20}/> : label}
-            {label === 'DONE' ? (isMathPending ? <Equal size={28}/> : <Check size={28}/>) : null}
+            <User size={12} />
+            {ledgerData?.users?.[payer]?.name || '付款人'}
         </button>
-    );
 
-    return (
-      <div className="h-full flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] bg-white relative">
+        {/* 2. 分帳膠囊 */}
+        <button 
+            onClick={() => {
+                const modes = ['even', 'self', 'partner', 'custom'];
+                const next = modes[(modes.indexOf(splitType) + 1) % modes.length];
+                setSplitType(next);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shrink-0 transition-colors ${splitType !== 'even' ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-600'}`}
+        >
+            <Users size={12} />
+            {splitType === 'even' ? '均分' : 
+             splitType === 'self' ? '我全付' : 
+             splitType === 'partner' ? '對方付' : '自訂'}
+        </button>
+
+        {/* 3. 固定支出膠囊 */}
+        <button 
+            onClick={() => setIsSubscription(!isSubscription)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium shrink-0 transition-colors ${isSubscription ? 'bg-rose-100 text-rose-600' : 'bg-gray-100 text-gray-600'}`}
+        >
+            <Repeat size={12} />
+            {isSubscription ? '固定支出' : '單次'}
+        </button>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-white z-[50] flex flex-col h-[100dvh]">
+      
+      {/* --- 1. Top Bar: Navigation & Info --- */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 bg-white shrink-0">
+        <button 
+            onClick={() => setView('dashboard')}
+            className="p-2 -ml-2 text-gray-400 hover:text-gray-600 active:bg-gray-50 rounded-full"
+        >
+            <X size={24} />
+        </button>
         
-        {isAiModalOpen && (
-            <div className="fixed inset-0 z-[100] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-in fade-in duration-200">
-                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-800">AI 智慧輸入</h3><button onClick={() => { setIsAiModalOpen(false); }} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
-                <div className="flex-1 flex flex-col gap-4">
-                    <textarea value={aiModalInput} onChange={(e) => setAiModalInput(e.target.value)} placeholder="請說話或輸入... 例如：「昨天晚餐吃壽司花了1200元」" className="w-full h-40 p-4 bg-gray-50 rounded-2xl text-lg outline-none resize-none border border-gray-200 focus:border-purple-500 transition-colors"/>
-                    {isRecording && (<div className="flex items-center justify-center gap-2 text-purple-600 animate-pulse"><div className="w-2 h-2 bg-purple-600 rounded-full"></div><span className="text-sm font-medium">正在聆聽...</span></div>)}
-                    <div className="flex justify-center gap-4 mt-auto mb-8"><button onClick={toggleVoiceRecording} className={`p-6 rounded-full transition-all ${isRecording ? 'bg-red-50 text-red-500 scale-110 shadow-red-200' : 'bg-purple-50 text-purple-600 shadow-purple-200'} shadow-lg`}>{isRecording ? <StopCircle size={32} /> : <Mic size={32} />}</button></div>
-                    <button onClick={handleAiModalSubmit} disabled={!aiModalInput} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-lg mb-4">開始分析</button>
-                </div>
-            </div>
-        )}
-
-        <div className="px-4 flex justify-between items-center mb-2 shrink-0">
-            {/* 使用新的 handleClose */}
-            <button onClick={handleClose} className="p-2 bg-gray-100 rounded-full active:bg-gray-200"><X size={20} className="text-gray-600"/></button>
-            <div className="flex-1 flex justify-center">
-                 <div className="bg-gray-100 text-gray-700 font-bold py-1 px-4 rounded-full text-xs flex items-center gap-2">
-                    {ledgerData.projects?.find(p => p.id === currentProjectId)?.name}
-                 </div>
-            </div>
-            {/* AI Button */}
-            <div className="flex gap-2"><button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full active:scale-95 ${isAiProcessing ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600'}`}>{isAiProcessing ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}</button></div>
-        </div>
-        
-        {/* --- Display Area using Local State --- */}
-        <div className="px-4 py-2 shrink-0">
-             <div className="flex justify-between items-center mb-2">
-                <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-                    {['TWD', 'JPY', 'THB'].map(c => (
-                        <button key={c} onClick={() => setCurrency(c)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === c ? 'bg-white shadow-sm text-gray-800' : 'text-gray-400'}`}>{c}</button>
-                    ))}
-                </div>
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-gray-100 text-gray-600 text-[10px] px-2 py-1 rounded-lg outline-none font-medium"/>
-            </div>
-
-            <div 
-                onClick={() => setIsKeypadVisible(true)}
-                className={`w-full h-20 rounded-2xl flex items-center justify-end px-4 overflow-hidden relative transition-all duration-200 ${isKeypadVisible ? 'bg-gray-50 ring-2 ring-rose-100' : 'bg-white border border-transparent'}`}
-            >
-                <span className={`text-5xl font-bold tracking-tight ${!localAmount ? 'text-gray-300' : 'text-gray-800'}`}>
-                    {localAmount || '0'}
-                </span>
-                {isKeypadVisible && <div className="w-[2px] h-10 bg-rose-500 animate-cursor-blink ml-1"></div>}
-            </div>
-
-             <div className="flex gap-2 mt-2 justify-end">
-                <button onClick={() => setPayer(user.uid)} className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${payer === user.uid ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>我付</button>
-                {Object.keys(ledgerData.users).find(uid => uid !== user.uid) && (
-                    <button 
-                        onClick={() => setPayer(Object.keys(ledgerData.users).find(uid => uid !== user.uid))}
-                        className={`px-3 py-1 rounded-full text-[10px] font-bold transition-all ${payer !== user.uid ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}
-                    >
-                        {ledgerData.users[Object.keys(ledgerData.users).find(uid => uid !== user.uid)]?.name} 付
-                    </button>
-                )}
-            </div>
-        </div>
-        
-        <div className={`flex-1 overflow-y-auto px-4 pb-4 ${isKeypadVisible ? 'mb-[32vh]' : 'mb-20'} transition-all duration-300`}>
-             <div className="bg-gray-50 p-3 rounded-xl mb-3 flex items-center gap-2 border border-gray-100">
+        <div className="flex gap-2">
+            {/* 日期選擇 */}
+            <div className="relative">
                 <input 
-                    type="text" 
-                    value={note} 
-                    onChange={(e) => setNote(e.target.value)} 
-                    onFocus={() => setIsKeypadVisible(false)} // 點選備註時，收起計算機
-                    placeholder={`備註: ${selectedCategory.name}...`} 
-                    className="flex-1 bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400"
+                    type="date" 
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    className="absolute inset-0 opacity-0 w-full h-full z-10"
                 />
-             </div>
-             {recentNotes.length > 0 && (<div className="mb-4 flex flex-wrap gap-2">{recentNotes.map((n, idx) => (<button key={idx} onClick={() => setNote(n)} className="px-2 py-1 bg-gray-100 text-gray-500 text-[10px] rounded-lg border border-gray-200 active:bg-gray-200">{n}</button>))}</div>)}
-
-             <div className="grid grid-cols-4 gap-3 mb-6">
-                {filteredCategories.map(cat => { 
-                    const CatIcon = getIconComponent(cat.icon); 
-                    const isSelected = selectedCategory.id === cat.id;
-                    return (
-                        <button key={cat.id} onClick={() => setSelectedCategory(cat)} className={`flex flex-col items-center gap-1 p-2 rounded-xl transition-all btn-press ${isSelected ? 'bg-rose-50 ring-1 ring-rose-200' : 'bg-white border border-gray-50'}`}>
-                            <div className={`text-xl ${isSelected ? 'text-rose-600' : 'text-gray-400'}`}><CatIcon size={24} /></div>
-                            <span className={`text-[10px] font-medium ${isSelected ? 'text-gray-800' : 'text-gray-400'}`}>{cat.name}</span>
-                        </button>
-                    ); 
-                })}
-             </div>
-
-             <div className="bg-white border border-gray-100 p-3 rounded-xl space-y-3 mb-6">
-                <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold text-gray-500">分攤</span>
-                    <select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="text-xs bg-gray-100 p-1 rounded outline-none">
-                        <option value="even">均攤</option>
-                        <option value="self">自己</option>
-                        <option value="partner">對方</option>
-                        <option value="custom">自訂</option>
-                    </select>
-                </div>
-                {splitType === 'custom' && (
-                     <div className="flex gap-2">
-                        <input type="number" placeholder="Host" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} onFocus={() => setIsKeypadVisible(false)} className="w-1/2 p-2 bg-gray-50 rounded text-xs text-center"/>
-                        <input type="number" placeholder="Guest" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} onFocus={() => setIsKeypadVisible(false)} className="w-1/2 p-2 bg-gray-50 rounded text-xs text-center"/>
-                     </div>
-                )}
-                <div className="flex justify-between items-center border-t border-gray-50 pt-2">
-                    <div className="flex items-center gap-2"><RefreshCw size={14} className="text-gray-400"/> <span className="text-xs font-bold text-gray-500">固定支出</span></div>
-                    <button onClick={() => setIsSubscription(!isSubscription)} className={`w-8 h-4 rounded-full relative transition-colors ${isSubscription ? 'bg-rose-500' : 'bg-gray-200'} relative`}><div className={`w-3 h-3 bg-white rounded-full absolute top-0.5 transition-all ${isSubscription ? 'left-4.5' : 'left-0.5'}`}></div></button>
-                </div>
-                {isSubscription && (
-                     <div className="flex gap-2">
-                        <select value={subCycle} onChange={(e) => setSubCycle(e.target.value)} className="bg-gray-50 p-1 rounded text-xs"><option value="monthly">每月</option><option value="weekly">每週</option></select>
-                        <input type="number" placeholder="日" value={subPayDay} onChange={(e) => setSubPayDay(e.target.value)} onFocus={() => setIsKeypadVisible(false)} className="w-12 bg-gray-50 p-1 rounded text-xs text-center"/>
-                     </div>
-                )}
-             </div>
-
-             {!isKeypadVisible && (
-                 <button onClick={() => setIsKeypadVisible(true)} className="w-full py-3 text-gray-400 text-xs font-bold flex items-center justify-center gap-2 bg-gray-50 rounded-xl mb-4">
-                     <Keyboard size={16}/> 開啟計算機
-                 </button>
-             )}
-        </div>
-
-        <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 p-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] z-40">
+                <button className="flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600">
+                    <Calendar size={12} />
+                    {new Date(date).toLocaleDateString()}
+                </button>
+            </div>
+            
+            {/* 幣別切換 */}
             <button 
-                onClick={addTransaction} 
-                disabled={!localAmount || parseFloat(localAmount) <= 0 || isSubmittingTransaction}
-                className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-2 transition-colors ${localAmount && parseFloat(localAmount) > 0 && !isSubmittingTransaction ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-gray-200 text-gray-400'}`}
+                onClick={() => setCurrency(currency === 'TWD' ? (ledgerData?.projects?.find(p=>p.id===currentProjectId)?.rates ? Object.keys(ledgerData.projects.find(p=>p.id===currentProjectId).rates).find(k=>k!=='TWD') : 'JPY') : 'TWD')}
+                className="bg-gray-50 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 min-w-[3rem]"
             >
-                {isSubmittingTransaction ? (<><RefreshCw className="animate-spin" size={20}/> 處理中...</>) : (<><Check size={20}/> 完成記帳</>)}
+                {currency || 'TWD'}
             </button>
         </div>
+      </div>
 
-        <div 
-            className={`fixed bottom-0 left-0 w-full bg-gray-50 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] rounded-t-3xl shadow-[0_-4px_20px_rgba(0,0,0,0.1)] z-50 transition-transform duration-300 ease-out ${isKeypadVisible ? 'translate-y-0' : 'translate-y-[110%]'}`}
-        >
-            <div className="grid grid-cols-5 gap-2 px-1 py-2">
-                {renderKey('7')}
-                {renderKey('8')}
-                {renderKey('9')}
-                {renderKey('+', 'op')}
-                {renderKey('DEL', 'ac')}
+      {/* --- 2. Categories (Scrollable) --- */}
+      {renderCategories()}
 
-                {renderKey('4')}
-                {renderKey('5')}
-                {renderKey('6')}
-                {renderKey('-', 'op')}
-                {renderKey('AC', 'ac')}
+      {/* --- 3. Capsules (Settings) --- */}
+      {renderCapsules()}
 
-                {renderKey('1')}
-                {renderKey('2')}
-                {renderKey('3')}
-                {renderKey('×', 'op')}
-                <button
-                    onClick={(e) => { e.stopPropagation(); handleKeyPress('DONE'); }}
-                    className={`col-start-5 row-start-3 row-span-2 rounded-xl flex items-center justify-center shadow-md btn-press ${isMathPending ? 'bg-rose-500 text-white' : 'bg-gray-900 text-white'}`}
-                >
-                    {isMathPending ? <Equal size={28}/> : <Check size={28}/>}
-                </button>
+      {/* --- Spacer to push input to bottom --- */}
+      <div className="flex-1 min-h-0" onClick={() => setIsNoteFocused(false)} />
 
-                {renderKey('0', 'num', 'col-span-2')} 
-                {renderKey('.')}
-                {renderKey('÷', 'op')}
+      {/* --- 4. Interaction Zone (Bottom) --- */}
+      <div className={`
+        bg-white border-t border-gray-100 shadow-[0_-4px_20px_rgba(0,0,0,0.02)] transition-all duration-300 pb-[env(safe-area-inset-bottom)]
+        ${isNoteFocused ? 'pb-0' : ''}
+      `}>
+        
+        {/* Amount Display */}
+        <div className="px-6 pt-4 pb-2 flex items-end justify-between">
+            <div className="text-gray-400 text-sm font-medium mb-1">
+                {selectedCategory?.name || '未分類'}
+            </div>
+            <div className={`font-mono font-bold text-gray-900 transition-all ${isNoteFocused ? 'text-3xl' : 'text-4xl'}`}>
+                <span className="text-2xl mr-1 text-gray-300">$</span>
+                {amount || '0'}
             </div>
         </div>
+
+        {/* Note Input Row */}
+        <div className="px-4 pb-4 flex items-center gap-3">
+            <div className="flex-1 bg-gray-50 rounded-xl flex items-center px-3 py-3 border border-transparent focus-within:border-gray-200 focus-within:bg-white transition-all">
+                <Type size={16} className="text-gray-400 mr-2" />
+                <input
+                    ref={noteInputRef}
+                    type="text"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    onFocus={() => setIsNoteFocused(true)}
+                    // onBlur 在這裡不直接設為 false，因為可能是點擊右邊的送出鈕
+                    placeholder="輸入備註..."
+                    className="bg-transparent w-full text-base placeholder:text-gray-300 focus:outline-none text-gray-800"
+                />
+                {/* AI Button (Tiny) */}
+                <button 
+                    onClick={() => { setIsAiModalOpen(true); setIsNoteFocused(false); }}
+                    className="p-1.5 bg-white rounded-lg shadow-sm text-rose-500 ml-1"
+                >
+                    <Sparkles size={14} />
+                </button>
+            </div>
+
+            {/* Focus Mode: Submit Button */}
+            {isNoteFocused && (
+                <button 
+                    onClick={handleSubmit}
+                    className="bg-gray-900 text-white p-3 rounded-xl shadow-lg active:scale-95 transition-all animate-in slide-in-from-right-4 fade-in duration-200"
+                >
+                    <ArrowUp size={20} strokeWidth={3} />
+                </button>
+            )}
+        </div>
+
+        {/* --- 5. Custom Keypad (Hidden in Focus Mode) --- */}
+        <div className={`
+            grid grid-cols-4 gap-0.5 bg-gray-50 p-0.5 transition-all duration-300 ease-out origin-bottom
+            ${isNoteFocused ? 'h-0 opacity-0 overflow-hidden' : 'h-[280px] opacity-100'}
+        `}>
+             {[1, 2, 3, 'backspace', 4, 5, 6, 'clear', 7, 8, 9, 'calendar', '.', 0, '00', 'submit'].map((key) => {
+                 // Render Logic for Keys
+                 let content = key;
+                 let bgClass = "bg-white active:bg-gray-100";
+                 let textClass = "text-2xl font-medium text-gray-700";
+                 let onClick = () => handleNumPad(key);
+
+                 if (key === 'backspace') {
+                     content = <Delete size={24} />;
+                     textClass = "text-gray-400";
+                 } else if (key === 'clear') {
+                     content = 'C';
+                     textClass = "text-rose-500 font-bold";
+                 } else if (key === 'calendar') {
+                     // 特殊功能：切換到昨天/今天
+                     const isToday = new Date().toDateString() === new Date(date).toDateString();
+                     content = <span className="text-xs font-bold">{isToday ? '昨天' : '今天'}</span>;
+                     textClass = "text-blue-500";
+                     onClick = () => {
+                         const d = new Date();
+                         if (isToday) d.setDate(d.getDate() - 1);
+                         setDate(d.toISOString().slice(0, 10));
+                     };
+                 } else if (key === 'submit') {
+                     content = isSubmittingTransaction ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div> : <Check size={32} />;
+                     bgClass = "bg-gray-900 active:bg-gray-800 row-span-2"; // 如果網格允許，這裡可以拉長
+                     textClass = "text-white";
+                     onClick = handleSubmit;
+                 }
+
+                 return (
+                     <button
+                        key={key}
+                        onClick={onClick}
+                        disabled={isSubmittingTransaction && key === 'submit'}
+                        className={`
+                            relative flex items-center justify-center h-full w-full rounded-sm transition-colors
+                            ${bgClass} ${textClass}
+                        `}
+                     >
+                         {content}
+                     </button>
+                 )
+             })}
+        </div>
+
       </div>
-    );
+    </div>
+  );
 }
