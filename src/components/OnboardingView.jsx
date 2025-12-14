@@ -4,7 +4,7 @@ import { LogIn, ArrowRight, Heart } from 'lucide-react';
 export default function OnboardingView({ 
     handleGoogleLogin, 
     loading, 
-    onJoinWithCode // New prop for direct join attempt
+    onJoinWithCode // New prop
 }) {
   const [inputCode, setInputCode] = useState('');
 

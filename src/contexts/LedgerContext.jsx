@@ -76,7 +76,7 @@ export const LedgerProvider = ({ children }) => {
     return () => unsubscribe();
   }, [ledgerCode]);
 
-  // 3. 智慧自動扣款檢查
+  // 3. 智慧自動扣款檢查 (Smart Auto-Sub Check)
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0 || !ledgerCode) return;
 
@@ -84,7 +84,7 @@ export const LedgerProvider = ({ children }) => {
     const lastCheckKey = `last_subs_check_${ledgerCode}`;
     const lastCheckDate = localStorage.getItem(lastCheckKey);
 
-    if (lastCheckDate === todayStr) return; 
+    if (lastCheckDate === todayStr) return; // 今天檢查過了
 
     const timer = setTimeout(async () => {
         let updatesNeeded = false;
@@ -99,6 +99,7 @@ export const LedgerProvider = ({ children }) => {
             let updated = false;
             let loopCount = 0;
             
+            // 補上所有漏掉的週期 (限制 12 次以防無窮迴圈)
             while (nextDate <= now && loopCount < 12) {
                 updated = true;
                 updatesNeeded = true;
@@ -114,6 +115,7 @@ export const LedgerProvider = ({ children }) => {
                 };
                 newTransactions.push(tx);
 
+                // 計算下一次日期
                 if (sub.cycle === 'monthly') {
                     const currentMonth = nextDate.getMonth();
                     const nextMonth = currentMonth + 1;
@@ -154,8 +156,9 @@ export const LedgerProvider = ({ children }) => {
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode]);
 
-  // --- Actions ---
 
+  // Actions (建立與加入帳本)
+  
   // [NEW] 檢查使用者是否已綁定帳本 (用於跨裝置同步)
   const checkUserBinding = async (uid) => {
       try {
@@ -178,14 +181,14 @@ export const LedgerProvider = ({ children }) => {
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     const userName = currentUser.displayName || 'Host';
     
-    // 1. 建立帳本文件
+    // 1. 建立帳本
     const newLedger = {
         ...INITIAL_LEDGER_STATE,
         users: { [currentUser.uid]: { name: userName, avatar: 'cat', role: 'host' } }
     };
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
     
-    // 2. [NEW] 綁定使用者到 users collection
+    // 2. [NEW] 綁定 User -> Ledger
     await setDoc(doc(db, 'users', currentUser.uid), {
         email: currentUser.email,
         ledgerCode: code,
@@ -211,12 +214,12 @@ export const LedgerProvider = ({ children }) => {
           const updatedUsers = { ...currentData.users, [currentUser.uid]: { name: userName, avatar: 'dog', role: 'guest' } };
           await updateDoc(docRef, { users: updatedUsers });
       }
-
-      // [NEW] 綁定使用者到 users collection
+      
+      // 2. [NEW] 綁定 User -> Ledger
       await setDoc(doc(db, 'users', currentUser.uid), {
         email: currentUser.email,
         ledgerCode: code,
-        role: 'guest', // 或保留原狀
+        role: 'guest',
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
@@ -242,7 +245,7 @@ export const LedgerProvider = ({ children }) => {
     joinLedger,
     disconnectLedger,
     setLedgerCode,
-    checkUserBinding // Exported
+    checkUserBinding
   };
 
   return (
