@@ -1,0 +1,60 @@
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@supports (padding-top: env(safe-area-inset-top)) {
+  html, body, #root {
+    height: 100dvh; /* 關鍵：鎖定視窗高度，避免 iOS 網址列干擾 */
+    min-height: 100dvh;
+  }
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  overscroll-behavior-y: none; /* 禁止整個頁面橡皮筋效果 */
+  background-color: #f9fafb; /* bg-gray-50 */
+}
+
+/* 隱藏滾動條但保留功能 */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* 模擬游標閃爍 */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.animate-cursor-blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* 底部彈窗動畫 */
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.animate-slide-up {
+  animation: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out forwards;
+}
+
+/* 按鈕點擊回饋 */
+.btn-press {
+  transition: transform 0.1s;
+}
+.btn-press:active {
+  transform: scale(0.95);
+}
