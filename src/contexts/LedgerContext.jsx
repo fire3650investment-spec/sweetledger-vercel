@@ -5,7 +5,8 @@ import {
   onSnapshot, 
   updateDoc, 
   setDoc, 
-  getDoc 
+  getDoc,
+  arrayUnion 
 } from 'firebase/firestore';
 import { db, appId } from '../utils/firebase';
 import { useAuth } from './AuthContext';
@@ -26,7 +27,7 @@ export const LedgerProvider = ({ children }) => {
 
   // [優化] 2. 同步讀取 Ledger Data (Cache-First Strategy)
   const [ledgerData, setLedgerData] = useState(() => {
-      if (!ledgerCode) return null; // 這裡讀不到 state 的 ledgerCode，要重讀一次或邏輯外提，但在 useState 閉包內讀 localStorage 是安全的
+      if (!ledgerCode) return null; 
       const code = localStorage.getItem('sweet_ledger_code');
       if (!code) return null;
 
@@ -46,9 +47,9 @@ export const LedgerProvider = ({ children }) => {
       return null;
   });
 
-  const [isLedgerInitializing, setIsLedgerInitializing] = useState(!ledgerData); // 如果有快取，初始化視為完成
+  const [isLedgerInitializing, setIsLedgerInitializing] = useState(!ledgerData);
 
-  // 1. 監聽 Ledger Code 變更並同步到 LocalStorage (主要處理登入/登出/切換帳本)
+  // 1. 監聽 Ledger Code 變更並同步到 LocalStorage
   useEffect(() => {
     if (ledgerCode) {
         localStorage.setItem('sweet_ledger_code', ledgerCode);
@@ -69,25 +70,18 @@ export const LedgerProvider = ({ children }) => {
 
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
 
-    // 建立 Firestore 即時監聽
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        // 更新快取
         localStorage.setItem(cacheKey, JSON.stringify(data));
-        // 更新 React State (這會觸發 UI 靜默更新)
         setLedgerData(data);
       } else {
         console.warn("Ledger not found (remote)");
-        // 只有遠端明確說不存在時，才清除本地狀態，避免網路錯誤導致資料消失
-        // 但為了安全，如果遠端真的沒了，我們應該視為重置
-        // 這裡暫時保留資料，讓使用者至少能看到離線版，直到他登出
       }
       setIsLedgerInitializing(false);
     }, (error) => {
       console.error("Snapshot error:", error);
-      // 網路錯誤時，保持目前的 ledgerData (如果是快取載入的)
       setIsLedgerInitializing(false);
     });
 
@@ -106,7 +100,6 @@ export const LedgerProvider = ({ children }) => {
 
     const timer = setTimeout(async () => {
         let updatesNeeded = false;
-        // 防呆：確保 transactions 存在
         let newTransactions = [...(ledgerData.transactions || [])];
         let newSubscriptions = [...ledgerData.subscriptions];
 
@@ -174,7 +167,7 @@ export const LedgerProvider = ({ children }) => {
   }, [ledgerData, ledgerCode]);
 
 
-  // Actions (建立與加入帳本)
+  // --- Actions: Authentication & Ledger Binding ---
   const checkUserBinding = async (uid) => {
       try {
           const userDocRef = doc(db, 'users', uid); 
@@ -246,13 +239,116 @@ export const LedgerProvider = ({ children }) => {
       setLedgerCode('');
       setLedgerData(null);
       localStorage.removeItem('sweet_ledger_code');
-      // [優化] 清除 Data 快取
       const keys = Object.keys(localStorage);
       keys.forEach(key => {
           if (key.startsWith('sweet_ledger_data_')) {
               localStorage.removeItem(key);
           }
       });
+  };
+
+  // --- Actions: Transactions (Refactored from App.jsx) ---
+  const addTransaction = async (payload) => {
+    if (!ledgerCode || !user) throw new Error("無效的帳本狀態");
+    
+    const { 
+        amount, currency, category, payer, 
+        splitType, customSplit, note, projectId, 
+        date, isSubscription, subCycle, subPayDay 
+    } = payload;
+
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    const selectedDate = new Date(date).toISOString(); 
+
+    // 建構基礎交易資料
+    const commonData = {
+        id: generateId(), 
+        amount: parseFloat(amount), 
+        currency: currency, 
+        category: category,
+        payer: payer || user.uid, 
+        splitType: splitType, 
+        customSplit: customSplit,
+        note: note || category.name, 
+        projectId: projectId,
+    };
+
+    if (isSubscription) {
+      // 計算下一次扣款日
+      let nextDate = new Date(selectedDate);
+      if (subCycle === 'monthly') {
+          nextDate.setMonth(nextDate.getMonth() + 1);
+          if (subPayDay) {
+              const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
+              const targetDay = Math.min(parseInt(subPayDay), daysInNextMonth);
+              nextDate.setDate(targetDay);
+          }
+      } else if (subCycle === 'weekly') {
+          nextDate.setDate(nextDate.getDate() + 7);
+      }
+      
+      await updateDoc(docRef, { 
+          subscriptions: arrayUnion({ 
+              ...commonData, 
+              name: note || category.name, 
+              cycle: subCycle, 
+              payDay: parseInt(subPayDay) || 1, 
+              mode: 'infinite', 
+              nextPaymentDate: nextDate.toISOString(),
+          }),
+          transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }) 
+      });
+    } else {
+      await updateDoc(docRef, { 
+          transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 
+      });
+    }
+  };
+
+  const updateTransaction = async (updatedTx) => {
+      if (!ledgerCode || !ledgerData) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      const updatedTxs = ledgerData.transactions.map(tx => tx.id === updatedTx.id ? updatedTx : tx);
+      await updateDoc(docRef, { transactions: updatedTxs });
+  };
+
+  const deleteTransaction = async (txId) => {
+      if (!ledgerCode || !ledgerData) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== txId);
+      await updateDoc(docRef, { transactions: updatedTxs });
+  };
+  
+  const settleUp = async ({ amount, payerId, payeeName, projectId }) => {
+      if (!ledgerCode) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      // 注意：這裡我們需要 CATEGORIES 來找 settlement icon，但 Context 不直接引入 UI constants
+      // 我們可以建立一個簡單的物件或從外部傳入
+      // 為了保持 Context 純淨，這裡我們手動建構 category 物件
+      const settlementCategory = { id: 'settlement', name: '還款結清', icon: 'settlement', color: 'bg-emerald-100 text-emerald-600', hex: '#059669' };
+
+      await updateDoc(docRef, { 
+        transactions: arrayUnion({ 
+            id: generateId(), 
+            amount: amount, 
+            currency: 'TWD', 
+            category: settlementCategory,
+            payer: payerId, 
+            splitType: 'settlement',
+            note: `還款給 ${payeeName}`, 
+            projectId: projectId,
+            date: new Date().toISOString(),
+            isSettlement: true
+        }) 
+    });
+  };
+
+  // --- Actions: Subscriptions ---
+  const deleteSubscription = async (subId) => {
+      if (!ledgerCode || !ledgerData) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.id !== subId);
+      await updateDoc(docRef, { subscriptions: newSubscriptions });
   };
 
   const value = {
@@ -263,7 +359,13 @@ export const LedgerProvider = ({ children }) => {
     joinLedger,
     disconnectLedger,
     setLedgerCode,
-    checkUserBinding
+    checkUserBinding,
+    // Actions Export
+    addTransaction,
+    updateTransaction,
+    deleteTransaction,
+    deleteSubscription,
+    settleUp
   };
 
   return (
