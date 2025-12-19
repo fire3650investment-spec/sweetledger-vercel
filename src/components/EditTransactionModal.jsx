@@ -1,5 +1,6 @@
+// src/components/EditTransactionModal.jsx
 import React from 'react';
-import { X, Trash2, Calendar, User } from 'lucide-react';
+import { X, Trash2, Calendar, User, ChevronDown } from 'lucide-react'; // [Added] ChevronDown
 import { getIconComponent, formatCurrency } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
@@ -15,6 +16,7 @@ export default function EditTransactionModal({
   if (!isOpen || !editingTx || !ledgerData) return null;
 
   const allCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
+  const currencies = ['TWD', 'JPY', 'THB']; // 支援的貨幣列表
 
   return (
     <div className="fixed inset-0 z-[150] bg-white/95 backdrop-blur-sm flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] animate-in fade-in duration-200">
@@ -26,9 +28,23 @@ export default function EditTransactionModal({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto px-6 py-2 space-y-5">
-             {/* 1. 金額 (Top) */}
-             <div className="bg-gray-50 rounded-2xl p-4 text-center border border-gray-100">
-                 <p className="text-xs text-gray-400 mb-1">金額 ({editingTx.currency})</p>
+             {/* 1. 金額 & 幣別 (Top) */}
+             <div className="bg-gray-50 rounded-2xl p-4 text-center border border-gray-100 relative">
+                 <div className="flex justify-center items-center gap-2 mb-2">
+                    <p className="text-xs text-gray-400">金額</p>
+                    {/* [New Feature] Currency Selector */}
+                    <div className="relative">
+                        <select
+                            value={editingTx.currency || 'TWD'}
+                            onChange={(e) => setEditingTx({...editingTx, currency: e.target.value})}
+                            className="text-xs font-bold text-gray-600 bg-gray-200 rounded px-2 py-1 appearance-none pr-6 outline-none transition-colors hover:bg-gray-300"
+                        >
+                            {currencies.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                        <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none"/>
+                    </div>
+                 </div>
+                 
                  <input 
                     type="number" 
                     value={editingTx.amount} 
