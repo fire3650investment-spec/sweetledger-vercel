@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue } from '../utils/helpers';
 
@@ -14,67 +14,94 @@ export default function DashboardView({
   handleSettleUp
 }) {
     if (!ledgerData) return null;
-    const projectTxs = ledgerData.transactions.filter(t => (t.projectId || 'daily') === currentProjectId);
-    const currentMonthStr = new Date().toISOString().slice(0, 7);
-    const thisMonthTxs = projectTxs.filter(t => t.date.startsWith(currentMonthStr));
-    const groupedTransactions = {};
-    const sorted = [...projectTxs].sort((a, b) => new Date(b.date) - new Date(a.date)); 
-    sorted.forEach(tx => { 
-        const date = new Date(tx.date).toLocaleDateString('zh-TW'); 
-        if (!groupedTransactions[date]) groupedTransactions[date] = []; 
-        groupedTransactions[date].push(tx); 
-    });
-    
-    // Get Project Rates
-    const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
-    const rates = currentProject?.rates || { JPY: 0.23, THB: 1 };
-    
-    // Calculate Monthly Total (TWD Normalized)
-    const monthlyTotal = thisMonthTxs.reduce((acc, curr) => acc + calculateTwdValue(curr.amount, curr.currency || 'TWD', rates), 0);
 
-    // 結算邏輯
-    let myPaid = 0;
-    let myLiability = 0;
-
-    projectTxs.forEach(tx => {
-        if(tx.isSettlement) return; 
+    // [Optimization] 使用 useMemo 快取所有統計與結算邏輯，避免 UI 重繪時重複計算
+    const { 
+        projectTxs, 
+        groupedTransactions, 
+        monthlyTotal, 
+        settlement, 
+        currentProjectName, 
+        partnerName, 
+        otherUserId 
+    } = useMemo(() => {
+        // 1. 基礎資料過濾
+        const pTxs = ledgerData.transactions.filter(t => (t.projectId || 'daily') === currentProjectId);
+        const currentMonthStr = new Date().toISOString().slice(0, 7);
+        const thisMonthTxs = pTxs.filter(t => t.date.startsWith(currentMonthStr));
         
-        const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
+        // 2. 交易列表分組 (Group by Date)
+        const grouped = {};
+        const sorted = [...pTxs].sort((a, b) => new Date(b.date) - new Date(a.date)); 
+        sorted.forEach(tx => { 
+            const date = new Date(tx.date).toLocaleDateString('zh-TW'); 
+            if (!grouped[date]) grouped[date] = []; 
+            grouped[date].push(tx); 
+        });
 
-        if (tx.splitType === 'custom' && tx.customSplit) {
-             const myCustomShare = tx.customSplit[user.uid] || 0;
-             myPaid += calculateTwdValue(myCustomShare, tx.currency || 'TWD', rates);
-        } else {
-             if (tx.payer === user.uid) myPaid += amountTwd;
-        }
+        // 3. 取得匯率
+        const currProject = ledgerData.projects?.find(p => p.id === currentProjectId);
+        const rates = currProject?.rates || { JPY: 0.23, THB: 1 };
+        const currProjectName = currProject?.name || '日常開銷';
 
-        let liability = 0;
-        if (tx.splitType === 'even' || tx.splitType === 'custom') {
-            liability = amountTwd / 2; 
-        } else if (tx.splitType === 'host_all') {
-            liability = ledgerData.users[user.uid]?.role === 'host' ? amountTwd : 0;
-        } else if (tx.splitType === 'guest_all') {
-            liability = ledgerData.users[user.uid]?.role === 'guest' ? amountTwd : 0;
-        }
-        myLiability += liability;
-    });
-    
-    const settlements = ledgerData.transactions.filter(tx => 
-        tx.isSettlement && (tx.projectId || 'daily') === currentProjectId
-    );
+        // 4. 計算本月總支出 (TWD)
+        const mTotal = thisMonthTxs.reduce((acc, curr) => acc + calculateTwdValue(curr.amount, curr.currency || 'TWD', rates), 0);
 
-    let settledAmount = 0;
-    settlements.forEach(tx => {
-        const amount = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
-        if (tx.payer === user.uid) settledAmount += amount;
-        else settledAmount -= amount;
-    });
+        // 5. 結算邏輯核心
+        let myPaid = 0;
+        let myLiability = 0;
 
-    const settlement = (myPaid + settledAmount) - myLiability; 
+        pTxs.forEach(tx => {
+            if(tx.isSettlement) return; 
+            
+            const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
 
-    const currentProjectName = currentProject?.name || '日常開銷';
-    const otherUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
-    const partnerName = otherUserId ? (ledgerData.users[otherUserId].name || '對方') : '對方';
+            if (tx.splitType === 'custom' && tx.customSplit) {
+                 const myCustomShare = tx.customSplit[user.uid] || 0;
+                 myPaid += calculateTwdValue(myCustomShare, tx.currency || 'TWD', rates);
+            } else {
+                 if (tx.payer === user.uid) myPaid += amountTwd;
+            }
+
+            let liability = 0;
+            if (tx.splitType === 'even' || tx.splitType === 'custom') {
+                liability = amountTwd / 2; 
+            } else if (tx.splitType === 'host_all') {
+                liability = ledgerData.users[user.uid]?.role === 'host' ? amountTwd : 0;
+            } else if (tx.splitType === 'guest_all') {
+                liability = ledgerData.users[user.uid]?.role === 'guest' ? amountTwd : 0;
+            }
+            myLiability += liability;
+        });
+        
+        // 處理還款紀錄
+        const settlements = ledgerData.transactions.filter(tx => 
+            tx.isSettlement && (tx.projectId || 'daily') === currentProjectId
+        );
+
+        let settledAmount = 0;
+        settlements.forEach(tx => {
+            const amount = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
+            if (tx.payer === user.uid) settledAmount += amount;
+            else settledAmount -= amount;
+        });
+
+        const finalSettlement = (myPaid + settledAmount) - myLiability; 
+        
+        const oUserId = Object.keys(ledgerData.users).find(uid => uid !== user.uid);
+        const pName = oUserId ? (ledgerData.users[oUserId].name || '對方') : '對方';
+
+        return {
+            projectTxs: pTxs,
+            groupedTransactions: grouped,
+            monthlyTotal: mTotal,
+            settlement: finalSettlement,
+            currentProjectName: currProjectName,
+            partnerName: pName,
+            otherUserId: oUserId
+        };
+
+    }, [ledgerData, currentProjectId, user.uid]);
 
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">

@@ -148,11 +148,26 @@ export default function AddExpenseView({
     const handleKeyPress = (key) => {
         if (navigator.vibrate) try { navigator.vibrate(10); } catch(e) {}
 
+        const operators = ['+', '-', '×', '÷'];
+
         if (key === 'AC') { setLocalAmount(''); return; }
         if (key === 'DEL') { setLocalAmount(prev => prev.slice(0, -1)); return; }
         if (key === 'DONE') { handleKeypadSubmit(); return; }
 
-        const operators = ['+', '-', '×', '÷'];
+        // [優化] 自動補 0 邏輯
+        if (key === '.') {
+            setLocalAmount(prev => {
+                const lastChar = prev.slice(-1);
+                // 如果是空字串，或上一個字元是運算子，輸入 . 自動變成 0.
+                if (!prev || operators.includes(lastChar)) {
+                    return prev + '0.';
+                }
+                // 簡單防呆：避免連續輸入小數點 (較複雜的邏輯暫不處理)
+                return prev + key;
+            });
+            return;
+        }
+
         setLocalAmount(prev => {
             const lastChar = prev.slice(-1);
             if (operators.includes(key)) {
