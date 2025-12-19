@@ -3,10 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, Delete, Equal, 
   Calendar, User, Users, Repeat, ChevronDown, Tag, ArrowRight, CornerDownLeft,
-  Camera // [New Import]
+  Camera 
 } from 'lucide-react';
-import { getIconComponent, parseReceiptWithGemini } from '../utils/helpers'; // [New Import]
+import { getIconComponent, parseReceiptWithGemini } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
+import ScanReceiptModal from './ScanReceiptModal'; // [New Import]
 
 export default function AddExpenseView({
   ledgerData,
@@ -55,9 +56,13 @@ export default function AddExpenseView({
     const [activeOverlay, setActiveOverlay] = useState('amount'); 
     const [localAmount, setLocalAmount] = useState(''); 
     const noteInputRef = useRef(null);
-    const cameraInputRef = useRef(null); // [New Ref]
-    const [isScanning, setIsScanning] = useState(false); // [New State]
+    const cameraInputRef = useRef(null);
+    const [isScanning, setIsScanning] = useState(false);
     
+    // [New State for Scan Modal]
+    const [isScanModalOpen, setIsScanModalOpen] = useState(false);
+    const [scannedItems, setScannedItems] = useState([]);
+
     // --- Data Preparation ---
     const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
@@ -168,7 +173,7 @@ export default function AddExpenseView({
         });
     };
 
-    // [New Feature] Phase 1: Camera Scan Handler
+    // --- Camera Scan Handlers ---
     const handleScanClick = () => {
         cameraInputRef.current?.click();
     };
@@ -177,29 +182,63 @@ export default function AddExpenseView({
         const file = e.target.files?.[0];
         if (!file) return;
 
-        // 簡單的前端壓縮與轉檔 (Optional: 這裡先直接轉 Base64)
         setIsScanning(true);
         const reader = new FileReader();
         reader.onloadend = async () => {
-            const base64String = reader.result.split(',')[1]; // 去除 data:image/jpeg;base64, 前綴
+            const base64String = reader.result.split(',')[1]; 
             
             // Call AI
             const items = await parseReceiptWithGemini(base64String);
             
             setIsScanning(false);
-            if (items) {
-                console.log("AI Scanned Items:", items);
-                // Phase 1: 暫時用 Alert 顯示結果，證明核心邏輯成功
-                const summary = items.map(i => `${i.name}: $${i.price}`).join('\n');
-                alert(`掃描成功！抓取到以下項目 (請看 Console 詳細資料)：\n\n${summary}`);
+            if (items && Array.isArray(items)) {
+                // [Phase 2] Open Modal instead of Alert
+                setScannedItems(items);
+                setIsScanModalOpen(true);
             } else {
-                alert("掃描失敗，請再試一次");
+                alert("掃描失敗，請再試一次或手動輸入");
             }
         };
         reader.readAsDataURL(file);
         
-        // Reset input to allow selecting same file again
+        // Reset input
         e.target.value = '';
+    };
+
+    // [New] Callback when user confirms split in ScanReceiptModal
+    const handleScanConfirm = (result) => {
+        const { amount, note, splitType, customSplit } = result;
+
+        // 1. Backfill Amount
+        setLocalAmount(amount.toString());
+        setAmount(amount.toString());
+
+        // 2. Backfill Note
+        if (note) setNote(note);
+
+        // 3. Backfill Split Settings
+        setSplitType(splitType);
+        
+        // Populate custom split inputs for UI feedback
+        const hostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
+        const guestId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
+        
+        if (customSplit && hostId && customSplit[hostId]) {
+            setCustomSplitHost(customSplit[hostId].toString());
+        } else {
+            setCustomSplitHost('0');
+        }
+        
+        if (customSplit && guestId && customSplit[guestId]) {
+            setCustomSplitGuest(customSplit[guestId].toString());
+        } else {
+            setCustomSplitGuest('0');
+        }
+
+        // 4. Auto-advance to category selection if amount is present
+        if (amount > 0) {
+            setActiveOverlay('category');
+        }
     };
 
     const isMathPending = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
@@ -241,9 +280,21 @@ export default function AddExpenseView({
             type="file" 
             ref={cameraInputRef} 
             accept="image/*" 
-            capture="environment" // 優先使用後鏡頭
+            capture="environment" 
             className="hidden" 
             onChange={handleImageUpload}
+        />
+
+        {/* =========================================
+            [New] Scan Receipt Modal
+           ========================================= */}
+        <ScanReceiptModal
+            isOpen={isScanModalOpen}
+            onClose={() => setIsScanModalOpen(false)}
+            onConfirm={handleScanConfirm}
+            initialItems={scannedItems}
+            currency={currency}
+            users={ledgerData.users}
         />
 
         {/* =========================================
@@ -257,7 +308,6 @@ export default function AddExpenseView({
                 </div>
                 
                 <div className="flex gap-1 -mr-2">
-                    {/* [New] Camera Button */}
                     <button 
                         onClick={handleScanClick} 
                         disabled={isScanning}
@@ -449,7 +499,8 @@ export default function AddExpenseView({
                 className="w-full bg-gray-900 text-white text-lg font-bold py-4 rounded-2xl shadow-lg shadow-gray-200 active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none"
             >
                 {isSubmittingTransaction ? <RefreshCw className="animate-spin"/> : <Check size={24} />}
-                完成記帳
+                {/* Dynamic Button Text */}
+                {activeOverlay === 'category' ? '完成記帳' : '下一步'}
             </button>
         </div>
 
