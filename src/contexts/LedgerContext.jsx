@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db, appId } from '../utils/firebase';
 import { useAuth } from './AuthContext';
-import { INITIAL_LEDGER_STATE } from '../utils/constants';
+import { INITIAL_LEDGER_STATE, DEFAULT_CATEGORIES } from '../utils/constants';
 import { generateId } from '../utils/helpers';
 
 const LedgerContext = createContext();
@@ -20,12 +20,12 @@ export const useLedger = () => useContext(LedgerContext);
 export const LedgerProvider = ({ children }) => {
   const { user } = useAuth();
   
-  // [優化] 1. 同步讀取 Ledger Code
+  // [State] 1. Ledger Code
   const [ledgerCode, setLedgerCode] = useState(() => {
       return localStorage.getItem('sweet_ledger_code') || '';
   });
 
-  // [優化] 2. 同步讀取 Ledger Data (Cache-First Strategy)
+  // [State] 2. Ledger Data (Cache-First)
   const [ledgerData, setLedgerData] = useState(() => {
       if (!ledgerCode) return null; 
       const code = localStorage.getItem('sweet_ledger_code');
@@ -36,7 +36,6 @@ export const LedgerProvider = ({ children }) => {
           const cached = localStorage.getItem(cacheKey);
           if (cached) {
               const parsed = JSON.parse(cached);
-              // [防白屏] 簡單檢查資料完整性
               if (parsed && parsed.transactions && Array.isArray(parsed.transactions)) {
                   return parsed;
               }
@@ -49,7 +48,7 @@ export const LedgerProvider = ({ children }) => {
 
   const [isLedgerInitializing, setIsLedgerInitializing] = useState(!ledgerData);
 
-  // 1. 監聽 Ledger Code 變更並同步到 LocalStorage
+  // Effect 1: Sync Code to LocalStorage
   useEffect(() => {
     if (ledgerCode) {
         localStorage.setItem('sweet_ledger_code', ledgerCode);
@@ -58,7 +57,7 @@ export const LedgerProvider = ({ children }) => {
     }
   }, [ledgerCode]);
 
-  // 2. 監聽 Firestore 資料流 (背景更新)
+  // Effect 2: Sync Firestore Data
   useEffect(() => {
     if (!ledgerCode) {
       if (!localStorage.getItem('sweet_ledger_code')) {
@@ -69,8 +68,8 @@ export const LedgerProvider = ({ children }) => {
     }
 
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
-
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -88,7 +87,7 @@ export const LedgerProvider = ({ children }) => {
     return () => unsubscribe();
   }, [ledgerCode]);
 
-  // 3. 智慧自動扣款檢查 (Smart Auto-Sub Check)
+  // Effect 3: Smart Auto-Subscription Check
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0 || !ledgerCode) return;
 
@@ -140,10 +139,8 @@ export const LedgerProvider = ({ children }) => {
                 } else {
                     nextDate.setMonth(nextDate.getMonth() + 1);
                 }
-                
                 loopCount++;
             }
-            
             if (updated) {
                 return { ...sub, nextPaymentDate: nextDate.toISOString() };
             }
@@ -158,9 +155,7 @@ export const LedgerProvider = ({ children }) => {
                 subscriptions: newSubscriptions
             });
         }
-        
         localStorage.setItem(lastCheckKey, todayStr);
-
     }, 5000); 
 
     return () => clearTimeout(timer);
@@ -174,9 +169,7 @@ export const LedgerProvider = ({ children }) => {
           const userDoc = await getDoc(userDocRef);
           if (userDoc.exists()) {
               const data = userDoc.data();
-              if (data.ledgerCode) {
-                  return data.ledgerCode;
-              }
+              if (data.ledgerCode) return data.ledgerCode;
           }
       } catch (e) {
           console.error("Check binding failed:", e);
@@ -239,15 +232,14 @@ export const LedgerProvider = ({ children }) => {
       setLedgerCode('');
       setLedgerData(null);
       localStorage.removeItem('sweet_ledger_code');
-      const keys = Object.keys(localStorage);
-      keys.forEach(key => {
+      Object.keys(localStorage).forEach(key => {
           if (key.startsWith('sweet_ledger_data_')) {
               localStorage.removeItem(key);
           }
       });
   };
 
-  // --- Actions: Transactions (Refactored from App.jsx) ---
+  // --- Actions: Transactions & Subscriptions ---
   const addTransaction = async (payload) => {
     if (!ledgerCode || !user) throw new Error("無效的帳本狀態");
     
@@ -260,7 +252,6 @@ export const LedgerProvider = ({ children }) => {
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const selectedDate = new Date(date).toISOString(); 
 
-    // 建構基礎交易資料
     const commonData = {
         id: generateId(), 
         amount: parseFloat(amount), 
@@ -274,7 +265,6 @@ export const LedgerProvider = ({ children }) => {
     };
 
     if (isSubscription) {
-      // 計算下一次扣款日
       let nextDate = new Date(selectedDate);
       if (subCycle === 'monthly') {
           nextDate.setMonth(nextDate.getMonth() + 1);
@@ -319,12 +309,16 @@ export const LedgerProvider = ({ children }) => {
       await updateDoc(docRef, { transactions: updatedTxs });
   };
   
+  const deleteSubscription = async (subId) => {
+      if (!ledgerCode || !ledgerData) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.id !== subId);
+      await updateDoc(docRef, { subscriptions: newSubscriptions });
+  };
+
   const settleUp = async ({ amount, payerId, payeeName, projectId }) => {
       if (!ledgerCode) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-      // 注意：這裡我們需要 CATEGORIES 來找 settlement icon，但 Context 不直接引入 UI constants
-      // 我們可以建立一個簡單的物件或從外部傳入
-      // 為了保持 Context 純淨，這裡我們手動建構 category 物件
       const settlementCategory = { id: 'settlement', name: '還款結清', icon: 'settlement', color: 'bg-emerald-100 text-emerald-600', hex: '#059669' };
 
       await updateDoc(docRef, { 
@@ -343,12 +337,148 @@ export const LedgerProvider = ({ children }) => {
     });
   };
 
-  // --- Actions: Subscriptions ---
-  const deleteSubscription = async (subId) => {
+  // --- Actions: Projects (New in Batch 2) ---
+  const saveProject = async (projectData) => {
       if (!ledgerCode || !ledgerData) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-      const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.id !== subId);
-      await updateDoc(docRef, { subscriptions: newSubscriptions });
+      let newProjects = [...(ledgerData.projects || [])];
+      
+      // Preserve existing rates if updating, or use default for new
+      const projectWithRates = {
+          ...projectData,
+          rates: projectData.rates || { JPY: 0.23, THB: 1 } 
+      };
+
+      if (projectData.id) {
+          // Update existing
+          newProjects = newProjects.map(p => p.id === projectData.id ? { ...p, ...projectWithRates } : p);
+      } else {
+          // Create new
+          newProjects.push({ ...projectWithRates, id: generateId() });
+      }
+      await updateDoc(docRef, { projects: newProjects });
+  };
+
+  const deleteProject = async (projectId) => {
+      if (!ledgerCode || !ledgerData) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      
+      // Cascade Delete: Projects -> Transactions & Subscriptions
+      const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
+      const newTransactions = ledgerData.transactions.filter(t => t.projectId !== projectId);
+      const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.projectId !== projectId);
+
+      await updateDoc(docRef, { 
+          projects: newProjects,
+          transactions: newTransactions,
+          subscriptions: newSubscriptions
+      });
+  };
+
+  const reorderProjects = async (newProjects) => {
+      if (!ledgerCode) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      await updateDoc(docRef, { projects: newProjects });
+  };
+
+  const updateProjectRates = async (projectId, currency, val) => {
+    if (!ledgerCode || !ledgerData) return;
+    const numVal = parseFloat(val);
+    if (!numVal || numVal <= 0) return;
+
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    const newProjects = ledgerData.projects.map(p => {
+        if (p.id === projectId) {
+            return { 
+                ...p, 
+                rates: { ...(p.rates || { JPY: 0.23, THB: 1 }), [currency]: numVal } 
+            };
+        }
+        return p;
+    });
+    await updateDoc(docRef, { projects: newProjects });
+  };
+
+  // --- Actions: Categories (New in Batch 2) ---
+  const saveCategory = async (categoryData) => {
+      if (!ledgerCode || !ledgerData) return;
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      let newCategories = [...(ledgerData.customCategories || DEFAULT_CATEGORIES)];
+      
+      if (categoryData.id) {
+          newCategories = newCategories.map(c => c.id === categoryData.id ? categoryData : c);
+      } else {
+          const newId = generateId();
+          newCategories.push({ ...categoryData, id: newId });
+          // Auto-select new category in settings
+          await updateDoc(docRef, { 
+             customCategories: newCategories,
+             'settings.selectedCategories': arrayUnion(newId)
+          });
+          return;
+      }
+      await updateDoc(docRef, { customCategories: newCategories });
+  };
+
+  const deleteCategory = async (catId) => {
+     if (!ledgerCode || !ledgerData) return;
+     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+     const newCategories = (ledgerData.customCategories || DEFAULT_CATEGORIES).filter(c => c.id !== catId);
+     await updateDoc(docRef, { customCategories: newCategories });
+  };
+
+  const reorderCategories = async (newCategories) => {
+    if (!ledgerCode) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { customCategories: newCategories });
+  };
+
+  // --- Actions: User Settings & System (New in Batch 2) ---
+  const updateUserSetting = async (field, value) => {
+    if (!ledgerCode || !user) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { [`users.${user.uid}.${field}`]: value });
+  };
+
+  const resetAccount = async () => {
+    if (!ledgerCode) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { 
+        transactions: [], 
+        subscriptions: [],
+    });
+  };
+
+  const fixIdentity = async () => {
+    if (!ledgerCode || !ledgerData || !user) return;
+    const zombieHostId = Object.keys(ledgerData.users).find(uid => 
+        ledgerData.users[uid].role === 'host' && uid !== user.uid
+    );
+    if (!zombieHostId) return; // No fix needed
+    
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    const newUsers = { ...ledgerData.users };
+    
+    // 繼承 Host 權限
+    delete newUsers[zombieHostId];
+    if (newUsers[user.uid]) newUsers[user.uid] = { ...newUsers[user.uid], role: 'host' };
+    
+    // 遷移所有交易紀錄的 payer & customSplit
+    const newTransactions = ledgerData.transactions.map(tx => {
+        let newTx = { ...tx };
+        if (newTx.payer === zombieHostId) newTx.payer = user.uid;
+        if (newTx.customSplit) {
+            const newSplit = {};
+            Object.keys(newTx.customSplit).forEach(key => {
+                const newKey = key === zombieHostId ? user.uid : key;
+                newSplit[newKey] = newTx.customSplit[key];
+            });
+            newTx.customSplit = newSplit;
+        }
+        return newTx;
+    });
+
+    await updateDoc(docRef, { users: newUsers, transactions: newTransactions });
   };
 
   const value = {
@@ -360,12 +490,25 @@ export const LedgerProvider = ({ children }) => {
     disconnectLedger,
     setLedgerCode,
     checkUserBinding,
-    // Actions Export
+    // Transactions & Subs
     addTransaction,
     updateTransaction,
     deleteTransaction,
     deleteSubscription,
-    settleUp
+    settleUp,
+    // Projects
+    saveProject,
+    deleteProject,
+    reorderProjects,
+    updateProjectRates,
+    // Categories
+    saveCategory,
+    deleteCategory,
+    reorderCategories,
+    // Settings
+    updateUserSetting,
+    resetAccount,
+    fixIdentity
   };
 
   return (
