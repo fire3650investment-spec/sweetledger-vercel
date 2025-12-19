@@ -1,16 +1,22 @@
 // src/App.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { 
+  doc, 
+  updateDoc, 
+  arrayUnion
+} from 'firebase/firestore';
+import { 
   Home, PieChart, Settings, Plus, Briefcase
 } from 'lucide-react';
 
 // Contexts
 import { useAuth } from './contexts/AuthContext';
 import { useLedger } from './contexts/LedgerContext';
+import { db, appId } from './utils/firebase';
 
 // Utils
-import { DEFAULT_CATEGORIES, COLORS } from './utils/constants';
-import { callGemini } from './utils/helpers';
+import { INITIAL_LEDGER_STATE, DEFAULT_CATEGORIES, CATEGORIES, COLORS } from './utils/constants';
+import { formatCurrency, generateId, callGemini } from './utils/helpers';
 
 // Components
 import DashboardView from './components/DashboardView';
@@ -34,23 +40,7 @@ export default function SweetLedger() {
     joinLedger,
     disconnectLedger,
     setLedgerCode,
-    checkUserBinding,
-    // Actions from Context
-    addTransaction: ctxAddTransaction,
-    updateTransaction: ctxUpdateTransaction,
-    deleteTransaction: ctxDeleteTransaction,
-    deleteSubscription: ctxDeleteSubscription,
-    settleUp: ctxSettleUp,
-    saveProject: ctxSaveProject,
-    deleteProject: ctxDeleteProject,
-    reorderProjects: ctxReorderProjects,
-    updateProjectRates: ctxUpdateProjectRates,
-    saveCategory: ctxSaveCategory,
-    deleteCategory: ctxDeleteCategory,
-    reorderCategories: ctxReorderCategories,
-    updateUserSetting: ctxUpdateUserSetting,
-    resetAccount: ctxResetAccount,
-    fixIdentity: ctxFixIdentity
+    checkUserBinding
   } = useLedger();
 
   // --- UI State ---
@@ -63,7 +53,12 @@ export default function SweetLedger() {
   const [addExpenseKey, setAddExpenseKey] = useState(0);
   const [privacyMode, setPrivacyMode] = useState(false);
   const [loading, setLoading] = useState(false); 
-  const [currentProjectId, setCurrentProjectId] = useState('daily'); 
+  
+  // [State Persistence] Initialize Project ID from LocalStorage with Fallback
+  const [currentProjectId, setCurrentProjectId] = useState(() => {
+      return localStorage.getItem('sweet_last_project_id') || 'daily';
+  });
+  
   const [pendingInviteCode, setPendingInviteCode] = useState('');
 
   // Add Expense State
@@ -72,7 +67,12 @@ export default function SweetLedger() {
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
   const [aiInput, setAiInput] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
-  const [currency, setCurrency] = useState('TWD'); 
+  
+  // [State Persistence] Initialize Currency from LocalStorage with Fallback
+  const [currency, setCurrency] = useState(() => {
+      return localStorage.getItem('sweet_last_currency') || 'TWD';
+  });
+
   const [payer, setPayer] = useState(''); 
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10)); 
   
@@ -106,12 +106,38 @@ export default function SweetLedger() {
 
   // --- Logic & Effects ---
 
-  // [Fix] 切換頁面時自動捲動至頂部
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [view]);
 
-  // [極速啟動優化] 路由邏輯
+  // [Persistence] Save Currency Preference
+  useEffect(() => {
+      if (currency) {
+          localStorage.setItem('sweet_last_currency', currency);
+      }
+  }, [currency]);
+
+  // [Persistence] Save Project ID Preference
+  useEffect(() => {
+      if (currentProjectId) {
+          localStorage.setItem('sweet_last_project_id', currentProjectId);
+      }
+  }, [currentProjectId]);
+
+  // [Validation] Ensure loaded Project ID exists in current ledger
+  useEffect(() => {
+      if (ledgerData && ledgerData.projects) {
+          const projectExists = ledgerData.projects.some(p => p.id === currentProjectId);
+          // 如果當前選的專案 ID 不在最新的專案列表中（可能被刪除或換帳號），強制回退到 daily
+          if (!projectExists) {
+              setCurrentProjectId('daily');
+          }
+      }
+  }, [ledgerData, currentProjectId]); // Don't include 'currentProjectId' in deps to avoid loops? No, we need it. 
+  // Wait, if we put currentProjectId in dependency, and we set it inside, it might loop if we are not careful.
+  // Logic: "If current ID is invalid, change it". Changing it triggers effect again. New ID 'daily' is valid. Loop stops. Safe.
+
+
   useEffect(() => {
     const decideView = async () => {
         if (ledgerCode && user && ledgerData) {
@@ -152,9 +178,12 @@ export default function SweetLedger() {
   }, [ledgerCode, isLedgerInitializing, authLoading, user, pendingInviteCode, ledgerData]);
 
   // Sync Ledger Data to UI State
+  // [Fix: Risk #2] Removed automatic currency overwrite logic to prevent input interruption
   useEffect(() => {
     if (ledgerData && user) {
-        if (ledgerData.currency) setCurrency(ledgerData.currency);
+        // [Risk Fix] Do NOT overwrite local currency with ledgerData.currency automatically
+        // if (ledgerData.currency) setCurrency(ledgerData.currency);  <-- REMOVED
+
         if (ledgerData.users && ledgerData.users[user.uid]) {
             setMyNickname(ledgerData.users[user.uid].name);
         }
@@ -202,112 +231,197 @@ export default function SweetLedger() {
   const handleLogout = async () => {
       if(confirm('確定要登出嗎？')) {
           disconnectLedger();
+          // [Risk Fix #1] Clear preferences on logout to avoid polluting next user
+          localStorage.removeItem('sweet_last_currency');
+          localStorage.removeItem('sweet_last_project_id');
+          
           await logout();
           setView('onboarding');
       }
   };
 
-  // Avatar Logic
   const handleAvatarSelect = (key) => setTempAvatar(key);
+
   const confirmAvatarUpdate = async () => {
-    if (!tempAvatar) return;
-    await ctxUpdateUserSetting('avatar', tempAvatar);
+    if (!ledgerCode || !tempAvatar) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { [`users.${user.uid}.avatar`]: tempAvatar });
     setIsAvatarModalOpen(false);
     setTempAvatar('');
   };
 
-  // Nickname Logic
-  const updateNickname = async () => {
-    if (!myNickname) return;
-    await ctxUpdateUserSetting('name', myNickname);
-    alert("暱稱已更新！");
+  const updateLedgerCurrency = async (currencyKey, val) => {
+    if (!ledgerCode || !currentProjectId || !ledgerData) return;
+    const numVal = parseFloat(val);
+    if (numVal && numVal > 0) {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        const newProjects = ledgerData.projects.map(p => {
+            if (p.id === currentProjectId) {
+                return { 
+                    ...p, 
+                    rates: { ...(p.rates || { JPY: 0.23, THB: 1 }), [currencyKey]: numVal } 
+                };
+            }
+            return p;
+        });
+        await updateDoc(docRef, { projects: newProjects });
+    }
   };
 
-  // Open Add Expense Logic
   const handleOpenAddExpense = (mode) => {
       setAddExpenseKey(prev => prev + 1);
       setView('add');
+      
       if (mode === 'ai') {
           setIsAiModalOpen(true);
       } else {
           setIsAiModalOpen(false);
       }
   };
-
-  // Settings Actions wrappers
+  
+  const updateNickname = async () => {
+    if (!ledgerCode || !myNickname) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { [`users.${user.uid}.name`]: myNickname });
+    alert("暱稱已更新！");
+  };
+  
   const handleResetAccount = async () => {
       const confirmStr = prompt("警告：此操作將刪除所有交易紀錄且無法復原！\n請輸入 RESET 確認重置：");
       if (confirmStr === "RESET") {
-        await ctxResetAccount();
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        await updateDoc(docRef, { 
+            transactions: [], 
+            subscriptions: [],
+        });
         alert("帳本已重置。");
       }
   };
 
   const handleFixIdentity = async () => {
+    if (!ledgerData || !user) return;
+    const zombieHostId = Object.keys(ledgerData.users).find(uid => 
+        ledgerData.users[uid].role === 'host' && uid !== user.uid
+    );
+    if (!zombieHostId) { alert("目前帳本狀態正常，無需修復。"); return; }
+    
     if (confirm("是否要繼承舊 Host 帳號並修復權限？")) {
-        await ctxFixIdentity();
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        const newUsers = { ...ledgerData.users };
+        delete newUsers[zombieHostId];
+        if (newUsers[user.uid]) newUsers[user.uid] = { ...newUsers[user.uid], role: 'host' };
+        
+        const newTransactions = ledgerData.transactions.map(tx => {
+            let newTx = { ...tx };
+            if (newTx.payer === zombieHostId) newTx.payer = user.uid;
+            if (newTx.customSplit) {
+                const newSplit = {};
+                Object.keys(newTx.customSplit).forEach(key => {
+                    const newKey = key === zombieHostId ? user.uid : key;
+                    newSplit[newKey] = newTx.customSplit[key];
+                });
+                newTx.customSplit = newSplit;
+            }
+            return newTx;
+        });
+        await updateDoc(docRef, { users: newUsers, transactions: newTransactions });
         alert("修復成功！");
     }
   };
 
-  // Project Actions wrappers
   const handleSaveProject = async () => {
     if (!editingProjectData.name) return;
-    await ctxSaveProject(editingProjectData);
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    let newProjects = [...(ledgerData?.projects || [])];
+    
+    const projectWithRates = {
+        ...editingProjectData,
+        rates: editingProjectData.rates || { JPY: 0.23, THB: 1 } 
+    };
+
+    if (editingProjectData.id) {
+        newProjects = newProjects.map(p => p.id === editingProjectData.id ? projectWithRates : p);
+    } else {
+        newProjects.push({ ...projectWithRates, id: generateId() });
+    }
+    await updateDoc(docRef, { projects: newProjects });
     setIsEditingProject(false);
     setEditingProjectData({ id: '', name: '', icon: 'project_daily' });
   };
 
   const handleDeleteProject = async (projectId) => {
     if (confirm('確定要刪除這個專案嗎？（警告：該專案下的所有帳務紀錄將一併刪除且無法復原）')) {
-        await ctxDeleteProject(projectId);
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
+        const newTransactions = ledgerData.transactions.filter(t => t.projectId !== projectId);
+        const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.projectId !== projectId);
+
+        await updateDoc(docRef, { 
+            projects: newProjects,
+            transactions: newTransactions,
+            subscriptions: newSubscriptions
+        });
         if (currentProjectId === projectId) setCurrentProjectId('daily');
     }
   };
 
-  const updateLedgerCurrency = async (currencyKey, val) => {
-    await ctxUpdateProjectRates(currentProjectId, currencyKey, val);
-  };
-
-  const handleReorderProjects = async (newProjects) => {
-      await ctxReorderProjects(newProjects);
-  };
-
-  // Subscription Actions
   const handleDeleteSubscription = async (subToDelete) => {
-    if (!subToDelete) return;
+    if (!ledgerCode || !subToDelete) return;
     if (confirm(`確定要取消「${subToDelete.name}」的固定扣款嗎？`)) {
-        await ctxDeleteSubscription(subToDelete.id);
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        const newSubscriptions = (ledgerData.subscriptions || []).filter(s => 
+            s.id !== subToDelete.id
+        );
+        await updateDoc(docRef, { subscriptions: newSubscriptions });
     }
   };
 
-  // Category Actions wrappers
   const handleSaveCategory = async () => {
     if (!editingCategoryData.name) return;
-    await ctxSaveCategory(editingCategoryData);
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    let newCategories = [...(ledgerData?.customCategories || DEFAULT_CATEGORIES)];
+    if (editingCategoryData.id) {
+        newCategories = newCategories.map(c => c.id === editingCategoryData.id ? editingCategoryData : c);
+    } else {
+        const newId = generateId();
+        newCategories.push({ ...editingCategoryData, id: newId });
+        await updateDoc(docRef, { 
+           customCategories: newCategories,
+           'settings.selectedCategories': arrayUnion(newId)
+        });
+        setIsEditingCategory(false);
+        return;
+    }
+    await updateDoc(docRef, { customCategories: newCategories });
     setIsEditingCategory(false);
   };
 
   const handleDeleteCategory = async (catId) => {
      if (confirm('確定要刪除這個分類嗎？')) {
-        await ctxDeleteCategory(catId);
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        const newCategories = (ledgerData?.customCategories || DEFAULT_CATEGORIES).filter(c => c.id !== catId);
+        await updateDoc(docRef, { customCategories: newCategories });
      }
   };
-
-  const handleReorderCategories = async (newCategories) => {
-      await ctxReorderCategories(newCategories);
-  };
   
-  // Settle Up Action
   const handleSettleUp = async (amountToSettle, payeeName, payerId) => {
     if (!amountToSettle || amountToSettle <= 0) return;
-    if (confirm(`確定要結清給 ${payeeName} 嗎？`)) {
+    if (confirm(`確定要結清 ${formatCurrency(amountToSettle, 'TWD')} 給 ${payeeName} 嗎？`)) {
         try {
-            await ctxSettleUp({
-                amount: amountToSettle,
-                payerId: payerId,
-                payeeName: payeeName,
-                projectId: currentProjectId
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+            await updateDoc(docRef, { 
+                transactions: arrayUnion({ 
+                    id: generateId(), 
+                    amount: amountToSettle, 
+                    currency: 'TWD', 
+                    category: CATEGORIES.find(c => c.id === 'settlement'),
+                    payer: payerId, 
+                    splitType: 'settlement',
+                    note: `還款給 ${payeeName}`, 
+                    projectId: currentProjectId,
+                    date: new Date().toISOString(),
+                    isSettlement: true
+                }) 
             });
             alert("還款紀錄已新增！");
         } catch (e) {
@@ -331,7 +445,6 @@ export default function SweetLedger() {
     }
   };
 
-  // Transaction Logic
   const addTransaction = async () => {
     if (!amount || !ledgerData || !ledgerCode) return;
     setIsSubmittingTransaction(true);
@@ -360,7 +473,7 @@ export default function SweetLedger() {
         finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     }
 
-    // Optimistic UI update - Close view immediately
+    setIsSubmittingTransaction(false);
     setView('dashboard');
 
     setTimeout(() => {
@@ -368,47 +481,78 @@ export default function SweetLedger() {
         setIsSubscription(false); setSubCycle('monthly'); setSubPayDay(''); 
         setSplitType('even'); setCustomSplitHost(''); setCustomSplitGuest('');
         setDate(new Date().toISOString().slice(0, 10));
-        setIsSubmittingTransaction(false);
     }, 500);
 
     try {
-        await ctxAddTransaction({
-            amount: amountFloat,
-            currency,
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        const selectedDate = new Date(date).toISOString(); 
+        const commonData = {
+            id: generateId(), 
+            amount: amountFloat, 
+            currency: currency, 
             category: selectedCategory,
-            payer,
-            splitType: finalSplitType,
+            payer: payer || user.uid, 
+            splitType: finalSplitType, 
             customSplit: customSplitData,
-            note,
+            note: note || selectedCategory.name, 
             projectId: currentProjectId,
-            date,
-            isSubscription,
-            subCycle,
-            subPayDay
-        });
+        };
+
+        if (isSubscription) {
+          let nextDate = new Date(selectedDate);
+          if (subCycle === 'monthly') {
+              nextDate.setMonth(nextDate.getMonth() + 1);
+              if (subPayDay) {
+                  const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
+                  const targetDay = Math.min(parseInt(subPayDay), daysInNextMonth);
+                  nextDate.setDate(targetDay);
+              }
+          } else if (subCycle === 'weekly') {
+              nextDate.setDate(nextDate.getDate() + 7);
+          }
+          
+          await updateDoc(docRef, { 
+              subscriptions: arrayUnion({ 
+                  ...commonData, 
+                  name: note || selectedCategory.name, 
+                  cycle: subCycle, 
+                  payDay: parseInt(subPayDay) || 1, 
+                  mode: 'infinite', 
+                  nextPaymentDate: nextDate.toISOString(),
+              }),
+              transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }) 
+          });
+        } else {
+          await updateDoc(docRef, { 
+              transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 
+          });
+        }
     } catch (e) {
-        console.error("Transaction Error:", e);
-        alert("⚠️ 記帳失敗，請檢查網路。");
+        console.error("Background Write Error:", e);
+        alert("⚠️ 連線異常，剛剛的記帳可能未成功寫入，請檢查網路。");
     }
   };
 
   const handleUpdateTransaction = async () => {
-    if (!editingTx) return;
-    await ctxUpdateTransaction(editingTx);
+    if (!editingTx || !ledgerData || !ledgerCode) return;
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    const updatedTxs = ledgerData.transactions.map(tx => tx.id === editingTx.id ? editingTx : tx);
+    await updateDoc(docRef, { transactions: updatedTxs });
     setIsEditTxModalOpen(false);
     setEditingTx(null);
   };
 
   const handleDeleteTransaction = async () => {
-     if (!editingTx) return;
+     if (!editingTx || !ledgerData || !ledgerCode) return;
      if (confirm('確定要刪除這筆紀錄嗎？')) {
-        await ctxDeleteTransaction(editingTx.id);
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== editingTx.id);
+        await updateDoc(docRef, { transactions: updatedTxs });
         setIsEditTxModalOpen(false);
         setEditingTx(null);
      }
   };
 
-  // AI & Voice
   const handleAiModalSubmit = async () => {
      if (!aiModalInput) return; 
      setIsAiModalOpen(false);
@@ -487,10 +631,28 @@ export default function SweetLedger() {
     link.click();
   };
 
+  const handleReorderProjects = async (newProjects) => {
+    if (!ledgerCode || !newProjects) return;
+    try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        await updateDoc(docRef, { projects: newProjects });
+    } catch (e) {
+        console.error("Reorder Projects Error:", e);
+        alert("排序儲存失敗，請檢查網路");
+    }
+  };
 
-  // --- Render ---
+  const handleReorderCategories = async (newCategories) => {
+    if (!ledgerCode || !newCategories) return;
+    try {
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        await updateDoc(docRef, { customCategories: newCategories });
+    } catch (e) {
+        console.error("Reorder Categories Error:", e);
+        alert("排序儲存失敗");
+    }
+  };
 
-  // [極速啟動優化] Loading State
   const hasCachedData = ledgerCode && ledgerData && user;
   const shouldShowLoading = !hasCachedData && authLoading; 
   const isWaitingForFirstData = user && ledgerCode && !ledgerData && isLedgerInitializing;
@@ -531,7 +693,6 @@ export default function SweetLedger() {
             />
         )}
         
-        {/* Main App Views */}
         {view !== 'onboarding' && view !== 'decision' && ledgerData && user && (
             <>
                 <div className={view === 'add' ? 'block h-full' : 'hidden'}>
