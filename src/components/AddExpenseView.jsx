@@ -2,9 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, Delete, Equal, 
-  Calendar, User, Users, Repeat, ChevronDown, Tag, ArrowRight, CornerDownLeft
+  Calendar, User, Users, Repeat, ChevronDown, Tag, ArrowRight, CornerDownLeft,
+  Camera // [New Import]
 } from 'lucide-react';
-import { getIconComponent } from '../utils/helpers';
+import { getIconComponent, parseReceiptWithGemini } from '../utils/helpers'; // [New Import]
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
 
 export default function AddExpenseView({
@@ -51,17 +52,17 @@ export default function AddExpenseView({
     if (!ledgerData) return null; 
 
     // --- Local State & Refs ---
-    // [回復正確邏輯] 使用 activeOverlay 狀態機，而非舊版的 isKeypadVisible
     const [activeOverlay, setActiveOverlay] = useState('amount'); 
     const [localAmount, setLocalAmount] = useState(''); 
     const noteInputRef = useRef(null);
+    const cameraInputRef = useRef(null); // [New Ref]
+    const [isScanning, setIsScanning] = useState(false); // [New State]
     
     // --- Data Preparation ---
     const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
     const filteredCategories = currentCats.filter(cat => selectedCategoryIds.includes(cat.id)); 
     
-    // 取得當前分類的相關歷史備註 (Quick Tags)
     const recentNotes = [];
     if (ledgerData.transactions && selectedCategory) {
         const notes = ledgerData.transactions
@@ -72,10 +73,7 @@ export default function AddExpenseView({
     }
 
     // --- Effects ---
-
-    // [核心邏輯] 卸載清除機制
     useEffect(() => {
-        // 1. Mount: 初始化
         if (initialAmount) {
             setLocalAmount(initialAmount.toString());
         } else {
@@ -84,7 +82,6 @@ export default function AddExpenseView({
         }
         setActiveOverlay('amount');
 
-        // 2. Unmount: 再次確保清空 (雙重保險)
         return () => {
             setAmount('');
             setNote('');
@@ -98,12 +95,11 @@ export default function AddExpenseView({
         };
     }, []); 
 
-    // 當 localAmount 變更，同步回父層
     useEffect(() => {
         setAmount(localAmount);
     }, [localAmount, setAmount]);
 
-    // --- State Machine Handlers (Auto-Flow) ---
+    // --- Handlers ---
     const handleAmountClick = () => {
         setActiveOverlay('amount');
         noteInputRef.current?.blur();
@@ -131,20 +127,17 @@ export default function AddExpenseView({
         }
 
         if (!localAmount || parseFloat(localAmount) <= 0) return;
-        // [正確邏輯] 金額確認後 -> 跳轉至分類選擇
         setActiveOverlay('category');
     };
 
     const handleCategorySelect = (cat) => {
         setSelectedCategory(cat);
-        // [正確邏輯] 分類確認後 -> 關閉彈窗 -> 自動聚焦備註
         setActiveOverlay('none');
         requestAnimationFrame(() => {
             noteInputRef.current?.focus();
         });
     };
 
-    // --- Keypad Logic ---
     const handleKeyPress = (key) => {
         if (navigator.vibrate) try { navigator.vibrate(10); } catch(e) {}
 
@@ -154,15 +147,12 @@ export default function AddExpenseView({
         if (key === 'DEL') { setLocalAmount(prev => prev.slice(0, -1)); return; }
         if (key === 'DONE') { handleKeypadSubmit(); return; }
 
-        // [優化] 自動補 0 邏輯
         if (key === '.') {
             setLocalAmount(prev => {
                 const lastChar = prev.slice(-1);
-                // 如果是空字串，或上一個字元是運算子，輸入 . 自動變成 0.
                 if (!prev || operators.includes(lastChar)) {
                     return prev + '0.';
                 }
-                // 簡單防呆：避免連續輸入小數點 (較複雜的邏輯暫不處理)
                 return prev + key;
             });
             return;
@@ -178,6 +168,40 @@ export default function AddExpenseView({
         });
     };
 
+    // [New Feature] Phase 1: Camera Scan Handler
+    const handleScanClick = () => {
+        cameraInputRef.current?.click();
+    };
+
+    const handleImageUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // 簡單的前端壓縮與轉檔 (Optional: 這裡先直接轉 Base64)
+        setIsScanning(true);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+            const base64String = reader.result.split(',')[1]; // 去除 data:image/jpeg;base64, 前綴
+            
+            // Call AI
+            const items = await parseReceiptWithGemini(base64String);
+            
+            setIsScanning(false);
+            if (items) {
+                console.log("AI Scanned Items:", items);
+                // Phase 1: 暫時用 Alert 顯示結果，證明核心邏輯成功
+                const summary = items.map(i => `${i.name}: $${i.price}`).join('\n');
+                alert(`掃描成功！抓取到以下項目 (請看 Console 詳細資料)：\n\n${summary}`);
+            } else {
+                alert("掃描失敗，請再試一次");
+            }
+        };
+        reader.readAsDataURL(file);
+        
+        // Reset input to allow selecting same file again
+        e.target.value = '';
+    };
+
     const isMathPending = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
     
     // --- Render Helpers ---
@@ -186,7 +210,6 @@ export default function AddExpenseView({
         if (label === 'DEL') {
             content = <Delete size={22}/>;
         } else if (label === 'DONE') {
-            // [正確邏輯] 恢復 CornerDownLeft 圖示
             content = isMathPending ? <Equal size={28}/> : <CornerDownLeft size={28} strokeWidth={3}/>;
         }
 
@@ -196,7 +219,6 @@ export default function AddExpenseView({
                 className={`
                     rounded-2xl text-xl font-bold flex items-center justify-center select-none btn-press active:scale-95 transition-transform
                     ${className}
-                    /* [樣式修正] 移除所有 shadow-lg, shadow-[...], border-b-4，實現全扁平 */
                     ${type === 'num' ? 'bg-white text-slate-700' : ''}
                     ${type === 'op' ? 'bg-rose-50 text-rose-500' : ''}
                     ${type === 'ac' ? 'bg-slate-100 text-slate-400' : ''}
@@ -214,6 +236,16 @@ export default function AddExpenseView({
     return (
       <div className="fixed inset-0 z-[50] flex flex-col h-[100dvh] bg-gray-50 overflow-hidden"> 
         
+        {/* Hidden File Input for Camera */}
+        <input 
+            type="file" 
+            ref={cameraInputRef} 
+            accept="image/*" 
+            capture="environment" // 優先使用後鏡頭
+            className="hidden" 
+            onChange={handleImageUpload}
+        />
+
         {/* =========================================
             [A 區] HUD (Top Navigation & Context)
            ========================================= */}
@@ -223,9 +255,21 @@ export default function AddExpenseView({
                 <div className="font-bold text-slate-700 text-sm bg-gray-100 px-3 py-1 rounded-full border border-gray-200">
                     {ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常'}
                 </div>
-                <button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full -mr-2 ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'text-purple-400 hover:bg-purple-50'}`}>
-                    {isAiProcessing ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}
-                </button>
+                
+                <div className="flex gap-1 -mr-2">
+                    {/* [New] Camera Button */}
+                    <button 
+                        onClick={handleScanClick} 
+                        disabled={isScanning}
+                        className={`p-2 rounded-full ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'text-blue-500 hover:bg-blue-50'}`}
+                    >
+                        {isScanning ? <RefreshCw className="animate-spin" size={20}/> : <Camera size={20}/>}
+                    </button>
+
+                    <button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'text-purple-400 hover:bg-purple-50'}`}>
+                        {isAiProcessing ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}
+                    </button>
+                </div>
             </div>
 
             <div className="flex items-center gap-3">
