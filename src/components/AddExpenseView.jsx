@@ -27,6 +27,7 @@ export default function AddExpenseView({
   currency, 
   setCurrency, 
   setAmount,    
+  amount, // [Check] 確保接收 amount
   initialAmount, 
   payer,
   setPayer,
@@ -68,12 +69,21 @@ export default function AddExpenseView({
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
     const filteredCategories = currentCats.filter(cat => selectedCategoryIds.includes(cat.id)); 
     
+    // [Optimization] 標籤邏輯優化：抓取「最近使用」的前 5 筆，而非「歷史最久」
     const recentNotes = [];
     if (ledgerData.transactions && selectedCategory) {
-        const notes = ledgerData.transactions
+        // 1. 複製並反轉陣列 (讓最新的交易排在最前面)
+        // 注意：Firestore arrayUnion 預設是 append，所以陣列尾端是最新的
+        const reversedTxs = [...ledgerData.transactions].reverse();
+        
+        const notes = reversedTxs
             .filter(t => t.category.id === selectedCategory.id && t.note)
             .map(t => t.note);
+            
+        // 2. Set 會保留「第一次出現」的值 (也就是最新的)
         const uniqueNotes = [...new Set(notes)];
+        
+        // 3. 取前 5 個
         recentNotes.push(...uniqueNotes.slice(0, 5));
     }
 
@@ -103,6 +113,14 @@ export default function AddExpenseView({
     useEffect(() => {
         setAmount(localAmount);
     }, [localAmount, setAmount]);
+
+    // [Fix] Sync Parent State -> Local Input (AI/Scan Backfill)
+    useEffect(() => {
+        if (amount !== undefined && amount !== null && amount.toString() !== localAmount) {
+            setLocalAmount(amount.toString());
+        }
+    }, [amount]);
+
 
     // --- Handlers ---
     const handleAmountClick = () => {
