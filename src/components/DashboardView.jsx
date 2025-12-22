@@ -104,6 +104,60 @@ export default function DashboardView({
 
     }, [ledgerData, currentProjectId, user.uid]);
 
+    // [Helper] 智慧標籤生成邏輯
+    const getSmartTags = (tx) => {
+        const tags = [];
+        
+        // 特殊處理：結算轉帳紀錄
+        if (tx.isSettlement) {
+            const payerName = ledgerData.users[tx.payer]?.name || '未知';
+            tags.push({ label: `${payerName} 轉帳`, color: 'gray' });
+            return tags;
+        }
+
+        const isCustom = tx.splitType === 'custom';
+        
+        // 1. 處理付款人標籤
+        if (isCustom) {
+            // 情境 4: 混合出資 (隱藏人名)
+            tags.push({ label: '混合出資', color: 'gray' });
+        } else {
+            // 顯示付款人
+            const payerName = ledgerData.users[tx.payer]?.name || '未知';
+            tags.push({ label: payerName, color: 'gray' });
+            
+            // 2. 處理分攤狀態標籤
+            if (tx.splitType === 'even') {
+                tags.push({ label: '平均分攤', color: 'gray' }); // 情境 1
+            } else {
+                // 判斷 私人 vs 代墊
+                const payerRole = ledgerData.users[tx.payer]?.role;
+                let isPrivate = false;
+                let isAdvance = false;
+
+                if (tx.splitType === 'host_all') {
+                    // Host 全付
+                    if (payerRole === 'host') isPrivate = true; // Host 付給 Host (私人)
+                    else isAdvance = true; // Guest 付給 Host (代墊)
+                } else if (tx.splitType === 'guest_all') {
+                    // Guest 全付
+                    if (payerRole === 'guest') isPrivate = true; // Guest 付給 Guest (私人)
+                    else isAdvance = true; // Host 付給 Guest (代墊)
+                }
+
+                if (isPrivate) tags.push({ label: '私人', color: 'gray' }); // 情境 2
+                if (isAdvance) tags.push({ label: '代墊', color: 'gray' }); // 情境 3
+            }
+        }
+
+        // 3. 處理結清狀態 (情境 5)
+        if (tx.isSettled) {
+            tags.push({ label: '已結清', color: 'green' });
+        }
+
+        return tags;
+    };
+
     return (
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
         <div className="flex justify-between items-center mb-4">
@@ -152,16 +206,14 @@ export default function DashboardView({
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-50 overflow-hidden">
                         {txs.map((tx, idx) => { 
                             const CatIcon = getIconComponent(tx.category?.icon); 
-                            const payerName = ledgerData.users[tx.payer]?.name || '未知';
-                            const isMultiPayer = tx.splitType === 'custom' && tx.customSplit && Object.keys(tx.customSplit).length > 1;
-                            const displayPayer = isMultiPayer ? '多人墊付' : payerName;
+                            const tags = getSmartTags(tx);
 
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
-                                    <div className="flex items-center gap-3">
-                                        {/* [Fix] 使用 style 處理顏色 */}
+                                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                                        {/* Icon */}
                                         <div 
-                                            className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                                            className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0"
                                             style={{ 
                                                 backgroundColor: `${tx.category?.hex}33`, 
                                                 color: tx.category?.hex 
@@ -169,15 +221,37 @@ export default function DashboardView({
                                         >
                                             <CatIcon size={20} />
                                         </div>
-                                        <div>
-                                            <p className="font-medium text-gray-800">{tx.note}</p>
-                                            <div className="flex items-center gap-2">
-                                                <p className="text-xs text-gray-400">{tx.category?.name}</p>
-                                                <span className="text-[10px] text-gray-400 bg-gray-100 px-1 rounded">{displayPayer}</span>
+                                        
+                                        {/* Content Area */}
+                                        <div className="flex-1 min-w-0">
+                                            {/* Row 1: Note (Truncated) */}
+                                            <p className="font-medium text-gray-800 truncate text-sm">
+                                                {tx.note || tx.category?.name}
+                                            </p>
+                                            
+                                            {/* Row 2: Category & Tags */}
+                                            <div className="flex items-center flex-wrap gap-1.5 mt-1">
+                                                <p className="text-xs text-gray-400 mr-1 shrink-0">{tx.category?.name}</p>
+                                                {tags.map((tag, i) => (
+                                                    <span 
+                                                        key={i} 
+                                                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                                                            tag.color === 'green' 
+                                                                ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
+                                                                : 'bg-gray-100 text-gray-500 border-gray-100'
+                                                        }`}
+                                                    >
+                                                        {tag.label}
+                                                    </span>
+                                                ))}
                                             </div>
                                         </div>
                                     </div>
-                                    <span className={`font-bold ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>{formatCurrency(tx.amount, tx.currency || 'TWD', privacyMode)}</span>
+
+                                    {/* Amount */}
+                                    <span className={`font-bold ml-4 whitespace-nowrap ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
+                                        {formatCurrency(tx.amount, tx.currency || 'TWD', privacyMode)}
+                                    </span>
                                 </div>
                             ); 
                         })}
