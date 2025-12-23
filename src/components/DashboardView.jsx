@@ -29,7 +29,24 @@ export default function DashboardView({
         // [Critical Fix 2] 再次確保 user 存在，防止 useMemo 內部崩潰
         if (!user) return { projectTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0 };
 
-        const allTxs = ledgerData.transactions || [];
+        const rawTxs = ledgerData.transactions || [];
+        
+        // 🛡️ [防彈邏輯核心]：在這裡清洗資料，防止白屏
+        const allTxs = rawTxs
+            .filter(t => t && t.id && t.amount !== undefined) // 1. 過濾掉空值或殘缺資料
+            .map(t => {
+                // 2. 處理新舊版本衝突：如果遇到 'mixed' (混合記帳) 或其他不認識的 type
+                // 為了不讓舊版 UI 崩潰，我們暫時把它偽裝成普通 'expense' (支出)
+                const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
+                
+                return {
+                    ...t,
+                    type: safeType,
+                    // 3. 確保 category 永遠存在，避免讀取 icon 時報錯
+                    category: t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' }
+                };
+            });
+
         const pTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
         const currentMonthStr = new Date().toISOString().slice(0, 7);
         const thisMonthTxs = pTxs.filter(t => t.date.startsWith(currentMonthStr));
@@ -115,7 +132,7 @@ export default function DashboardView({
             otherUserId: oUserId
         };
 
-    }, [ledgerData, currentProjectId, user]); // Dependency 移除 user.uid 改為 user，防止存取 null 屬性
+    }, [ledgerData, currentProjectId, user]); 
 
     // Helper: Smart Tags
     const getSmartTags = (tx) => {
@@ -195,6 +212,7 @@ export default function DashboardView({
                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">{date}</h3>
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-50 overflow-hidden">
                         {txs.map((tx, idx) => { 
+                            // 防彈修正：使用可選串連 (?.)，如果 category 是 undefined 也不會崩潰
                             const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                             const tags = getSmartTags(tx);
 
