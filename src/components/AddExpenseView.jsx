@@ -3,11 +3,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, Delete, Equal, 
   Calendar, User, Users, Repeat, ChevronDown, Tag, ArrowRight, CornerDownLeft,
-  Camera 
+  Camera, AlertCircle 
 } from 'lucide-react';
 import { getIconComponent, parseReceiptWithGemini } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
-import ScanReceiptModal from './ScanReceiptModal'; // [New Import]
+import ScanReceiptModal from './ScanReceiptModal';
 
 export default function AddExpenseView({
   ledgerData,
@@ -27,7 +27,7 @@ export default function AddExpenseView({
   currency, 
   setCurrency, 
   setAmount,    
-  amount, // [Check] 確保接收 amount
+  amount,
   initialAmount, 
   payer,
   setPayer,
@@ -59,8 +59,6 @@ export default function AddExpenseView({
     const noteInputRef = useRef(null);
     const cameraInputRef = useRef(null);
     const [isScanning, setIsScanning] = useState(false);
-    
-    // [New State for Scan Modal]
     const [isScanModalOpen, setIsScanModalOpen] = useState(false);
     const [scannedItems, setScannedItems] = useState([]);
 
@@ -69,73 +67,50 @@ export default function AddExpenseView({
     const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
     const filteredCategories = currentCats.filter(cat => selectedCategoryIds.includes(cat.id)); 
     
-    // [Optimization] 標籤邏輯優化：抓取「最近使用」的前 5 筆，而非「歷史最久」
+    // Names
+    const users = ledgerData.users || {};
+    const hostId = Object.keys(users).find(uid => users[uid].role === 'host');
+    const guestId = Object.keys(users).find(uid => users[uid].role === 'guest');
+    const hostName = hostId ? (users[hostId]?.name || '戶長') : '戶長';
+    const guestName = guestId ? (users[guestId]?.name || '成員') : '成員';
+
+    // Smart Tags Logic
     const recentNotes = [];
     if (ledgerData.transactions && selectedCategory) {
-        // 1. 複製並反轉陣列 (讓最新的交易排在最前面)
-        // 注意：Firestore arrayUnion 預設是 append，所以陣列尾端是最新的
         const reversedTxs = [...ledgerData.transactions].reverse();
-        
         const notes = reversedTxs
             .filter(t => t.category.id === selectedCategory.id && t.note)
             .map(t => t.note);
-            
-        // 2. Set 會保留「第一次出現」的值 (也就是最新的)
         const uniqueNotes = [...new Set(notes)];
-        
-        // 3. 取前 5 個
         recentNotes.push(...uniqueNotes.slice(0, 5));
     }
 
     // --- Effects ---
     useEffect(() => {
-        if (initialAmount) {
-            setLocalAmount(initialAmount.toString());
-        } else {
-            setLocalAmount('');
-            setAmount(''); 
-        }
+        if (initialAmount) setLocalAmount(initialAmount.toString());
+        else { setLocalAmount(''); setAmount(''); }
         setActiveOverlay('amount');
+        // Ensure payer is set
+        if (!payer && user) setPayer(user.uid);
 
         return () => {
-            setAmount('');
-            setNote('');
-            setSelectedCategory(null);
-            setSplitType('even');
-            setCustomSplitHost('');
-            setCustomSplitGuest('');
-            setIsSubscription(false);
-            setSubCycle('monthly');
-            setSubPayDay('');
+            setAmount(''); setNote(''); setSelectedCategory(null); setSplitType('even');
+            setCustomSplitHost(''); setCustomSplitGuest(''); setIsSubscription(false);
+            setSubCycle('monthly'); setSubPayDay('');
         };
     }, []); 
 
-    useEffect(() => {
-        setAmount(localAmount);
-    }, [localAmount, setAmount]);
-
-    // [Fix] Sync Parent State -> Local Input (AI/Scan Backfill)
+    useEffect(() => { setAmount(localAmount); }, [localAmount, setAmount]);
     useEffect(() => {
         if (amount !== undefined && amount !== null && amount.toString() !== localAmount) {
             setLocalAmount(amount.toString());
         }
     }, [amount]);
 
-
     // --- Handlers ---
-    const handleAmountClick = () => {
-        setActiveOverlay('amount');
-        noteInputRef.current?.blur();
-    };
-
-    const handleCategoryTriggerClick = () => {
-        setActiveOverlay('category');
-        noteInputRef.current?.blur();
-    };
-
-    const handleNoteFocus = () => {
-        setActiveOverlay('none');
-    };
+    const handleAmountClick = () => { setActiveOverlay('amount'); noteInputRef.current?.blur(); };
+    const handleCategoryTriggerClick = () => { setActiveOverlay('category'); noteInputRef.current?.blur(); };
+    const handleNoteFocus = () => { setActiveOverlay('none'); };
 
     const handleKeypadSubmit = () => {
         const isPendingMath = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
@@ -148,7 +123,6 @@ export default function AddExpenseView({
              } catch (e) {}
              return;
         }
-
         if (!localAmount || parseFloat(localAmount) <= 0) return;
         setActiveOverlay('category');
     };
@@ -156,31 +130,23 @@ export default function AddExpenseView({
     const handleCategorySelect = (cat) => {
         setSelectedCategory(cat);
         setActiveOverlay('none');
-        requestAnimationFrame(() => {
-            noteInputRef.current?.focus();
-        });
+        requestAnimationFrame(() => { noteInputRef.current?.focus(); });
     };
 
     const handleKeyPress = (key) => {
         if (navigator.vibrate) try { navigator.vibrate(10); } catch(e) {}
-
         const operators = ['+', '-', '×', '÷'];
-
         if (key === 'AC') { setLocalAmount(''); return; }
         if (key === 'DEL') { setLocalAmount(prev => prev.slice(0, -1)); return; }
         if (key === 'DONE') { handleKeypadSubmit(); return; }
-
         if (key === '.') {
             setLocalAmount(prev => {
                 const lastChar = prev.slice(-1);
-                if (!prev || operators.includes(lastChar)) {
-                    return prev + '0.';
-                }
+                if (!prev || operators.includes(lastChar)) return prev + '0.';
                 return prev + key;
             });
             return;
         }
-
         setLocalAmount(prev => {
             const lastChar = prev.slice(-1);
             if (operators.includes(key)) {
@@ -191,71 +157,52 @@ export default function AddExpenseView({
         });
     };
 
-    // --- Camera Scan Handlers ---
-    const handleScanClick = () => {
-        cameraInputRef.current?.click();
-    };
+    const handleScanClick = () => { cameraInputRef.current?.click(); };
 
     const handleImageUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-
         setIsScanning(true);
         const reader = new FileReader();
         reader.onloadend = async () => {
             const base64String = reader.result.split(',')[1]; 
-            
-            // Call AI
             const items = await parseReceiptWithGemini(base64String);
-            
             setIsScanning(false);
             if (items && Array.isArray(items)) {
-                // [Phase 2] Open Modal instead of Alert
                 setScannedItems(items);
                 setIsScanModalOpen(true);
-            } else {
-                alert("掃描失敗，請再試一次或手動輸入");
-            }
+            } else { alert("掃描失敗，請再試一次或手動輸入"); }
         };
         reader.readAsDataURL(file);
-        
-        // Reset input
         e.target.value = '';
     };
 
-    // [New] Callback when user confirms split in ScanReceiptModal
     const handleScanConfirm = (result) => {
         const { amount, note, splitType, customSplit } = result;
-
-        // 1. Backfill Amount
         setLocalAmount(amount.toString());
         setAmount(amount.toString());
-
-        // 2. Backfill Note
         if (note) setNote(note);
-
-        // 3. Backfill Split Settings
         setSplitType(splitType);
         
-        // Populate custom split inputs for UI feedback
-        const hostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
-        const guestId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
-        
-        if (customSplit && hostId && customSplit[hostId]) {
-            setCustomSplitHost(customSplit[hostId].toString());
-        } else {
-            setCustomSplitHost('0');
+        if (customSplit) {
+            if (hostId && customSplit[hostId]) setCustomSplitHost(customSplit[hostId].toString());
+            if (guestId && customSplit[guestId]) setCustomSplitGuest(customSplit[guestId].toString());
         }
-        
-        if (customSplit && guestId && customSplit[guestId]) {
-            setCustomSplitGuest(customSplit[guestId].toString());
-        } else {
-            setCustomSplitGuest('0');
-        }
+        if (amount > 0) setActiveOverlay('category');
+    };
 
-        // 4. Auto-advance to category selection if amount is present
-        if (amount > 0) {
-            setActiveOverlay('category');
+    // --- Dynamic Label Logic (私人/代墊) ---
+    const getLabelForRole = (targetRole) => {
+        const payerRole = users[payer]?.role;
+        
+        if (targetRole === 'host') {
+            if (payerRole === 'host') return `私人 (${hostName})`; // A付, A用
+            if (payerRole === 'guest') return `代墊 (幫${hostName}付)`; // B付, A用
+            return `${hostName} 全額`;
+        } else {
+            if (payerRole === 'guest') return `私人 (${guestName})`; // B付, B用
+            if (payerRole === 'host') return `代墊 (幫${guestName}付)`; // A付, B用
+            return `${guestName} 全額`;
         }
     };
 
@@ -264,23 +211,13 @@ export default function AddExpenseView({
     // --- Render Helpers ---
     const renderKey = (label, type = 'num', className = '') => {
         let content = label;
-        if (label === 'DEL') {
-            content = <Delete size={22}/>;
-        } else if (label === 'DONE') {
-            content = isMathPending ? <Equal size={28}/> : <CornerDownLeft size={28} strokeWidth={3}/>;
-        }
+        if (label === 'DEL') content = <Delete size={22}/>;
+        else if (label === 'DONE') content = isMathPending ? <Equal size={28}/> : <CornerDownLeft size={28} strokeWidth={3}/>;
 
         return (
             <button
                 onClick={(e) => { e.stopPropagation(); handleKeyPress(label); }}
-                className={`
-                    rounded-2xl text-xl font-bold flex items-center justify-center select-none btn-press active:scale-95 transition-transform
-                    ${className}
-                    ${type === 'num' ? 'bg-white text-slate-700' : ''}
-                    ${type === 'op' ? 'bg-rose-50 text-rose-500' : ''}
-                    ${type === 'ac' ? 'bg-slate-100 text-slate-400' : ''}
-                    ${type === 'action' ? 'bg-rose-500 text-white' : ''} 
-                `}
+                className={`rounded-2xl text-xl font-bold flex items-center justify-center select-none btn-press active:scale-95 transition-transform ${className} ${type === 'num' ? 'bg-white text-slate-700' : ''} ${type === 'op' ? 'bg-rose-50 text-rose-500' : ''} ${type === 'ac' ? 'bg-slate-100 text-slate-400' : ''} ${type === 'action' ? 'bg-rose-500 text-white' : ''} `}
                 style={{ height: '56px' }} 
             >
                 {content}
@@ -292,48 +229,20 @@ export default function AddExpenseView({
 
     return (
       <div className="fixed inset-0 z-[50] flex flex-col h-[100dvh] bg-gray-50 overflow-hidden"> 
-        
-        {/* Hidden File Input for Camera */}
-        <input 
-            type="file" 
-            ref={cameraInputRef} 
-            accept="image/*" 
-            capture="environment" 
-            className="hidden" 
-            onChange={handleImageUpload}
-        />
+        <input type="file" ref={cameraInputRef} accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload}/>
+        <ScanReceiptModal isOpen={isScanModalOpen} onClose={() => setIsScanModalOpen(false)} onConfirm={handleScanConfirm} initialItems={scannedItems} currency={currency} users={ledgerData.users}/>
 
-        {/* =========================================
-            [New] Scan Receipt Modal
-           ========================================= */}
-        <ScanReceiptModal
-            isOpen={isScanModalOpen}
-            onClose={() => setIsScanModalOpen(false)}
-            onConfirm={handleScanConfirm}
-            initialItems={scannedItems}
-            currency={currency}
-            users={ledgerData.users}
-        />
-
-        {/* =========================================
-            [A 區] HUD (Top Navigation & Context)
-           ========================================= */}
+        {/* HUD */}
         <div className="bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] z-20 shrink-0 shadow-sm border-b border-gray-100 relative">
             <div className="flex justify-between items-center mb-3">
                 <button onClick={() => setView('dashboard')} className="p-2 -ml-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={24}/></button>
                 <div className="font-bold text-slate-700 text-sm bg-gray-100 px-3 py-1 rounded-full border border-gray-200">
                     {ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常'}
                 </div>
-                
                 <div className="flex gap-1 -mr-2">
-                    <button 
-                        onClick={handleScanClick} 
-                        disabled={isScanning}
-                        className={`p-2 rounded-full ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'text-blue-500 hover:bg-blue-50'}`}
-                    >
+                    <button onClick={handleScanClick} disabled={isScanning} className={`p-2 rounded-full ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'text-blue-500 hover:bg-blue-50'}`}>
                         {isScanning ? <RefreshCw className="animate-spin" size={20}/> : <Camera size={20}/>}
                     </button>
-
                     <button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'text-purple-400 hover:bg-purple-50'}`}>
                         {isAiProcessing ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}
                     </button>
@@ -353,31 +262,21 @@ export default function AddExpenseView({
             </div>
         </div>
 
-        {/* =========================================
-            [B & C 區] 可滾動內容區 (Scrollable Content)
-           ========================================= */}
+        {/* Content */}
         <div className="flex-1 overflow-y-auto overscroll-contain pb-32">
             
-            {/* [B 區] 核心輸入 (Core Input) */}
+            {/* Core Input */}
             <div className="px-4 py-6 bg-white mb-3 shadow-sm border-b border-gray-100">
-                {/* 1. 金額 */}
                 <div className="flex justify-center mb-6">
-                    <button 
-                        onClick={handleAmountClick}
-                        className={`text-5xl font-bold tracking-tight flex items-center transition-all ${localAmount ? 'text-gray-900' : 'text-gray-300'} ${activeOverlay === 'amount' ? 'scale-105' : ''}`}
-                    >
+                    <button onClick={handleAmountClick} className={`text-5xl font-bold tracking-tight flex items-center transition-all ${localAmount ? 'text-gray-900' : 'text-gray-300'} ${activeOverlay === 'amount' ? 'scale-105' : ''}`}>
                         <span className="text-2xl mr-2 text-gray-300 font-medium">$</span>
                         {localAmount || '0'}
                         {activeOverlay === 'amount' && <div className="w-[3px] h-10 bg-rose-500 animate-cursor-blink ml-1 rounded-full"></div>}
                     </button>
                 </div>
 
-                {/* 2. 分類與備註 */}
                 <div className="flex gap-3 mb-4">
-                    <button 
-                        onClick={handleCategoryTriggerClick}
-                        className={`flex-none w-[35%] flex items-center gap-2 p-3 rounded-2xl border transition-all ${activeOverlay === 'category' ? 'bg-rose-50 border-rose-200 ring-2 ring-rose-100' : 'bg-gray-50 border-gray-100'}`}
-                    >
+                    <button onClick={handleCategoryTriggerClick} className={`flex-none w-[35%] flex items-center gap-2 p-3 rounded-2xl border transition-all ${activeOverlay === 'category' ? 'bg-rose-50 border-rose-200 ring-2 ring-rose-100' : 'bg-gray-50 border-gray-100'}`}>
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm shrink-0 transition-colors ${selectedCategory ? 'bg-rose-500 text-white' : 'bg-white text-rose-500'}`}>
                             <CatIcon size={18} />
                         </div>
@@ -389,19 +288,10 @@ export default function AddExpenseView({
                     </button>
 
                     <div className="flex-1 bg-gray-50 rounded-2xl border border-gray-100 flex items-center px-4 focus-within:border-rose-200 focus-within:ring-2 focus-within:ring-rose-50 transition-all">
-                        <input 
-                            ref={noteInputRef}
-                            type="text" 
-                            value={note} 
-                            onChange={(e) => setNote(e.target.value)} 
-                            onFocus={handleNoteFocus}
-                            placeholder="寫點備註..." 
-                            className="w-full bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400 font-medium"
-                        />
+                        <input ref={noteInputRef} type="text" value={note} onChange={(e) => setNote(e.target.value)} onFocus={handleNoteFocus} placeholder="寫點備註..." className="w-full bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400 font-medium"/>
                     </div>
                 </div>
 
-                {/* 3. 快速標籤 */}
                 {recentNotes.length > 0 && (
                      <div className="flex gap-2 overflow-x-auto no-scrollbar">
                         {recentNotes.map((n, idx) => (
@@ -413,11 +303,11 @@ export default function AddExpenseView({
                  )}
             </div>
 
-            {/* [C 區] 進階邏輯 (Logic Module) */}
+            {/* Logic Module */}
             <div className="px-4">
                 <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-5">
                     
-                    {/* 分攤模式 */}
+                    {/* 分攤模式 (Dynamic Text) */}
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-gray-500">
                             <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500">
@@ -425,16 +315,16 @@ export default function AddExpenseView({
                             </div>
                             <span className="text-sm font-bold">分攤模式</span>
                         </div>
-                        <div className="relative w-32">
+                        <div className="relative w-40">
                             <select 
                                 value={splitType} 
                                 onChange={(e) => setSplitType(e.target.value)} 
-                                className="w-full appearance-none bg-gray-50 text-sm font-bold text-gray-700 py-2 pl-3 pr-8 rounded-xl outline-none border border-gray-100 focus:border-blue-200 text-right"
+                                className="w-full appearance-none bg-gray-50 text-xs font-bold text-gray-700 py-2 pl-3 pr-8 rounded-xl outline-none border border-gray-100 focus:border-blue-200 text-right"
                             >
                                 <option value="even">平均分攤</option>
-                                <option value="self">我全付</option>
-                                <option value="partner">對方全付</option>
-                                <option value="custom">自訂金額</option>
+                                <option value="multi_payer">混合出資</option>
+                                <option value="host_all">{getLabelForRole('host')}</option>
+                                <option value="guest_all">{getLabelForRole('guest')}</option>
                             </select>
                             <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
                                 <ChevronDown size={14}/>
@@ -442,58 +332,63 @@ export default function AddExpenseView({
                         </div>
                     </div>
                     
-                    {/* 自訂分帳輸入 */}
-                    {splitType === 'custom' && (
-                        <div className="flex gap-2 animate-fade-in bg-gray-50 p-2 rounded-xl">
-                            <div className="relative flex-1">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">Host</span>
-                                <input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} onFocus={handleNoteFocus} className="w-full py-2 pl-12 pr-2 bg-white rounded-lg text-sm text-right font-bold outline-none border border-gray-200 focus:border-blue-300"/>
+                    {/* 混合出資輸入 (Multi-Payer) */}
+                    {splitType === 'multi_payer' && (
+                        <div className="bg-rose-50 p-3 rounded-xl border border-rose-100 animate-fade-in">
+                            <div className="flex items-center justify-center gap-1 mb-2">
+                                <AlertCircle size={12} className="text-rose-500"/>
+                                <p className="text-[10px] text-rose-500 font-bold text-center">
+                                    輸入雙方「當下實際支付」的金額
+                                </p>
                             </div>
-                            <div className="relative flex-1">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">Guest</span>
-                                <input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} onFocus={handleNoteFocus} className="w-full py-2 pl-12 pr-2 bg-white rounded-lg text-sm text-right font-bold outline-none border border-gray-200 focus:border-blue-300"/>
+                            <div className="flex gap-2">
+                                <div className="relative flex-1">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 max-w-[4rem] truncate">{hostName}</span>
+                                    <input type="number" value={customSplitHost} onChange={(e) => handleCustomSplitChange('host', e.target.value)} onFocus={handleNoteFocus} className="w-full py-2 pl-16 pr-2 bg-white rounded-lg text-sm text-right font-bold outline-none border border-gray-200 focus:border-blue-300"/>
+                                </div>
+                                <div className="relative flex-1">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 max-w-[4rem] truncate">{guestName}</span>
+                                    <input type="number" value={customSplitGuest} onChange={(e) => handleCustomSplitChange('guest', e.target.value)} onFocus={handleNoteFocus} disabled={!guestId} placeholder={!guestId ? "N/A" : ""} className="w-full py-2 pl-16 pr-2 bg-white rounded-lg text-sm text-right font-bold outline-none border border-gray-200 focus:border-blue-300 disabled:bg-gray-100"/>
+                                </div>
                             </div>
                         </div>
                     )}
-
-                    <div className="h-[1px] bg-gray-50 w-full"></div>
-
-                    {/* 付款人 */}
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-gray-500 flex-1 min-w-0">
-                            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 shrink-0">
-                                <User size={16} />
+                    
+                    {/* 付款人 (Always visible for non-mixed to drive the Private/Advance logic) */}
+                    {splitType !== 'multi_payer' && (
+                        <>
+                            <div className="h-[1px] bg-gray-50 w-full"></div>
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-gray-500 flex-1 min-w-0">
+                                    <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 shrink-0">
+                                        <User size={16} />
+                                    </div>
+                                    <span className="text-sm font-bold shrink-0">付款人</span>
+                                    <div className="flex gap-2 overflow-x-auto no-scrollbar py-1 ml-auto">
+                                        {Object.keys(ledgerData.users || {}).map(uid => (
+                                            <button 
+                                                key={uid} 
+                                                onClick={() => setPayer(uid)}
+                                                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${payer === uid ? 'bg-gray-900 text-white border-gray-900 shadow-sm' : 'bg-white text-gray-400 border-gray-200'}`}
+                                            >
+                                                {ledgerData.users[uid].name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
-                            <span className="text-sm font-bold shrink-0">付款人</span>
-                            <div className="flex gap-2 overflow-x-auto no-scrollbar py-1 ml-auto">
-                                {Object.keys(ledgerData.users || {}).map(uid => (
-                                    <button 
-                                        key={uid} 
-                                        onClick={() => setPayer(uid)}
-                                        className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border ${payer === uid ? 'bg-gray-900 text-white border-gray-900 shadow-sm' : 'bg-white text-gray-400 border-gray-200'}`}
-                                    >
-                                        {ledgerData.users[uid].name}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                        </>
+                    )}
                     
                     {/* 固定週期 */}
                     <div>
-                         <button 
-                            onClick={() => setIsSubscription(!isSubscription)} 
-                            className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${isSubscription ? 'bg-rose-50 border-rose-200' : 'bg-white border-gray-100'}`}
-                        >
+                         <button onClick={() => setIsSubscription(!isSubscription)} className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${isSubscription ? 'bg-rose-50 border-rose-200' : 'bg-white border-gray-100'}`}>
                             <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 shrink-0">
-                                    <Repeat size={16} />
-                                </div>
+                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 shrink-0"><Repeat size={16} /></div>
                                 <span className={`text-sm font-bold ${isSubscription ? 'text-rose-600' : 'text-gray-500'}`}>設為固定支出 (訂閱/分期)</span>
                             </div>
                             <div className={`w-4 h-4 rounded-full border ${isSubscription ? 'bg-rose-500 border-rose-500' : 'bg-transparent border-gray-300'}`}></div>
                         </button>
-
                         {isSubscription && (
                             <div className="flex items-center gap-2 mt-3 pl-2 animate-fade-in justify-end">
                                 <span className="text-xs text-gray-400 font-bold">每</span>
@@ -507,9 +402,7 @@ export default function AddExpenseView({
             </div>
         </div>
 
-        {/* =========================================
-            [E 區] 底部固定按鈕 (Footer)
-           ========================================= */}
+        {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+1rem)] z-30">
             <button 
                 onClick={addTransaction}
@@ -517,16 +410,11 @@ export default function AddExpenseView({
                 className="w-full bg-gray-900 text-white text-lg font-bold py-4 rounded-2xl shadow-lg shadow-gray-200 active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none"
             >
                 {isSubmittingTransaction ? <RefreshCw className="animate-spin"/> : <Check size={24} />}
-                {/* Dynamic Button Text */}
                 {activeOverlay === 'category' ? '完成記帳' : '下一步'}
             </button>
         </div>
 
-        {/* =========================================
-            [D 區] 動態疊加層 (Overlays) - Bottom Sheets
-           ========================================= */}
-        
-        {/* 1. 數字鍵盤 */}
+        {/* Overlays (Unchanged) */}
         {activeOverlay === 'amount' && (
             <div className="absolute bottom-0 left-0 right-0 bg-gray-50 rounded-t-3xl z-50 animate-slide-up shadow-[0_-10px_40px_rgba(0,0,0,0.1)] pb-[env(safe-area-inset-bottom)]">
                 <div className="flex justify-center pt-2 pb-1"><div className="w-10 h-1 bg-gray-300 rounded-full"></div></div>
@@ -542,7 +430,6 @@ export default function AddExpenseView({
             </div>
         )}
 
-        {/* 2. 分類選擇 */}
         {activeOverlay === 'category' && (
             <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl z-50 animate-slide-up shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col max-h-[70vh]">
                  <div className="flex justify-center pt-3 pb-4 shrink-0"><div className="w-10 h-1 bg-gray-200 rounded-full"></div></div>
@@ -554,11 +441,7 @@ export default function AddExpenseView({
                             const Icon = getIconComponent(cat.icon);
                             const isSelected = selectedCategory?.id === cat.id;
                             return (
-                                <button 
-                                    key={cat.id} 
-                                    onClick={() => handleCategorySelect(cat)}
-                                    className="flex flex-col items-center gap-2 group p-1"
-                                >
+                                <button key={cat.id} onClick={() => handleCategorySelect(cat)} className="flex flex-col items-center gap-2 group p-1">
                                     <div className={`w-14 h-14 rounded-3xl flex items-center justify-center transition-all shrink-0 ${isSelected ? 'bg-rose-500 text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-500 border border-gray-100 group-active:scale-95'}`}>
                                         <Icon size={24} />
                                     </div>
@@ -571,7 +454,7 @@ export default function AddExpenseView({
             </div>
         )}
 
-        {/* AI Modal */}
+        {/* AI Modal (Unchanged) */}
         {isAiModalOpen && (
             <div className="absolute inset-0 z-[60] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-fade-in">
                 <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-800">AI 智慧輸入</h3><button onClick={() => { setIsAiModalOpen(false); }} className="p-2 bg-gray-100 rounded-full"><X size={20}/></button></div>
@@ -582,7 +465,6 @@ export default function AddExpenseView({
                 </div>
             </div>
         )}
-
       </div>
     );
 }

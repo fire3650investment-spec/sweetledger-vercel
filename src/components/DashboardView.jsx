@@ -17,32 +17,16 @@ export default function DashboardView({
 }) {
     if (!ledgerData || !user) return null;
 
-    const { 
-        projectTxs, 
-        groupedTransactions, 
-        monthlyTotal, 
-        settlement, 
-        currentProjectName, 
-        partnerName, 
-        otherUserId 
-    } = useMemo(() => {
+    const { projectTxs, groupedTransactions, monthlyTotal, settlement, currentProjectName, partnerName, otherUserId } = useMemo(() => {
         if (!user) return { projectTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0 };
-
         const rawTxs = ledgerData.transactions || [];
         const safeUsers = ledgerData.users || {};
-
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => {
                 const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
-                return {
-                    ...t,
-                    amount: parseFloat(t.amount) || 0,
-                    type: safeType,
-                    category: t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' }
-                };
+                return { ...t, amount: parseFloat(t.amount) || 0, type: safeType, category: t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' } };
             });
-
         const pTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
         const currentMonthStr = new Date().toISOString().slice(0, 7);
         const thisMonthTxs = pTxs.filter(t => t.date.startsWith(currentMonthStr));
@@ -50,11 +34,8 @@ export default function DashboardView({
         const grouped = {};
         const sorted = [...pTxs].sort((a, b) => new Date(b.date) - new Date(a.date)); 
         sorted.forEach(tx => { 
-            try {
-                const date = new Date(tx.date).toLocaleDateString('zh-TW'); 
-                if (!grouped[date]) grouped[date] = []; 
-                grouped[date].push(tx); 
-            } catch (e) { console.warn('Invalid date:', tx); }
+            try { const date = new Date(tx.date).toLocaleDateString('zh-TW'); if (!grouped[date]) grouped[date] = []; grouped[date].push(tx); } 
+            catch (e) {}
         });
 
         const currProject = ledgerData.projects?.find(p => p.id === currentProjectId);
@@ -73,87 +54,49 @@ export default function DashboardView({
             if(tx.isSettlement) return; 
             const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
             if (isNaN(amountTwd)) return;
-
-            // [Logic Upgrade] 區分 "Multi-Payer" (混合支付) 與 "Single Payer"
             
             if (tx.splitType === 'multi_payer') {
-                // Option B: Multi-Payer Logic (Payment Based)
-                // 1. 我付了多少？ (從 customSplit 拿)
                 let myActualPaid = 0;
                 if (tx.customSplit && typeof tx.customSplit === 'object') {
                     const raw = tx.customSplit[user.uid];
                     const val = parseFloat(raw);
                     if (!isNaN(val)) myActualPaid = calculateTwdValue(val, tx.currency || 'TWD', rates);
                 }
-                
-                // 2. 我的責任是多少？ (預設平均分攤)
                 const myResponsibility = amountTwd / 2;
-
-                // 3. 累積
                 myPaid += myActualPaid;
                 myLiability += myResponsibility;
-
             } else {
-                // Legacy / Single Payer Logic
-                // 1. 我付了多少？ (看 payer 欄位)
-                if (tx.payer === user.uid) {
-                    myPaid += amountTwd;
-                }
-
-                // 2. 我的責任是多少？ (看 splitType)
+                if (tx.payer === user.uid) myPaid += amountTwd;
                 let liability = 0;
-                if (tx.splitType === 'even') {
-                    liability = amountTwd / 2; 
-                } else if (tx.splitType === 'custom') {
-                    // Legacy Custom Split (Liability Based)
+                if (tx.splitType === 'even') liability = amountTwd / 2; 
+                else if (tx.splitType === 'custom') {
                     if (tx.customSplit && typeof tx.customSplit === 'object') {
                         const myShareRaw = tx.customSplit[user.uid];
                         const myShare = parseFloat(myShareRaw);
-                        if (!isNaN(myShare)) {
-                            liability = calculateTwdValue(myShare, tx.currency || 'TWD', rates);
-                        }
+                        if (!isNaN(myShare)) liability = calculateTwdValue(myShare, tx.currency || 'TWD', rates);
                     }
-                } else if (tx.splitType === 'host_all') {
-                    liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
-                } else if (tx.splitType === 'guest_all') {
-                    liability = safeUsers[user.uid]?.role === 'guest' ? amountTwd : 0;
-                }
+                } else if (tx.splitType === 'host_all') liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
+                else if (tx.splitType === 'guest_all') liability = safeUsers[user.uid]?.role === 'guest' ? amountTwd : 0;
                 if (!isNaN(liability)) myLiability += liability;
             }
         });
         
-        const settlements = allTxs.filter(tx => 
-            tx.isSettlement && (tx.projectId || 'daily') === currentProjectId
-        );
-
+        const settlements = allTxs.filter(tx => tx.isSettlement && (tx.projectId || 'daily') === currentProjectId);
         let settledAmount = 0;
         settlements.forEach(tx => {
             const amount = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
-            if (!isNaN(amount)) {
-                if (tx.payer === user.uid) settledAmount += amount;
-                else settledAmount -= amount;
-            }
+            if (!isNaN(amount)) { if (tx.payer === user.uid) settledAmount += amount; else settledAmount -= amount; }
         });
 
-        // 結算公式：(我實際付出的 - 我應該付的) + 結清調節
-        // 正值代表我多付了 (對方欠我)，負值代表我少付了 (我欠對方)
-        const finalSettlement = (myPaid - myLiability) + settledAmount;
-        
+        const finalSettlement = (myPaid - myLiability) + settledAmount; 
         const oUserId = Object.keys(safeUsers).find(uid => uid !== user.uid);
         const pName = oUserId && safeUsers[oUserId] ? (safeUsers[oUserId].name || '對方') : '對方';
 
-        return {
-            projectTxs: pTxs,
-            groupedTransactions: grouped,
-            monthlyTotal: isNaN(mTotal) ? 0 : mTotal,
-            settlement: isNaN(finalSettlement) ? 0 : finalSettlement,
-            currentProjectName: currProjectName,
-            partnerName: pName,
-            otherUserId: oUserId
-        };
+        return { projectTxs: pTxs, groupedTransactions: grouped, monthlyTotal: isNaN(mTotal) ? 0 : mTotal, settlement: isNaN(finalSettlement) ? 0 : finalSettlement, currentProjectName: currProjectName, partnerName: pName, otherUserId: oUserId };
 
     }, [ledgerData, currentProjectId, user]); 
 
+    // [Unified Tag Logic]
     const getSmartTags = (tx) => {
         const tags = [];
         const safeUsers = ledgerData.users || {}; 
@@ -165,14 +108,13 @@ export default function DashboardView({
         }
 
         if (tx.splitType === 'multi_payer') {
-             // 混合出資不顯示單一 Payer，改顯示特殊標籤
             tags.push({ label: '混合出資', color: 'blue' });
             return tags;
         }
 
         const payerUser = safeUsers[tx.payer];
         const payerName = payerUser?.name || '未知';
-        tags.push({ label: payerName, color: 'gray' }); // Payer Tag
+        tags.push({ label: payerName, color: 'gray' }); 
 
         if (tx.splitType === 'custom') {
             tags.push({ label: '自訂分攤', color: 'gray' });
@@ -180,19 +122,17 @@ export default function DashboardView({
             tags.push({ label: '平均分攤', color: 'gray' });
         } else {
             const payerRole = payerUser?.role;
-            let isPrivate = false;
-            let isAdvance = false;
-            if (tx.splitType === 'host_all') {
-                if (payerRole === 'host') isPrivate = true;
-                else isAdvance = true;
-            } else if (tx.splitType === 'guest_all') {
-                if (payerRole === 'guest') isPrivate = true;
-                else isAdvance = true;
+            // Payer = Host
+            if (payerRole === 'host') {
+                if (tx.splitType === 'host_all') tags.push({ label: '私人', color: 'gray' }); // Host付 Host用
+                else if (tx.splitType === 'guest_all') tags.push({ label: '代墊', color: 'gray' }); // Host付 Guest用
+            } 
+            // Payer = Guest
+            else if (payerRole === 'guest') {
+                if (tx.splitType === 'guest_all') tags.push({ label: '私人', color: 'gray' }); // Guest付 Guest用
+                else if (tx.splitType === 'host_all') tags.push({ label: '代墊', color: 'gray' }); // Guest付 Host用
             }
-            if (isPrivate) tags.push({ label: '私人', color: 'gray' });
-            if (isAdvance) tags.push({ label: '代墊', color: 'gray' });
         }
-        
         if (tx.isSettled) tags.push({ label: '已結清', color: 'green' });
         return tags;
     };
@@ -206,12 +146,10 @@ export default function DashboardView({
              </select>
              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white"><ChevronDown size={14} /></div>
            </div>
-           
            <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 bg-white rounded-full shadow-sm border border-gray-100 active:scale-95 transition-transform">
              {privacyMode ? <EyeOff size={16} className="text-gray-400"/> : <Eye size={16} className="text-rose-500"/>}
            </button>
         </div>
-        
         <div className={`rounded-3xl p-6 text-white shadow-lg shadow-rose-200 mb-8 relative overflow-hidden transition-colors ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-rose-500 to-pink-600'}`}>
             <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
             <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14}/> 總結算狀態 ({currentProjectName})</p>
@@ -221,17 +159,12 @@ export default function DashboardView({
                 </h1>
             </div>
             <p className="text-white/70 text-xs font-medium">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
-
             {Math.abs(settlement) > 0 && (
-                <button 
-                    onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你', settlement < 0 ? user.uid : otherUserId)} 
-                    className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4"
-                >
+                <button onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你', settlement < 0 ? user.uid : otherUserId)} className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4">
                     <Coins size={14}/> 結清債務
                 </button>
             )}
         </div>
-
         <div className="space-y-6">
             {Object.entries(groupedTransactions).map(([date, txs]) => (
                 <div key={date}>
@@ -240,7 +173,6 @@ export default function DashboardView({
                         {txs.map((tx, idx) => { 
                             const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                             const tags = getSmartTags(tx);
-
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
                                     <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -269,10 +201,7 @@ export default function DashboardView({
                 </div>
             ))}
             {projectTxs.length === 0 && (
-                <div className="text-center py-10 text-gray-400">
-                    <p>這個專案還沒有記帳紀錄喔 🍃</p>
-                    <p className="text-sm mt-2">點擊下方「+」開始第一筆吧！</p>
-                </div>
+                <div className="text-center py-10 text-gray-400"><p>這個專案還沒有記帳紀錄喔 🍃</p><p className="text-sm mt-2">點擊下方「+」開始第一筆吧！</p></div>
             )}
         </div>
       </div>
