@@ -24,8 +24,19 @@ export default function StatsView({
     // [Optimization] 使用 useMemo 避免昂貴的重複計算
     const { filteredTxs, sortedHistory, rates, hostId, guestId, hostTotal, guestTotal, hostRatio, guestRatio, totalExpense, categoryStats, pieChartGradient } = useMemo(() => {
         
+        const rawTxs = ledgerData.transactions || [];
+
+        // 🛡️ [防彈邏輯核心 - Stats Version]：同步 Dashboard 的資料清洗
+        const allTxs = rawTxs
+            .filter(t => t && t.id && t.amount !== undefined) 
+            .map(t => ({
+                ...t,
+                amount: parseFloat(t.amount) || 0, // 強制轉型
+                category: t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' }
+            }));
+
         // 1. 過濾交易
-        const txs = ledgerData.transactions.filter(t => 
+        const txs = allTxs.filter(t => 
             t.date.startsWith(statsMonth) && (t.projectId || 'daily') === currentProjectId
         );
         
@@ -45,7 +56,7 @@ export default function StatsView({
             return txs.reduce((sum, tx) => {
                 if (tx.isSettlement) return sum; // 結算不計入消費貢獻
                 
-                const amountTwd = calculateTwdValue(tx.amount || 0, tx.currency || 'TWD', currentRates);
+                const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', currentRates);
                 if (isNaN(amountTwd)) return sum; 
 
                 // 只要你是 payer，這筆現金流就是你貢獻的
@@ -65,7 +76,7 @@ export default function StatsView({
         
         txs.forEach(tx => { 
             if (tx.isSettlement) return;
-            const val = calculateTwdValue(tx.amount || 0, tx.currency || 'TWD', currentRates);
+            const val = calculateTwdValue(tx.amount, tx.currency || 'TWD', currentRates);
             if (isNaN(val)) return; 
             
             const categoryId = tx.category?.id || 'uncategorized';

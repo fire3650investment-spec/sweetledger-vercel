@@ -252,14 +252,29 @@ export const LedgerProvider = ({ children }) => {
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const selectedDate = new Date(date).toISOString(); 
 
+    // [Security Fix] Sanitization Layer
+    // 強制將金額轉換為 Number，避免字串污染
+    const cleanAmount = parseFloat(amount);
+    if (isNaN(cleanAmount)) throw new Error("金額無效");
+
+    let cleanCustomSplit = null;
+    if (splitType === 'custom' && customSplit) {
+        cleanCustomSplit = {};
+        Object.keys(customSplit).forEach(uid => {
+            const val = parseFloat(customSplit[uid]);
+            // 如果輸入框是空的或無效值，存為 0，確保數學運算安全
+            cleanCustomSplit[uid] = isNaN(val) ? 0 : val;
+        });
+    }
+
     const commonData = {
         id: generateId(), 
-        amount: parseFloat(amount), 
+        amount: cleanAmount, 
         currency: currency, 
         category: category,
         payer: payer || user.uid, 
         splitType: splitType, 
-        customSplit: customSplit,
+        customSplit: cleanCustomSplit, // 使用清洗過的資料
         note: note || category.name, 
         projectId: projectId,
     };
@@ -298,7 +313,19 @@ export const LedgerProvider = ({ children }) => {
   const updateTransaction = async (updatedTx) => {
       if (!ledgerCode || !ledgerData) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-      const updatedTxs = ledgerData.transactions.map(tx => tx.id === updatedTx.id ? updatedTx : tx);
+      
+      // [Security Fix] 更新時也要清洗
+      const cleanTx = { ...updatedTx };
+      cleanTx.amount = parseFloat(cleanTx.amount);
+      if (cleanTx.customSplit) {
+          const cleanSplit = {};
+          Object.keys(cleanTx.customSplit).forEach(uid => {
+             cleanSplit[uid] = parseFloat(cleanTx.customSplit[uid]) || 0;
+          });
+          cleanTx.customSplit = cleanSplit;
+      }
+
+      const updatedTxs = ledgerData.transactions.map(tx => tx.id === cleanTx.id ? cleanTx : tx);
       await updateDoc(docRef, { transactions: updatedTxs });
   };
 
@@ -324,7 +351,7 @@ export const LedgerProvider = ({ children }) => {
       await updateDoc(docRef, { 
         transactions: arrayUnion({ 
             id: generateId(), 
-            amount: amount, 
+            amount: parseFloat(amount), 
             currency: 'TWD', 
             category: settlementCategory,
             payer: payerId, 
