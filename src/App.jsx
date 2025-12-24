@@ -30,7 +30,6 @@ import EditTransactionModal from './components/EditTransactionModal';
 import SubscriptionsView from './components/SubscriptionsView';
 
 export default function SweetLedger() {
-  // --- Context Hooks ---
   const { user, loading: authLoading, loginWithGoogle, logout } = useAuth();
   const { 
     ledgerCode, 
@@ -43,7 +42,7 @@ export default function SweetLedger() {
     checkUserBinding
   } = useLedger();
 
-  // --- UI State (保留原始架構的狀態管理) ---
+  // --- UI State ---
   const [view, setView] = useState(() => {
       return localStorage.getItem('sweet_ledger_code') ? 'dashboard' : 'onboarding';
   });
@@ -58,7 +57,7 @@ export default function SweetLedger() {
   
   const [pendingInviteCode, setPendingInviteCode] = useState('');
 
-  // Add Expense State (這些必須保留，因為 AddExpenseView 依賴它們)
+  // Add Expense State
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
@@ -82,7 +81,6 @@ export default function SweetLedger() {
   const [aiModalInput, setAiModalInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   
-  // [Fix] Edit Modal State
   const [isEditTxModalOpen, setIsEditTxModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
 
@@ -102,19 +100,10 @@ export default function SweetLedger() {
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
 
-  // --- Logic & Effects ---
-
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [view]);
-
-  useEffect(() => {
-      if (currency) localStorage.setItem('sweet_last_currency', currency);
-  }, [currency]);
-
-  useEffect(() => {
-      if (currentProjectId) localStorage.setItem('sweet_last_project_id', currentProjectId);
-  }, [currentProjectId]);
+  // --- Effects ---
+  useEffect(() => { window.scrollTo(0, 0); }, [view]);
+  useEffect(() => { if (currency) localStorage.setItem('sweet_last_currency', currency); }, [currency]);
+  useEffect(() => { if (currentProjectId) localStorage.setItem('sweet_last_project_id', currentProjectId); }, [currentProjectId]);
 
   useEffect(() => {
       if (ledgerData && ledgerData.projects) {
@@ -141,8 +130,7 @@ export default function SweetLedger() {
                     setPendingInviteCode('');
                     setView('decision');
                 }
-            } 
-            else {
+            } else {
                 const cloudCode = await checkUserBinding(user.uid);
                 if (cloudCode) {
                     setLedgerCode(cloudCode); 
@@ -172,15 +160,11 @@ export default function SweetLedger() {
   }, [ledgerData, user]);
 
 
-  // --- Handlers (這些是您原本擁有的核心邏輯) ---
+  // --- Handlers ---
   
   const handleGoogleLogin = async () => {
-    try {
-        await loginWithGoogle();
-    } catch (error) {
-        console.error("Google Login Error:", error);
-        alert(`登入失敗: ${error.message}`);
-    }
+    try { await loginWithGoogle(); } 
+    catch (error) { console.error("Google Login Error:", error); alert(`登入失敗: ${error.message}`); }
   };
 
   const handleJoinWithCode = async (code) => {
@@ -190,17 +174,13 @@ export default function SweetLedger() {
 
   const handleCreateLedgerFn = async () => {
     setLoading(true);
-    try {
-        await createLedger(user);
-    } catch (e) { alert(e.message); }
+    try { await createLedger(user); } catch (e) { alert(e.message); }
     setLoading(false);
   };
 
   const handleJoinLedgerFn = async (code) => {
     setLoading(true);
-    try {
-        await joinLedger(code, user);
-    } catch (e) { alert(e.message); }
+    try { await joinLedger(code, user); } catch (e) { alert(e.message); }
     setLoading(false);
   };
 
@@ -410,23 +390,29 @@ export default function SweetLedger() {
     let customSplitData = null;
     let finalSplitType = splitType;
 
-    if (splitType === 'custom') {
+    // [Fix] Logic Upgrade: Support multi_payer alongside custom
+    if (splitType === 'custom' || splitType === 'multi_payer') {
         const hostAmt = parseFloat(customSplitHost) || 0;
         const guestAmt = parseFloat(customSplitGuest) || 0;
+        
+        // 驗證總和
         if (Math.round((hostAmt + guestAmt) * 100) / 100 !== Math.round(amountFloat * 100) / 100) {
-            alert("付款金額總和必須等於支出總額！");
+            alert("雙方金額總和必須等於支出總額！");
             setIsSubmittingTransaction(false);
             return;
         }
+
         const hostUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
         const guestUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
         customSplitData = {};
         if(hostUid) customSplitData[hostUid] = hostAmt;
         if(guestUid) customSplitData[guestUid] = guestAmt;
-    } else if (splitType === 'self') {
+    } 
+    else if (splitType === 'self') {
         const myRole = ledgerData.users[user.uid]?.role;
         finalSplitType = myRole === 'host' ? 'host_all' : 'guest_all';
-    } else if (splitType === 'partner') {
+    } 
+    else if (splitType === 'partner') {
         const myRole = ledgerData.users[user.uid]?.role;
         finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     }
@@ -448,10 +434,10 @@ export default function SweetLedger() {
             id: generateId(), 
             amount: amountFloat, 
             currency: currency, 
-            category: selectedCategory,
-            payer: payer || user.uid, 
+            category: selectedCategory, 
+            payer: payer || user.uid, // 雖然 multi_payer 不看此欄位，但仍需有值
             splitType: finalSplitType, 
-            customSplit: customSplitData,
+            customSplit: customSplitData, // Now includes multi_payer data
             note: note || selectedCategory.name, 
             projectId: currentProjectId,
         };
@@ -491,11 +477,10 @@ export default function SweetLedger() {
     }
   };
 
-  // [Fix] 這些是用於 EditTransactionModal 的 Handlers
   const handleUpdateTransaction = async (updatedTx) => {
     if (!editingTx || !ledgerData || !ledgerCode) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    const updatedTxs = ledgerData.transactions.map(tx => tx.id === editingTx.id ? updatedTx : tx); // Fix: use updatedTx
+    const updatedTxs = ledgerData.transactions.map(tx => tx.id === editingTx.id ? updatedTx : tx);
     await updateDoc(docRef, { transactions: updatedTxs });
     setIsEditTxModalOpen(false);
     setEditingTx(null);
@@ -503,7 +488,6 @@ export default function SweetLedger() {
 
   const handleDeleteTransaction = async (txId) => {
      if (!editingTx || !ledgerData || !ledgerCode) return;
-     // Note: EditTransactionModal passes ID now, but here we use editingTx.id or param
      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
      const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== editingTx.id);
      await updateDoc(docRef, { transactions: updatedTxs });
@@ -594,10 +578,7 @@ export default function SweetLedger() {
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         await updateDoc(docRef, { projects: newProjects });
-    } catch (e) {
-        console.error("Reorder Projects Error:", e);
-        alert("排序儲存失敗，請檢查網路");
-    }
+    } catch (e) { console.error("Reorder Projects Error:", e); alert("排序儲存失敗，請檢查網路"); }
   };
 
   const handleReorderCategories = async (newCategories) => {
@@ -605,10 +586,7 @@ export default function SweetLedger() {
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         await updateDoc(docRef, { customCategories: newCategories });
-    } catch (e) {
-        console.error("Reorder Categories Error:", e);
-        alert("排序儲存失敗");
-    }
+    } catch (e) { console.error("Reorder Categories Error:", e); alert("排序儲存失敗"); }
   };
 
   const hasCachedData = ledgerCode && ledgerData && user;
@@ -619,13 +597,7 @@ export default function SweetLedger() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white text-gray-900 z-[200] relative">
          <div style={{fontSize: '4rem', animation: 'sweet-bounce 1s infinite'}}>🍰</div>
-         <p style={{
-           marginTop: '1rem',
-           color: '#db2777',
-           fontWeight: 'bold',
-           fontSize: '0.875rem',
-           animation: 'sweet-fade 1.5s infinite alternate'
-         }}>
+         <p style={{ marginTop: '1rem', color: '#db2777', fontWeight: 'bold', fontSize: '0.875rem', animation: 'sweet-fade 1.5s infinite alternate' }}>
             {loading ? '正在同步資料...' : 'SweetLedger Loading...'}
          </p>
       </div>
@@ -634,22 +606,8 @@ export default function SweetLedger() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900 font-sans pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500 relative">
-        
-        {view === 'onboarding' && (
-            <OnboardingView 
-                handleGoogleLogin={handleGoogleLogin}
-                loading={loading}
-                onJoinWithCode={handleJoinWithCode}
-            />
-        )}
-
-        {view === 'decision' && (
-            <DecisionView 
-                user={user}
-                onCreate={handleCreateLedgerFn}
-                onJoin={handleJoinLedgerFn}
-            />
-        )}
+        {view === 'onboarding' && <OnboardingView handleGoogleLogin={handleGoogleLogin} loading={loading} onJoinWithCode={handleJoinWithCode} />}
+        {view === 'decision' && <DecisionView user={user} onCreate={handleCreateLedgerFn} onJoin={handleJoinLedgerFn} />}
         
         {view !== 'onboarding' && view !== 'decision' && ledgerData && user && (
             <>
@@ -795,15 +753,14 @@ export default function SweetLedger() {
                     </div>
                 </div>
                 
-                {/* [Fix] Edit Transaction Modal: Corrected Props */}
                 <EditTransactionModal 
                     isOpen={isEditTxModalOpen}
                     onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
-                    transaction={editingTx} // 修正: 與 Component 定義一致
+                    transaction={editingTx}
                     ledgerData={ledgerData}
                     user={user}
-                    onUpdate={handleUpdateTransaction} // 修正: 與 Component 定義一致
-                    onDelete={handleDeleteTransaction} // 修正: 與 Component 定義一致
+                    onUpdate={handleUpdateTransaction}
+                    onDelete={handleDeleteTransaction}
                 />
             </>
         )}

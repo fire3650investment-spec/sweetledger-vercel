@@ -20,17 +20,14 @@ export const useLedger = () => useContext(LedgerContext);
 export const LedgerProvider = ({ children }) => {
   const { user } = useAuth();
   
-  // [State] 1. Ledger Code
   const [ledgerCode, setLedgerCode] = useState(() => {
       return localStorage.getItem('sweet_ledger_code') || '';
   });
 
-  // [State] 2. Ledger Data (Cache-First)
   const [ledgerData, setLedgerData] = useState(() => {
       if (!ledgerCode) return null; 
       const code = localStorage.getItem('sweet_ledger_code');
       if (!code) return null;
-
       const cacheKey = `sweet_ledger_data_${code}`;
       try {
           const cached = localStorage.getItem(cacheKey);
@@ -40,15 +37,12 @@ export const LedgerProvider = ({ children }) => {
                   return parsed;
               }
           }
-      } catch (e) {
-          console.warn("Ledger cache corrupt:", e);
-      }
+      } catch (e) { console.warn("Ledger cache corrupt:", e); }
       return null;
   });
 
   const [isLedgerInitializing, setIsLedgerInitializing] = useState(!ledgerData);
 
-  // Effect 1: Sync Code to LocalStorage
   useEffect(() => {
     if (ledgerCode) {
         localStorage.setItem('sweet_ledger_code', ledgerCode);
@@ -57,7 +51,6 @@ export const LedgerProvider = ({ children }) => {
     }
   }, [ledgerCode]);
 
-  // Effect 2: Sync Firestore Data
   useEffect(() => {
     if (!ledgerCode) {
       if (!localStorage.getItem('sweet_ledger_code')) {
@@ -66,7 +59,6 @@ export const LedgerProvider = ({ children }) => {
       }
       return;
     }
-
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     
@@ -75,44 +67,32 @@ export const LedgerProvider = ({ children }) => {
         const data = docSnap.data();
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
-      } else {
-        console.warn("Ledger not found (remote)");
-      }
+      } else { console.warn("Ledger not found (remote)"); }
       setIsLedgerInitializing(false);
-    }, (error) => {
-      console.error("Snapshot error:", error);
-      setIsLedgerInitializing(false);
-    });
+    }, (error) => { console.error("Snapshot error:", error); setIsLedgerInitializing(false); });
 
     return () => unsubscribe();
   }, [ledgerCode]);
 
-  // 🏥 [NEW] Effect 3: Auto-Repair Logic (Self-Healing)
-  // 自動檢測並修復破損的資料結構
+  // Auto-Repair Logic
   useEffect(() => {
     if (!ledgerCode || !ledgerData || !user) return;
-
     const repairData = async () => {
         let needsRepair = false;
         let updates = {};
 
-        // 1. 修復消失的 Users 結構
-        // 如果 users 不存在，或者雖然存在但沒有當前使用者的資料
         if (!ledgerData.users || Object.keys(ledgerData.users).length === 0) {
             console.log("🏥 檢測到 users 結構遺失，正在執行自動修復...");
             needsRepair = true;
-            
-            // 重建 users：將當前使用者設為 Host (權宜之計，為了讓功能恢復)
             updates.users = {
                 [user.uid]: {
                     name: user.displayName || '修復使用者',
                     avatar: 'cat',
-                    role: 'host', // 強制奪回控制權
+                    role: 'host',
                     joinedAt: new Date().toISOString()
                 }
             };
         } else if (!ledgerData.users[user.uid]) {
-            // 如果 users 存在，但自己不在裡面 (可能是 Guest)
              console.log("🏥 檢測到使用者不在名單中，正在自動加入...");
              needsRepair = true;
              updates[`users.${user.uid}`] = {
@@ -123,21 +103,16 @@ export const LedgerProvider = ({ children }) => {
              };
         }
 
-        // 2. 修復 Transactions 中的髒資料 (String -> Number)
-        // 雖然前端 View 層已經防禦了，但資料庫最好還是乾淨的
         if (ledgerData.transactions && ledgerData.transactions.length > 0) {
             const cleanTransactions = ledgerData.transactions.map(tx => {
                 let isDirty = false;
                 let newTx = { ...tx };
-
-                // 檢查 amount 是否為字串
                 if (typeof tx.amount === 'string') {
                     newTx.amount = parseFloat(tx.amount) || 0;
                     isDirty = true;
                 }
-
-                // 檢查 customSplit 是否含有字串
-                if (tx.splitType === 'custom' && tx.customSplit) {
+                // [Update] Check both 'custom' and 'multi_payer'
+                if ((tx.splitType === 'custom' || tx.splitType === 'multi_payer') && tx.customSplit) {
                     const cleanSplit = {};
                     Object.keys(tx.customSplit).forEach(uid => {
                         if (typeof tx.customSplit[uid] === 'string') {
@@ -149,37 +124,29 @@ export const LedgerProvider = ({ children }) => {
                     });
                     newTx.customSplit = cleanSplit;
                 }
-
                 return isDirty ? newTx : tx;
             });
 
-            // 如果前後 JSON 字串不一致，代表有髒資料被清洗了
             if (JSON.stringify(cleanTransactions) !== JSON.stringify(ledgerData.transactions)) {
-                console.log("🏥 檢測到交易紀錄含有髒資料(String)，正在清洗...");
+                console.log("🏥 檢測到交易紀錄含有髒資料，正在清洗...");
                 needsRepair = true;
                 updates.transactions = cleanTransactions;
             }
         }
 
-        // 3. 執行寫入
         if (needsRepair) {
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
                 await updateDoc(docRef, updates);
-                console.log("✅ 自動修復完成：資料庫已恢復健康。");
-            } catch (e) {
-                console.error("❌ 自動修復失敗:", e);
-            }
+                console.log("✅ 自動修復完成。");
+            } catch (e) { console.error("❌ 自動修復失敗:", e); }
         }
     };
-
-    // 延遲 2 秒執行，避免與初始化 snapshot 衝突
     const timer = setTimeout(repairData, 2000);
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode, user]);
 
 
-  // Effect 4: Smart Auto-Subscription Check (Original logic)
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0 || !ledgerCode) return;
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -208,7 +175,6 @@ export const LedgerProvider = ({ children }) => {
                     date: nextDate.toISOString(),
                     note: `[自動扣款] ${sub.name}`,
                     isSettlement: false,
-                    // Auto-repair subscription tx structure too
                     amount: parseFloat(txBase.amount) || 0 
                 };
                 newTransactions.push(tx);
@@ -246,7 +212,6 @@ export const LedgerProvider = ({ children }) => {
   }, [ledgerData, ledgerCode]);
 
 
-  // --- Actions: Authentication & Ledger Binding ---
   const checkUserBinding = async (uid) => {
       try {
           const userDocRef = doc(db, 'users', uid); 
@@ -255,9 +220,7 @@ export const LedgerProvider = ({ children }) => {
               const data = userDoc.data();
               if (data.ledgerCode) return data.ledgerCode;
           }
-      } catch (e) {
-          console.error("Check binding failed:", e);
-      }
+      } catch (e) { console.error("Check binding failed:", e); }
       return null;
   };
 
@@ -265,20 +228,17 @@ export const LedgerProvider = ({ children }) => {
     if (!currentUser) throw new Error("請先登入");
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     const userName = currentUser.displayName || 'Host';
-    
     const newLedger = {
         ...INITIAL_LEDGER_STATE,
         users: { [currentUser.uid]: { name: userName, avatar: 'cat', role: 'host' } }
     };
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
-    
     await setDoc(doc(db, 'users', currentUser.uid), {
         email: currentUser.email,
         ledgerCode: code,
         role: 'host',
         updatedAt: new Date().toISOString()
     });
-
     localStorage.setItem('sweet_ledger_code', code);
     setLedgerCode(code);
     return code;
@@ -288,30 +248,24 @@ export const LedgerProvider = ({ children }) => {
     if (!currentUser) throw new Error("請先登入");
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code);
     const docSnap = await getDoc(docRef);
-    
     if (docSnap.exists()) {
       const currentData = docSnap.data();
       if (!currentData.users || !currentData.users[currentUser.uid]) {
           const userName = currentUser.displayName || 'Guest';
-          // Fix: Ensure users object exists before spreading
           const currentUsers = currentData.users || {};
           const updatedUsers = { ...currentUsers, [currentUser.uid]: { name: userName, avatar: 'dog', role: 'guest' } };
           await updateDoc(docRef, { users: updatedUsers });
       }
-      
       await setDoc(doc(db, 'users', currentUser.uid), {
         email: currentUser.email,
         ledgerCode: code,
         role: 'guest',
         updatedAt: new Date().toISOString()
       }, { merge: true });
-
       localStorage.setItem('sweet_ledger_code', code);
       setLedgerCode(code);
       return true;
-    } else {
-      throw new Error("找不到這個帳本代碼！");
-    }
+    } else { throw new Error("找不到這個帳本代碼！"); }
   };
   
   const disconnectLedger = () => {
@@ -319,13 +273,10 @@ export const LedgerProvider = ({ children }) => {
       setLedgerData(null);
       localStorage.removeItem('sweet_ledger_code');
       Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('sweet_ledger_data_')) {
-              localStorage.removeItem(key);
-          }
+          if (key.startsWith('sweet_ledger_data_')) localStorage.removeItem(key);
       });
   };
 
-  // --- Actions: Transactions & Subscriptions ---
   const addTransaction = async (payload) => {
     if (!ledgerCode || !user) throw new Error("無效的帳本狀態");
     
@@ -338,12 +289,12 @@ export const LedgerProvider = ({ children }) => {
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const selectedDate = new Date(date).toISOString(); 
 
-    // [Security Fix] Sanitization Layer
     const cleanAmount = parseFloat(amount);
     if (isNaN(cleanAmount)) throw new Error("金額無效");
 
     let cleanCustomSplit = null;
-    if (splitType === 'custom' && customSplit) {
+    // [Fix] Allow multi_payer payload
+    if ((splitType === 'custom' || splitType === 'multi_payer') && customSplit) {
         cleanCustomSplit = {};
         Object.keys(customSplit).forEach(uid => {
             const val = parseFloat(customSplit[uid]);
@@ -375,7 +326,6 @@ export const LedgerProvider = ({ children }) => {
       } else if (subCycle === 'weekly') {
           nextDate.setDate(nextDate.getDate() + 7);
       }
-      
       await updateDoc(docRef, { 
           subscriptions: arrayUnion({ 
               ...commonData, 
@@ -447,7 +397,6 @@ export const LedgerProvider = ({ children }) => {
     });
   };
 
-  // --- Actions: Projects ---
   const saveProject = async (projectData) => {
       if (!ledgerCode || !ledgerData) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -492,7 +441,6 @@ export const LedgerProvider = ({ children }) => {
     await updateDoc(docRef, { projects: newProjects });
   };
 
-  // --- Actions: Categories ---
   const saveCategory = async (categoryData) => {
       if (!ledgerCode || !ledgerData) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -502,10 +450,7 @@ export const LedgerProvider = ({ children }) => {
       } else {
           const newId = generateId();
           newCategories.push({ ...categoryData, id: newId });
-          await updateDoc(docRef, { 
-             customCategories: newCategories,
-             'settings.selectedCategories': arrayUnion(newId)
-          });
+          await updateDoc(docRef, { customCategories: newCategories, 'settings.selectedCategories': arrayUnion(newId) });
           return;
       }
       await updateDoc(docRef, { customCategories: newCategories });
@@ -524,7 +469,6 @@ export const LedgerProvider = ({ children }) => {
     await updateDoc(docRef, { customCategories: newCategories });
   };
 
-  // --- Actions: User Settings & System ---
   const updateUserSetting = async (field, value) => {
     if (!ledgerCode || !user) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -538,18 +482,13 @@ export const LedgerProvider = ({ children }) => {
   };
 
   const fixIdentity = async () => {
-    // 這一部分功能已經整合進 Auto-Repair Logic (Effect 3) 中，但保留作為手動觸發備用
     if (!ledgerCode || !ledgerData || !user) return;
-    const zombieHostId = Object.keys(ledgerData.users || {}).find(uid => 
-        ledgerData.users[uid].role === 'host' && uid !== user.uid
-    );
+    const zombieHostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host' && uid !== user.uid);
     if (!zombieHostId) return; 
-    
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const newUsers = { ...(ledgerData.users || {}) };
     delete newUsers[zombieHostId];
     if (newUsers[user.uid]) newUsers[user.uid] = { ...newUsers[user.uid], role: 'host' };
-    
     const newTransactions = (ledgerData.transactions || []).map(tx => {
         let newTx = { ...tx };
         if (newTx.payer === zombieHostId) newTx.payer = user.uid;
@@ -563,34 +502,14 @@ export const LedgerProvider = ({ children }) => {
         }
         return newTx;
     });
-
     await updateDoc(docRef, { users: newUsers, transactions: newTransactions });
   };
 
   const value = {
-    ledgerCode,
-    ledgerData,
-    isLedgerInitializing,
-    createLedger,
-    joinLedger,
-    disconnectLedger,
-    setLedgerCode,
-    checkUserBinding,
-    addTransaction,
-    updateTransaction,
-    deleteTransaction,
-    deleteSubscription,
-    settleUp,
-    saveProject,
-    deleteProject,
-    reorderProjects,
-    updateProjectRates,
-    saveCategory,
-    deleteCategory,
-    reorderCategories,
-    updateUserSetting,
-    resetAccount,
-    fixIdentity
+    ledgerCode, ledgerData, isLedgerInitializing, createLedger, joinLedger, disconnectLedger, setLedgerCode, checkUserBinding,
+    addTransaction, updateTransaction, deleteTransaction, deleteSubscription, settleUp,
+    saveProject, deleteProject, reorderProjects, updateProjectRates,
+    saveCategory, deleteCategory, reorderCategories, updateUserSetting, resetAccount, fixIdentity
   };
 
   return (
