@@ -1,7 +1,6 @@
 // src/components/EditTransactionModal.jsx
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, DollarSign, Users, Tag, AlertCircle, Trash2 } from 'lucide-react';
-import { getIconComponent } from '../utils/helpers';
+import { X, Calendar, DollarSign, Tag, AlertCircle, Trash2 } from 'lucide-react'; // Users icon removed (unused)
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
 export default function EditTransactionModal({ 
@@ -9,14 +8,14 @@ export default function EditTransactionModal({
   onClose, 
   transaction, 
   ledgerData, 
-  user, 
   onUpdate, 
   onDelete 
 }) {
-  // [Defense Layer] 1. 基本檢核
-  if (!isOpen || !transaction || !ledgerData) return null;
+  // [Fix] 1. 移除 !transaction 檢查。只要 isOpen=true 就必須渲染 (即使內容暫時為空)
+  if (!isOpen) return null;
+  // [Fix] 2. 依然保護 ledgerData，避免讀取 undefined
+  if (!ledgerData) return null;
 
-  // [Defense Layer] 2. 安全獲取 Users，防止 undefined 導致崩潰
   const safeUsers = ledgerData.users || {};
   const hostId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'host');
   const guestId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'guest');
@@ -30,7 +29,6 @@ export default function EditTransactionModal({
   const [payer, setPayer] = useState('');
   const [splitType, setSplitType] = useState('even');
   
-  // Custom Split State
   const [hostAmount, setHostAmount] = useState('');
   const [guestAmount, setGuestAmount] = useState('');
 
@@ -39,9 +37,8 @@ export default function EditTransactionModal({
     if (transaction) {
       setAmount(transaction.amount);
       setCurrency(transaction.currency || 'TWD');
-      setCategoryId(transaction.category?.id || 'other'); // 若無 ID 則預設 other
+      setCategoryId(transaction.category?.id || 'other');
       setNote(transaction.note || '');
-      // 處理日期格式 (截取 YYYY-MM-DD)
       try {
         setDate(new Date(transaction.date).toISOString().slice(0, 10));
       } catch (e) {
@@ -50,9 +47,7 @@ export default function EditTransactionModal({
       setPayer(transaction.payer);
       setSplitType(transaction.splitType);
 
-      // [Defense Layer] 3. 處理 Custom Split 的字串污染問題
       if (transaction.splitType === 'custom' && transaction.customSplit) {
-        // 安全讀取，強制轉型 Number
         const hVal = parseFloat(transaction.customSplit[hostId]);
         const gVal = parseFloat(transaction.customSplit[guestId]);
         setHostAmount(isNaN(hVal) ? '' : hVal);
@@ -68,7 +63,6 @@ export default function EditTransactionModal({
     e.preventDefault();
     if (!amount || parseFloat(amount) <= 0) return;
 
-    // 準備 Category 物件
     const allCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const selectedCat = allCats.find(c => c.id === categoryId) || 
                        { id: 'uncategorized', name: '未分類', icon: 'help-circle', color: 'bg-gray-100 text-gray-600', hex: '#9ca3af' };
@@ -99,20 +93,16 @@ export default function EditTransactionModal({
     }
   };
 
-  // Helper: 取得顯示名稱
   const getUserName = (uid) => {
     return safeUsers[uid]?.name || '使用者';
   };
 
+  // [Fix] 3. z-index 提升到 100，防止被其他 fixed 元素遮擋
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
-
-      {/* Modal Content */}
       <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden relative z-10 flex flex-col max-h-[90vh]">
         
-        {/* Header */}
         <div className="bg-gray-50 px-6 py-4 flex justify-between items-center border-b border-gray-100">
           <h3 className="font-bold text-gray-800 text-lg">編輯記帳</h3>
           <button onClick={onClose} className="p-2 bg-white rounded-full text-gray-400 hover:text-gray-600 shadow-sm transition-colors">
@@ -120,10 +110,8 @@ export default function EditTransactionModal({
           </button>
         </div>
 
-        {/* Scrollable Form */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
-          
-          {/* Amount & Currency */}
+          {/* Amount */}
           <div>
             <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">金額</label>
             <div className="flex gap-3">
@@ -168,7 +156,6 @@ export default function EditTransactionModal({
                     />
                 </div>
              </div>
-             
              <div>
                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">分類</label>
                 <div className="relative">
@@ -220,7 +207,6 @@ export default function EditTransactionModal({
                         </button>
                     ))
                 ) : (
-                    // Fallback UI 當 users 資料遺失時
                      <div className="col-span-2 text-center text-sm text-gray-400 bg-gray-50 py-3 rounded-xl">
                         使用者資料讀取中...
                      </div>
@@ -232,18 +218,10 @@ export default function EditTransactionModal({
           <div>
             <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">如何分帳？</label>
             <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => setSplitType('even')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'even' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>
-                    平均分攤
-                </button>
-                <button type="button" onClick={() => setSplitType('custom')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'custom' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>
-                    自訂金額
-                </button>
-                <button type="button" onClick={() => setSplitType('host_all')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'host_all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>
-                    {getUserName(hostId)} 全付
-                </button>
-                <button type="button" onClick={() => setSplitType('guest_all')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'guest_all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>
-                    {getUserName(guestId)} 全付
-                </button>
+                <button type="button" onClick={() => setSplitType('even')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'even' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>平均分攤</button>
+                <button type="button" onClick={() => setSplitType('custom')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'custom' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>自訂金額</button>
+                <button type="button" onClick={() => setSplitType('host_all')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'host_all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>{getUserName(hostId)} 全付</button>
+                <button type="button" onClick={() => setSplitType('guest_all')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'guest_all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>{getUserName(guestId)} 全付</button>
             </div>
           </div>
 
@@ -282,22 +260,13 @@ export default function EditTransactionModal({
                   </div>
               </div>
           )}
-
         </div>
 
-        {/* Footer Actions */}
         <div className="p-4 border-t border-gray-100 flex gap-3 bg-white">
-            <button 
-                type="button" 
-                onClick={handleDelete}
-                className="p-4 bg-gray-100 text-gray-500 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-colors"
-            >
+            <button type="button" onClick={handleDelete} className="p-4 bg-gray-100 text-gray-500 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-colors">
                 <Trash2 size={20} />
             </button>
-            <button 
-                onClick={handleSubmit}
-                className="flex-1 bg-gray-900 text-white font-bold py-4 rounded-2xl shadow-lg shadow-gray-200 active:scale-95 transition-transform"
-            >
+            <button onClick={handleSubmit} className="flex-1 bg-gray-900 text-white font-bold py-4 rounded-2xl shadow-lg shadow-gray-200 active:scale-95 transition-transform">
                 儲存修改
             </button>
         </div>

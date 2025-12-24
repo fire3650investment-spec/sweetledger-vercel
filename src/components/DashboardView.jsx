@@ -12,7 +12,8 @@ export default function DashboardView({
   setIsEditTxModalOpen,
   setEditingTx,
   user,
-  handleSettleUp
+  handleSettleUp,
+  handleOpenAddExpense 
 }) {
     if (!ledgerData || !user) return null;
 
@@ -28,9 +29,8 @@ export default function DashboardView({
         if (!user) return { projectTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0 };
 
         const rawTxs = ledgerData.transactions || [];
-        const safeUsers = ledgerData.users || {}; // 🛡️ [防彈修復] 建立安全的使用者資料參照
+        const safeUsers = ledgerData.users || {};
 
-        // 1. 資料清洗
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => {
@@ -74,29 +74,52 @@ export default function DashboardView({
             const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
             if (isNaN(amountTwd)) return;
 
-            if (tx.payer === user.uid) {
-                myPaid += amountTwd;
-            }
-
-            let liability = 0;
-            if (tx.splitType === 'even') {
-                liability = amountTwd / 2; 
-            } else if (tx.splitType === 'custom') {
+            // [Logic Upgrade] 區分 "Multi-Payer" (混合支付) 與 "Single Payer"
+            
+            if (tx.splitType === 'multi_payer') {
+                // Option B: Multi-Payer Logic (Payment Based)
+                // 1. 我付了多少？ (從 customSplit 拿)
+                let myActualPaid = 0;
                 if (tx.customSplit && typeof tx.customSplit === 'object') {
-                    const myShareRaw = tx.customSplit[user.uid];
-                    const myShare = parseFloat(myShareRaw);
-                    if (!isNaN(myShare)) {
-                        liability = calculateTwdValue(myShare, tx.currency || 'TWD', rates);
-                    }
+                    const raw = tx.customSplit[user.uid];
+                    const val = parseFloat(raw);
+                    if (!isNaN(val)) myActualPaid = calculateTwdValue(val, tx.currency || 'TWD', rates);
                 }
-            } else if (tx.splitType === 'host_all') {
-                // 🛡️ [防彈修復] 使用 safeUsers 避免 undefined 存取錯誤
-                liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
-            } else if (tx.splitType === 'guest_all') {
-                // 🛡️ [防彈修復] 使用 safeUsers
-                liability = safeUsers[user.uid]?.role === 'guest' ? amountTwd : 0;
+                
+                // 2. 我的責任是多少？ (預設平均分攤)
+                const myResponsibility = amountTwd / 2;
+
+                // 3. 累積
+                myPaid += myActualPaid;
+                myLiability += myResponsibility;
+
+            } else {
+                // Legacy / Single Payer Logic
+                // 1. 我付了多少？ (看 payer 欄位)
+                if (tx.payer === user.uid) {
+                    myPaid += amountTwd;
+                }
+
+                // 2. 我的責任是多少？ (看 splitType)
+                let liability = 0;
+                if (tx.splitType === 'even') {
+                    liability = amountTwd / 2; 
+                } else if (tx.splitType === 'custom') {
+                    // Legacy Custom Split (Liability Based)
+                    if (tx.customSplit && typeof tx.customSplit === 'object') {
+                        const myShareRaw = tx.customSplit[user.uid];
+                        const myShare = parseFloat(myShareRaw);
+                        if (!isNaN(myShare)) {
+                            liability = calculateTwdValue(myShare, tx.currency || 'TWD', rates);
+                        }
+                    }
+                } else if (tx.splitType === 'host_all') {
+                    liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
+                } else if (tx.splitType === 'guest_all') {
+                    liability = safeUsers[user.uid]?.role === 'guest' ? amountTwd : 0;
+                }
+                if (!isNaN(liability)) myLiability += liability;
             }
-            if (!isNaN(liability)) myLiability += liability;
         });
         
         const settlements = allTxs.filter(tx => 
@@ -112,7 +135,9 @@ export default function DashboardView({
             }
         });
 
-        const finalSettlement = (myPaid + settledAmount) - myLiability; 
+        // 結算公式：(我實際付出的 - 我應該付的) + 結清調節
+        // 正值代表我多付了 (對方欠我)，負值代表我少付了 (我欠對方)
+        const finalSettlement = (myPaid - myLiability) + settledAmount;
         
         const oUserId = Object.keys(safeUsers).find(uid => uid !== user.uid);
         const pName = oUserId && safeUsers[oUserId] ? (safeUsers[oUserId].name || '對方') : '對方';
@@ -129,40 +154,45 @@ export default function DashboardView({
 
     }, [ledgerData, currentProjectId, user]); 
 
-    // Helper: Smart Tags
     const getSmartTags = (tx) => {
         const tags = [];
-        const safeUsers = ledgerData.users || {}; // 🛡️ 本地 scope 也需要保護
-        const payerUser = safeUsers[tx.payer];
-        const payerName = payerUser?.name || '未知';
-
+        const safeUsers = ledgerData.users || {}; 
+        
         if (tx.isSettlement) {
+            const payerName = safeUsers[tx.payer]?.name || '未知';
             tags.push({ label: `${payerName} 轉帳`, color: 'gray' });
             return tags;
         }
 
-        const isCustom = tx.splitType === 'custom';
-        if (isCustom) {
-            tags.push({ label: '混合出資', color: 'gray' });
-        } else {
-            tags.push({ label: payerName, color: 'gray' });
-            if (tx.splitType === 'even') {
-                tags.push({ label: '平均分攤', color: 'gray' });
-            } else {
-                const payerRole = payerUser?.role;
-                let isPrivate = false;
-                let isAdvance = false;
-                if (tx.splitType === 'host_all') {
-                    if (payerRole === 'host') isPrivate = true;
-                    else isAdvance = true;
-                } else if (tx.splitType === 'guest_all') {
-                    if (payerRole === 'guest') isPrivate = true;
-                    else isAdvance = true;
-                }
-                if (isPrivate) tags.push({ label: '私人', color: 'gray' });
-                if (isAdvance) tags.push({ label: '代墊', color: 'gray' });
-            }
+        if (tx.splitType === 'multi_payer') {
+             // 混合出資不顯示單一 Payer，改顯示特殊標籤
+            tags.push({ label: '混合出資', color: 'blue' });
+            return tags;
         }
+
+        const payerUser = safeUsers[tx.payer];
+        const payerName = payerUser?.name || '未知';
+        tags.push({ label: payerName, color: 'gray' }); // Payer Tag
+
+        if (tx.splitType === 'custom') {
+            tags.push({ label: '自訂分攤', color: 'gray' });
+        } else if (tx.splitType === 'even') {
+            tags.push({ label: '平均分攤', color: 'gray' });
+        } else {
+            const payerRole = payerUser?.role;
+            let isPrivate = false;
+            let isAdvance = false;
+            if (tx.splitType === 'host_all') {
+                if (payerRole === 'host') isPrivate = true;
+                else isAdvance = true;
+            } else if (tx.splitType === 'guest_all') {
+                if (payerRole === 'guest') isPrivate = true;
+                else isAdvance = true;
+            }
+            if (isPrivate) tags.push({ label: '私人', color: 'gray' });
+            if (isAdvance) tags.push({ label: '代墊', color: 'gray' });
+        }
+        
         if (tx.isSettled) tags.push({ label: '已結清', color: 'green' });
         return tags;
     };
@@ -214,39 +244,21 @@ export default function DashboardView({
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
                                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                                        <div 
-                                            className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0"
-                                            style={{ 
-                                                backgroundColor: `${tx.category?.hex || '#eee'}33`, 
-                                                color: tx.category?.hex || '#999'
-                                            }}
-                                        >
+                                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ backgroundColor: `${tx.category?.hex || '#eee'}33`, color: tx.category?.hex || '#999'}}>
                                             <CatIcon size={20} />
                                         </div>
-                                        
                                         <div className="flex-1 min-w-0">
-                                            <p className="font-medium text-gray-800 truncate text-sm">
-                                                {tx.note || tx.category?.name}
-                                            </p>
-                                            
+                                            <p className="font-medium text-gray-800 truncate text-sm">{tx.note || tx.category?.name}</p>
                                             <div className="flex items-center flex-wrap gap-1.5 mt-1">
                                                 <p className="text-xs text-gray-400 mr-1 shrink-0">{tx.category?.name}</p>
                                                 {tags.map((tag, i) => (
-                                                    <span 
-                                                        key={i} 
-                                                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${
-                                                            tag.color === 'green' 
-                                                                ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
-                                                                : 'bg-gray-100 text-gray-500 border-gray-100'
-                                                        }`}
-                                                    >
+                                                    <span key={i} className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${tag.color === 'green' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : (tag.color === 'blue' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-gray-100 text-gray-500 border-gray-100')}`}>
                                                         {tag.label}
                                                     </span>
                                                 ))}
                                             </div>
                                         </div>
                                     </div>
-
                                     <span className={`font-bold ml-4 whitespace-nowrap ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
                                         {formatCurrency(tx.amount || 0, tx.currency || 'TWD', privacyMode)}
                                     </span>
