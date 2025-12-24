@@ -15,7 +15,7 @@ import { useLedger } from './contexts/LedgerContext';
 import { db, appId } from './utils/firebase';
 
 // Utils
-import { INITIAL_LEDGER_STATE, DEFAULT_CATEGORIES, CATEGORIES, COLORS } from './utils/constants';
+import { DEFAULT_CATEGORIES, CATEGORIES, COLORS } from './utils/constants';
 import { formatCurrency, generateId, callGemini } from './utils/helpers';
 
 // Components
@@ -43,9 +43,7 @@ export default function SweetLedger() {
     checkUserBinding
   } = useLedger();
 
-  // --- UI State ---
-  
-  // [極速啟動優化] Lazy State Initialization
+  // --- UI State (保留原始架構的狀態管理) ---
   const [view, setView] = useState(() => {
       return localStorage.getItem('sweet_ledger_code') ? 'dashboard' : 'onboarding';
   });
@@ -54,21 +52,19 @@ export default function SweetLedger() {
   const [privacyMode, setPrivacyMode] = useState(false);
   const [loading, setLoading] = useState(false); 
   
-  // [State Persistence] Initialize Project ID from LocalStorage with Fallback
   const [currentProjectId, setCurrentProjectId] = useState(() => {
       return localStorage.getItem('sweet_last_project_id') || 'daily';
   });
   
   const [pendingInviteCode, setPendingInviteCode] = useState('');
 
-  // Add Expense State
+  // Add Expense State (這些必須保留，因為 AddExpenseView 依賴它們)
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
   const [aiInput, setAiInput] = useState('');
   const [isAiProcessing, setIsAiProcessing] = useState(false);
   
-  // [State Persistence] Initialize Currency from LocalStorage with Fallback
   const [currency, setCurrency] = useState(() => {
       return localStorage.getItem('sweet_last_currency') || 'TWD';
   });
@@ -85,6 +81,8 @@ export default function SweetLedger() {
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiModalInput, setAiModalInput] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  
+  // [Fix] Edit Modal State
   const [isEditTxModalOpen, setIsEditTxModalOpen] = useState(false);
   const [editingTx, setEditingTx] = useState(null);
 
@@ -110,33 +108,20 @@ export default function SweetLedger() {
     window.scrollTo(0, 0);
   }, [view]);
 
-  // [Persistence] Save Currency Preference
   useEffect(() => {
-      if (currency) {
-          localStorage.setItem('sweet_last_currency', currency);
-      }
+      if (currency) localStorage.setItem('sweet_last_currency', currency);
   }, [currency]);
 
-  // [Persistence] Save Project ID Preference
   useEffect(() => {
-      if (currentProjectId) {
-          localStorage.setItem('sweet_last_project_id', currentProjectId);
-      }
+      if (currentProjectId) localStorage.setItem('sweet_last_project_id', currentProjectId);
   }, [currentProjectId]);
 
-  // [Validation] Ensure loaded Project ID exists in current ledger
   useEffect(() => {
       if (ledgerData && ledgerData.projects) {
           const projectExists = ledgerData.projects.some(p => p.id === currentProjectId);
-          // 如果當前選的專案 ID 不在最新的專案列表中（可能被刪除或換帳號），強制回退到 daily
-          if (!projectExists) {
-              setCurrentProjectId('daily');
-          }
+          if (!projectExists) setCurrentProjectId('daily');
       }
-  }, [ledgerData, currentProjectId]); // Don't include 'currentProjectId' in deps to avoid loops? No, we need it. 
-  // Wait, if we put currentProjectId in dependency, and we set it inside, it might loop if we are not careful.
-  // Logic: "If current ID is invalid, change it". Changing it triggers effect again. New ID 'daily' is valid. Loop stops. Safe.
-
+  }, [ledgerData, currentProjectId]);
 
   useEffect(() => {
     const decideView = async () => {
@@ -177,13 +162,8 @@ export default function SweetLedger() {
     decideView();
   }, [ledgerCode, isLedgerInitializing, authLoading, user, pendingInviteCode, ledgerData]);
 
-  // Sync Ledger Data to UI State
-  // [Fix: Risk #2] Removed automatic currency overwrite logic to prevent input interruption
   useEffect(() => {
     if (ledgerData && user) {
-        // [Risk Fix] Do NOT overwrite local currency with ledgerData.currency automatically
-        // if (ledgerData.currency) setCurrency(ledgerData.currency);  <-- REMOVED
-
         if (ledgerData.users && ledgerData.users[user.uid]) {
             setMyNickname(ledgerData.users[user.uid].name);
         }
@@ -192,7 +172,7 @@ export default function SweetLedger() {
   }, [ledgerData, user]);
 
 
-  // --- Handlers ---
+  // --- Handlers (這些是您原本擁有的核心邏輯) ---
   
   const handleGoogleLogin = async () => {
     try {
@@ -212,9 +192,7 @@ export default function SweetLedger() {
     setLoading(true);
     try {
         await createLedger(user);
-    } catch (e) {
-        alert(e.message);
-    }
+    } catch (e) { alert(e.message); }
     setLoading(false);
   };
 
@@ -222,19 +200,15 @@ export default function SweetLedger() {
     setLoading(true);
     try {
         await joinLedger(code, user);
-    } catch (e) {
-        alert(e.message);
-    }
+    } catch (e) { alert(e.message); }
     setLoading(false);
   };
 
   const handleLogout = async () => {
       if(confirm('確定要登出嗎？')) {
           disconnectLedger();
-          // [Risk Fix #1] Clear preferences on logout to avoid polluting next user
           localStorage.removeItem('sweet_last_currency');
           localStorage.removeItem('sweet_last_project_id');
-          
           await logout();
           setView('onboarding');
       }
@@ -257,10 +231,7 @@ export default function SweetLedger() {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newProjects = ledgerData.projects.map(p => {
             if (p.id === currentProjectId) {
-                return { 
-                    ...p, 
-                    rates: { ...(p.rates || { JPY: 0.23, THB: 1 }), [currencyKey]: numVal } 
-                };
+                return { ...p, rates: { ...(p.rates || { JPY: 0.23, THB: 1 }), [currencyKey]: numVal } };
             }
             return p;
         });
@@ -271,12 +242,8 @@ export default function SweetLedger() {
   const handleOpenAddExpense = (mode) => {
       setAddExpenseKey(prev => prev + 1);
       setView('add');
-      
-      if (mode === 'ai') {
-          setIsAiModalOpen(true);
-      } else {
-          setIsAiModalOpen(false);
-      }
+      if (mode === 'ai') setIsAiModalOpen(true);
+      else setIsAiModalOpen(false);
   };
   
   const updateNickname = async () => {
@@ -290,10 +257,7 @@ export default function SweetLedger() {
       const confirmStr = prompt("警告：此操作將刪除所有交易紀錄且無法復原！\n請輸入 RESET 確認重置：");
       if (confirmStr === "RESET") {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        await updateDoc(docRef, { 
-            transactions: [], 
-            subscriptions: [],
-        });
+        await updateDoc(docRef, { transactions: [], subscriptions: [] });
         alert("帳本已重置。");
       }
   };
@@ -333,11 +297,7 @@ export default function SweetLedger() {
     if (!editingProjectData.name) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     let newProjects = [...(ledgerData?.projects || [])];
-    
-    const projectWithRates = {
-        ...editingProjectData,
-        rates: editingProjectData.rates || { JPY: 0.23, THB: 1 } 
-    };
+    const projectWithRates = { ...editingProjectData, rates: editingProjectData.rates || { JPY: 0.23, THB: 1 } };
 
     if (editingProjectData.id) {
         newProjects = newProjects.map(p => p.id === editingProjectData.id ? projectWithRates : p);
@@ -369,9 +329,7 @@ export default function SweetLedger() {
     if (!ledgerCode || !subToDelete) return;
     if (confirm(`確定要取消「${subToDelete.name}」的固定扣款嗎？`)) {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const newSubscriptions = (ledgerData.subscriptions || []).filter(s => 
-            s.id !== subToDelete.id
-        );
+        const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.id !== subToDelete.id);
         await updateDoc(docRef, { subscriptions: newSubscriptions });
     }
   };
@@ -533,24 +491,24 @@ export default function SweetLedger() {
     }
   };
 
-  const handleUpdateTransaction = async () => {
+  // [Fix] 這些是用於 EditTransactionModal 的 Handlers
+  const handleUpdateTransaction = async (updatedTx) => {
     if (!editingTx || !ledgerData || !ledgerCode) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    const updatedTxs = ledgerData.transactions.map(tx => tx.id === editingTx.id ? editingTx : tx);
+    const updatedTxs = ledgerData.transactions.map(tx => tx.id === editingTx.id ? updatedTx : tx); // Fix: use updatedTx
     await updateDoc(docRef, { transactions: updatedTxs });
     setIsEditTxModalOpen(false);
     setEditingTx(null);
   };
 
-  const handleDeleteTransaction = async () => {
+  const handleDeleteTransaction = async (txId) => {
      if (!editingTx || !ledgerData || !ledgerCode) return;
-     if (confirm('確定要刪除這筆紀錄嗎？')) {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== editingTx.id);
-        await updateDoc(docRef, { transactions: updatedTxs });
-        setIsEditTxModalOpen(false);
-        setEditingTx(null);
-     }
+     // Note: EditTransactionModal passes ID now, but here we use editingTx.id or param
+     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+     const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== editingTx.id);
+     await updateDoc(docRef, { transactions: updatedTxs });
+     setIsEditTxModalOpen(false);
+     setEditingTx(null);
   };
 
   const handleAiModalSubmit = async () => {
@@ -837,14 +795,15 @@ export default function SweetLedger() {
                     </div>
                 </div>
                 
+                {/* [Fix] Edit Transaction Modal: Corrected Props */}
                 <EditTransactionModal 
                     isOpen={isEditTxModalOpen}
                     onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
-                    editingTx={editingTx}
-                    setEditingTx={setEditingTx}
-                    handleUpdateTransaction={handleUpdateTransaction}
-                    handleDeleteTransaction={handleDeleteTransaction}
+                    transaction={editingTx} // 修正: 與 Component 定義一致
                     ledgerData={ledgerData}
+                    user={user}
+                    onUpdate={handleUpdateTransaction} // 修正: 與 Component 定義一致
+                    onDelete={handleDeleteTransaction} // 修正: 與 Component 定義一致
                 />
             </>
         )}
