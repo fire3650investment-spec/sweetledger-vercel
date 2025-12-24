@@ -21,45 +21,40 @@ export default function StatsView({
         setStatsMonth(date.toISOString().slice(0, 7)); 
     };
 
-    // [Optimization] 使用 useMemo 避免昂貴的重複計算
     const { filteredTxs, sortedHistory, rates, hostId, guestId, hostTotal, guestTotal, hostRatio, guestRatio, totalExpense, categoryStats, pieChartGradient } = useMemo(() => {
         
         const rawTxs = ledgerData.transactions || [];
+        const safeUsers = ledgerData.users || {}; // 🛡️ [防彈修復]
 
-        // 🛡️ [防彈邏輯核心 - Stats Version]：同步 Dashboard 的資料清洗
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => ({
                 ...t,
-                amount: parseFloat(t.amount) || 0, // 強制轉型
+                amount: parseFloat(t.amount) || 0,
                 category: t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' }
             }));
 
-        // 1. 過濾交易
         const txs = allTxs.filter(t => 
             t.date.startsWith(statsMonth) && (t.projectId || 'daily') === currentProjectId
         );
         
-        // 2. 排序歷史
         const sorted = [...txs].sort((a, b) => new Date(b.date) - new Date(a.date));
 
-        // 3. 取得匯率
         const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
         const currentRates = currentProject?.rates || { JPY: 0.23, THB: 1 };
 
-        // 4. 識別身份
-        const hId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
-        const gId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
+        // 4. 識別身份 (使用 safeUsers 保護)
+        const hId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'host');
+        const gId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'guest');
 
-        // 5. 計算貢獻度 (Fix: 嚴格定義為「支付金額 Cash Out」)
+        // 5. 計算貢獻度
         const calculateTotalPaid = (uid) => {
             return txs.reduce((sum, tx) => {
-                if (tx.isSettlement) return sum; // 結算不計入消費貢獻
+                if (tx.isSettlement) return sum; 
                 
                 const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', currentRates);
                 if (isNaN(amountTwd)) return sum; 
 
-                // 只要你是 payer，這筆現金流就是你貢獻的
                 return sum + (tx.payer === uid ? amountTwd : 0);
             }, 0);
         };
@@ -138,7 +133,8 @@ export default function StatsView({
 
     const getSmartTags = (tx) => {
         const tags = [];
-        const payerUser = ledgerData.users?.[tx.payer];
+        const safeUsers = ledgerData.users || {}; // 🛡️ [防彈修復]
+        const payerUser = safeUsers[tx.payer];
         const payerName = payerUser?.name || '未知';
 
         if (tx.isSettlement) {
@@ -184,13 +180,13 @@ export default function StatsView({
             </div>
          </div>
          
-         {/* 貢獻度卡片 */}
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
             <h3 className="text-gray-600 font-bold mb-4">消費貢獻度 (支付金額 - TWD)</h3>
             <div className="flex justify-between items-center mb-2 text-sm">
                 <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                    <span className="text-gray-600">{ledgerData.users[hostId]?.name || 'Host'}</span>
+                    {/* 🛡️ Safe Access */}
+                    <span className="text-gray-600">{(ledgerData.users || {})[hostId]?.name || 'Host'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="font-bold text-gray-800">{formatCurrency(hostTotal, 'TWD')}</span>
@@ -200,7 +196,8 @@ export default function StatsView({
             <div className="flex justify-between items-center mb-3 text-sm">
                 <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-pink-500"></div>
-                    <span className="text-gray-600">{ledgerData.users[guestId]?.name || 'Guest'}</span>
+                    {/* 🛡️ Safe Access */}
+                    <span className="text-gray-600">{(ledgerData.users || {})[guestId]?.name || 'Guest'}</span>
                 </div>
                 <div className="flex items-center gap-2">
                     <span className="font-bold text-gray-800">{formatCurrency(guestTotal, 'TWD')}</span>
@@ -213,7 +210,7 @@ export default function StatsView({
             </div>
          </div>
          
-         {/* 圓餅圖與分類統計 */}
+         {/* Pie Chart (Unchanged) */}
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center">
             <h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比 (TWD)</h3>
             <div className="relative w-48 h-48 rounded-full mb-6" style={{ background: pieChartGradient }}>
@@ -242,7 +239,7 @@ export default function StatsView({
             </div>
          </div>
 
-         {/* 交易明細列表 - 智慧標籤版 (Fix: 安全渲染) */}
+         {/* 交易明細 */}
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
             <h3 className="text-gray-600 font-bold mb-4">本月交易明細 ({sortedHistory.length}筆)</h3>
             <div className="space-y-4">

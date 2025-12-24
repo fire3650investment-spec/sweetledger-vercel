@@ -14,7 +14,6 @@ export default function DashboardView({
   user,
   handleSettleUp
 }) {
-    // [Critical Fix 1] 雙重保護：資料未載入 或 使用者未登入 前，不進行渲染
     if (!ledgerData || !user) return null;
 
     const { 
@@ -26,23 +25,20 @@ export default function DashboardView({
         partnerName, 
         otherUserId 
     } = useMemo(() => {
-        // [Critical Fix 2] 再次確保 user 存在，防止 useMemo 內部崩潰
         if (!user) return { projectTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0 };
 
         const rawTxs = ledgerData.transactions || [];
-        
-        // 🛡️ [防彈邏輯核心]：在這裡清洗資料，防止白屏
+        const safeUsers = ledgerData.users || {}; // 🛡️ [防彈修復] 建立安全的使用者資料參照
+
+        // 1. 資料清洗
         const allTxs = rawTxs
-            .filter(t => t && t.id && t.amount !== undefined) // 1. 過濾掉空值或殘缺資料
+            .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => {
-                // 2. 處理新舊版本衝突：如果遇到 'mixed' (混合記帳) 或其他不認識的 type
-                // 為了不讓舊版 UI 崩潰，我們暫時把它偽裝成普通 'expense' (支出)
                 const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
-                
                 return {
                     ...t,
+                    amount: parseFloat(t.amount) || 0,
                     type: safeType,
-                    // 3. 確保 category 永遠存在，避免讀取 icon 時報錯
                     category: t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' }
                 };
             });
@@ -75,30 +71,30 @@ export default function DashboardView({
 
         pTxs.forEach(tx => {
             if(tx.isSettlement) return; 
-            const amountTwd = calculateTwdValue(tx.amount || 0, tx.currency || 'TWD', rates);
+            const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
             if (isNaN(amountTwd)) return;
 
-            // 1. 支付邏輯
             if (tx.payer === user.uid) {
                 myPaid += amountTwd;
             }
 
-            // 2. 分攤邏輯
             let liability = 0;
             if (tx.splitType === 'even') {
                 liability = amountTwd / 2; 
             } else if (tx.splitType === 'custom') {
-                // 安全讀取 customSplit
                 if (tx.customSplit && typeof tx.customSplit === 'object') {
-                    const myShare = tx.customSplit[user.uid];
-                    if (typeof myShare === 'number' && !isNaN(myShare)) {
+                    const myShareRaw = tx.customSplit[user.uid];
+                    const myShare = parseFloat(myShareRaw);
+                    if (!isNaN(myShare)) {
                         liability = calculateTwdValue(myShare, tx.currency || 'TWD', rates);
                     }
                 }
             } else if (tx.splitType === 'host_all') {
-                liability = ledgerData.users[user.uid]?.role === 'host' ? amountTwd : 0;
+                // 🛡️ [防彈修復] 使用 safeUsers 避免 undefined 存取錯誤
+                liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
             } else if (tx.splitType === 'guest_all') {
-                liability = ledgerData.users[user.uid]?.role === 'guest' ? amountTwd : 0;
+                // 🛡️ [防彈修復] 使用 safeUsers
+                liability = safeUsers[user.uid]?.role === 'guest' ? amountTwd : 0;
             }
             if (!isNaN(liability)) myLiability += liability;
         });
@@ -109,7 +105,7 @@ export default function DashboardView({
 
         let settledAmount = 0;
         settlements.forEach(tx => {
-            const amount = calculateTwdValue(tx.amount || 0, tx.currency || 'TWD', rates);
+            const amount = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
             if (!isNaN(amount)) {
                 if (tx.payer === user.uid) settledAmount += amount;
                 else settledAmount -= amount;
@@ -118,9 +114,8 @@ export default function DashboardView({
 
         const finalSettlement = (myPaid + settledAmount) - myLiability; 
         
-        const users = ledgerData.users || {};
-        const oUserId = Object.keys(users).find(uid => uid !== user.uid);
-        const pName = oUserId && users[oUserId] ? (users[oUserId].name || '對方') : '對方';
+        const oUserId = Object.keys(safeUsers).find(uid => uid !== user.uid);
+        const pName = oUserId && safeUsers[oUserId] ? (safeUsers[oUserId].name || '對方') : '對方';
 
         return {
             projectTxs: pTxs,
@@ -137,7 +132,8 @@ export default function DashboardView({
     // Helper: Smart Tags
     const getSmartTags = (tx) => {
         const tags = [];
-        const payerUser = ledgerData.users?.[tx.payer];
+        const safeUsers = ledgerData.users || {}; // 🛡️ 本地 scope 也需要保護
+        const payerUser = safeUsers[tx.payer];
         const payerName = payerUser?.name || '未知';
 
         if (tx.isSettlement) {
@@ -212,7 +208,6 @@ export default function DashboardView({
                     <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">{date}</h3>
                     <div className="bg-white rounded-2xl shadow-sm border border-gray-50 overflow-hidden">
                         {txs.map((tx, idx) => { 
-                            // 防彈修正：使用可選串連 (?.)，如果 category 是 undefined 也不會崩潰
                             const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                             const tags = getSmartTags(tx);
 
