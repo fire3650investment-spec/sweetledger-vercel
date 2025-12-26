@@ -16,6 +16,7 @@ export default function DashboardView({
   handleSettleUp,
   handleOpenAddExpense 
 }) {
+    // [Safety] Early return if critical data is missing
     if (!ledgerData || !user) return null;
 
     const { projectTxs, groupedTransactions, monthlyTotal, settlement, currentProjectName, partnerName, otherUserId } = useMemo(() => {
@@ -25,14 +26,16 @@ export default function DashboardView({
         const safeUsers = ledgerData.users || {};
         const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
 
-        // [Fix] Hydrate Category: 優先使用 master list 的最新資料
+        // [Fix] Data Hygiene: 嚴格過濾與清洗資料
+        // 1. 確保 id, amount 存在
+        // 2. 確保 date 存在 (這是白屏主因)
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => {
                 const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
                 let displayCategory = t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' };
                 
-                // 如果有 ID，嘗試從最新的分類列表中抓取最新設定 (名稱/顏色/圖示)
+                // Hydrate Category: 優先使用 master list 的最新資料
                 if (t.category?.id) {
                     const latestCat = currentCategories.find(c => c.id === t.category.id);
                     if (latestCat) {
@@ -40,18 +43,37 @@ export default function DashboardView({
                     }
                 }
 
-                return { ...t, amount: parseFloat(t.amount) || 0, type: safeType, category: displayCategory };
+                // [Critical Fix] Fallback for missing date to prevent crash
+                const safeDate = t.date || new Date().toISOString();
+
+                return { 
+                    ...t, 
+                    amount: parseFloat(t.amount) || 0, 
+                    type: safeType, 
+                    category: displayCategory,
+                    date: safeDate 
+                };
             });
 
         const pTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
         const currentMonthStr = new Date().toISOString().slice(0, 7);
+        
+        // [Safe] 此處 t.date 已保證存在，不會再 Crash
         const thisMonthTxs = pTxs.filter(t => t.date.startsWith(currentMonthStr));
         
         const grouped = {};
         const sorted = [...pTxs].sort((a, b) => new Date(b.date) - new Date(a.date)); 
         sorted.forEach(tx => { 
-            try { const date = new Date(tx.date).toLocaleDateString('zh-TW'); if (!grouped[date]) grouped[date] = []; grouped[date].push(tx); } 
-            catch (e) {}
+            try { 
+                const dateObj = new Date(tx.date);
+                // [Safe] Check for invalid date strings
+                if (isNaN(dateObj.getTime())) return;
+                
+                const dateStr = dateObj.toLocaleDateString('zh-TW'); 
+                if (!grouped[dateStr]) grouped[dateStr] = []; 
+                grouped[dateStr].push(tx); 
+            } 
+            catch (e) { console.warn("Date parse error", e); }
         });
 
         const currProject = ledgerData.projects?.find(p => p.id === currentProjectId);

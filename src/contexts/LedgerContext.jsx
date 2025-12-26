@@ -107,11 +107,18 @@ export const LedgerProvider = ({ children }) => {
             const cleanTransactions = ledgerData.transactions.map(tx => {
                 let isDirty = false;
                 let newTx = { ...tx };
+                
+                // [Fix] Ensure Date exists (避免 White Screen)
+                if (!newTx.date) {
+                    newTx.date = new Date().toISOString();
+                    isDirty = true;
+                }
+
                 if (typeof tx.amount === 'string') {
                     newTx.amount = parseFloat(tx.amount) || 0;
                     isDirty = true;
                 }
-                // [Update] Check both 'custom' and 'multi_payer'
+                
                 if ((tx.splitType === 'custom' || tx.splitType === 'multi_payer') && tx.customSplit) {
                     const cleanSplit = {};
                     Object.keys(tx.customSplit).forEach(uid => {
@@ -128,7 +135,7 @@ export const LedgerProvider = ({ children }) => {
             });
 
             if (JSON.stringify(cleanTransactions) !== JSON.stringify(ledgerData.transactions)) {
-                console.log("🏥 檢測到交易紀錄含有髒資料，正在清洗...");
+                console.log("🏥 檢測到交易紀錄含有髒資料(缺日期/格式錯誤)，正在清洗...");
                 needsRepair = true;
                 updates.transactions = cleanTransactions;
             }
@@ -293,7 +300,7 @@ export const LedgerProvider = ({ children }) => {
     if (isNaN(cleanAmount)) throw new Error("金額無效");
 
     let cleanCustomSplit = null;
-    // [Fix] Allow multi_payer payload
+    
     if ((splitType === 'custom' || splitType === 'multi_payer') && customSplit) {
         cleanCustomSplit = {};
         Object.keys(customSplit).forEach(uid => {
