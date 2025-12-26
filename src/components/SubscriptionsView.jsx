@@ -1,5 +1,6 @@
+// src/components/SubscriptionsView.jsx
 import React from 'react';
-import { X, Trash2, Calendar, RefreshCw, AlertCircle } from 'lucide-react';
+import { X, Trash2, Calendar, RefreshCw, AlertCircle, ArrowLeft } from 'lucide-react';
 import { getIconComponent, formatCurrency } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
@@ -7,13 +8,15 @@ export default function SubscriptionsView({
   ledgerData,
   user,
   setView,
-  handleDeleteSubscription
+  handleDeleteSubscription,
+  onBack // [New] 支援上一頁路由
 }) {
   if (!ledgerData) return null;
 
   const subscriptions = ledgerData.subscriptions || [];
   const sortedSubs = [...subscriptions].sort((a, b) => new Date(a.nextPaymentDate) - new Date(b.nextPaymentDate));
 
+  // [Logic Preserved] 舊版倒數日計算
   const getDaysUntil = (dateStr) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -28,6 +31,7 @@ export default function SubscriptionsView({
     return `${diffDays} 天後`;
   };
 
+  // [Logic Preserved] 週期顯示
   const getCycleLabel = (cycle, payDay) => {
     if (cycle === 'monthly') return `每月 ${payDay} 號`;
     if (cycle === 'weekly') return '每週';
@@ -35,28 +39,34 @@ export default function SubscriptionsView({
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col pt-[calc(env(safe-area-inset-top)+2rem)] pb-6 relative">
-      {/* Header */}
-      <div className="px-6 mb-6 flex justify-between items-center">
-        <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <RefreshCw size={24} className="text-rose-500"/>
-            固定支出管理
-        </h2>
-        <button onClick={() => setView('settings')} className="p-2 bg-white rounded-full shadow-sm border border-gray-100">
-            <X size={20} className="text-gray-500"/>
-        </button>
+    <div className="min-h-screen bg-gray-50 flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] pb-6 relative animate-in fade-in">
+      {/* Header (Updated for consistency) */}
+      <div className="px-4 mb-6 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+            <button 
+                onClick={onBack || (() => setView('dashboard'))} 
+                className="p-2 -ml-2 bg-white rounded-full shadow-sm border border-gray-100 active:scale-95 transition-transform"
+            >
+                {onBack ? <ArrowLeft size={20} className="text-gray-500"/> : <X size={20} className="text-gray-500"/>}
+            </button>
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                固定支出
+            </h2>
+        </div>
       </div>
 
       <div className="flex-1 px-4 overflow-y-auto space-y-4">
         {sortedSubs.length === 0 ? (
            <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-               <RefreshCw size={48} className="mb-4 opacity-20"/>
-               <p>目前沒有設定固定支出</p>
-               <p className="text-xs mt-2">記帳時開啟「固定支出」開關即可新增</p>
+               <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                   <RefreshCw size={32} className="opacity-30"/>
+               </div>
+               <p className="font-bold">目前沒有設定固定支出</p>
+               <p className="text-xs mt-2">記帳時開啟「設為固定支出」即可新增</p>
            </div>
         ) : (
            sortedSubs.map((sub, idx) => {
-               // Fallback for missing category data in old subscriptions
+               // [Logic Preserved] Hydration & Fallback
                const categoryId = sub.category?.id || 'other';
                const category = (ledgerData.customCategories || DEFAULT_CATEGORIES).find(c => c.id === categoryId) || DEFAULT_CATEGORIES[0];
                const CatIcon = getIconComponent(category.icon);
@@ -64,22 +74,21 @@ export default function SubscriptionsView({
                const isExpired = new Date(sub.nextPaymentDate) < new Date();
 
                return (
-                   <div key={idx} className={`bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden ${isExpired ? 'ring-2 ring-rose-100' : ''}`}>
+                   <div key={idx} className={`bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden transition-all ${isExpired ? 'ring-2 ring-rose-100' : ''}`}>
                        <div className="flex justify-between items-start mb-3">
                            <div className="flex items-center gap-3">
-                               {/* [Fix] 使用 style 處理顏色 */}
                                <div 
-                                    className="w-10 h-10 rounded-full flex items-center justify-center text-lg"
+                                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm"
                                     style={{ 
-                                        backgroundColor: `${category.hex}33`, 
-                                        color: category.hex 
+                                        backgroundColor: category.hex, 
+                                        color: '#fff' 
                                     }}
                                >
-                                   <CatIcon size={20} />
+                                   <CatIcon size={24} />
                                </div>
                                <div>
-                                   <h3 className="font-bold text-gray-800">{sub.name}</h3>
-                                   <p className="text-xs text-gray-400 flex items-center gap-1">
+                                   <h3 className="font-bold text-gray-800 text-lg">{sub.name}</h3>
+                                   <p className="text-xs text-gray-400 flex items-center gap-1 font-medium mt-0.5">
                                        {project?.name || '日常開銷'} · {getCycleLabel(sub.cycle, sub.payDay)}
                                    </p>
                                </div>
@@ -94,9 +103,16 @@ export default function SubscriptionsView({
                                <Calendar size={14} />
                                {getDaysUntil(sub.nextPaymentDate)} ({new Date(sub.nextPaymentDate).toLocaleDateString()})
                            </div>
+                           
+                           {/* [Optimistic UI] 直接觸發刪除 */}
                            <button 
-                               onClick={() => handleDeleteSubscription(sub)}
-                               className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 px-3 py-1.5 bg-red-50 rounded-lg transition-colors"
+                               onClick={(e) => {
+                                   e.stopPropagation();
+                                   if(confirm(`確定要停止「${sub.name}」的自動扣款嗎？`)) {
+                                      handleDeleteSubscription(sub);
+                                   }
+                               }}
+                               className="flex items-center gap-1 text-xs text-red-500 font-bold hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors active:scale-95"
                            >
                                <Trash2 size={14} /> 刪除/停止
                            </button>
@@ -106,7 +122,8 @@ export default function SubscriptionsView({
            })
         )}
         
-        <div className="bg-blue-50 p-4 rounded-xl flex gap-3 items-start mt-6">
+        {/* [Logic Preserved] 說明區塊 */}
+        <div className="bg-blue-50 p-4 rounded-2xl flex gap-3 items-start mt-6 border border-blue-100">
             <AlertCircle size={20} className="text-blue-500 flex-shrink-0 mt-0.5" />
             <div className="text-xs text-blue-700 leading-relaxed">
                 <p className="font-bold mb-1">關於自動記帳</p>
