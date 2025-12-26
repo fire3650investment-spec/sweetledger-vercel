@@ -2,6 +2,7 @@
 import React, { useMemo } from 'react';
 import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue } from '../utils/helpers';
+import { DEFAULT_CATEGORIES } from '../utils/constants';
 
 export default function DashboardView({
   ledgerData,
@@ -19,14 +20,29 @@ export default function DashboardView({
 
     const { projectTxs, groupedTransactions, monthlyTotal, settlement, currentProjectName, partnerName, otherUserId } = useMemo(() => {
         if (!user) return { projectTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0 };
+        
         const rawTxs = ledgerData.transactions || [];
         const safeUsers = ledgerData.users || {};
+        const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
+
+        // [Fix] Hydrate Category: 優先使用 master list 的最新資料
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => {
                 const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
-                return { ...t, amount: parseFloat(t.amount) || 0, type: safeType, category: t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' } };
+                let displayCategory = t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' };
+                
+                // 如果有 ID，嘗試從最新的分類列表中抓取最新設定 (名稱/顏色/圖示)
+                if (t.category?.id) {
+                    const latestCat = currentCategories.find(c => c.id === t.category.id);
+                    if (latestCat) {
+                        displayCategory = latestCat;
+                    }
+                }
+
+                return { ...t, amount: parseFloat(t.amount) || 0, type: safeType, category: displayCategory };
             });
+
         const pTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
         const currentMonthStr = new Date().toISOString().slice(0, 7);
         const thisMonthTxs = pTxs.filter(t => t.date.startsWith(currentMonthStr));
@@ -96,7 +112,6 @@ export default function DashboardView({
 
     }, [ledgerData, currentProjectId, user]); 
 
-    // [Unified Tag Logic]
     const getSmartTags = (tx) => {
         const tags = [];
         const safeUsers = ledgerData.users || {}; 
@@ -122,15 +137,13 @@ export default function DashboardView({
             tags.push({ label: '平均分攤', color: 'gray' });
         } else {
             const payerRole = payerUser?.role;
-            // Payer = Host
             if (payerRole === 'host') {
-                if (tx.splitType === 'host_all') tags.push({ label: '私人', color: 'gray' }); // Host付 Host用
-                else if (tx.splitType === 'guest_all') tags.push({ label: '代墊', color: 'gray' }); // Host付 Guest用
+                if (tx.splitType === 'host_all') tags.push({ label: '私人', color: 'gray' }); 
+                else if (tx.splitType === 'guest_all') tags.push({ label: '代墊', color: 'gray' }); 
             } 
-            // Payer = Guest
             else if (payerRole === 'guest') {
-                if (tx.splitType === 'guest_all') tags.push({ label: '私人', color: 'gray' }); // Guest付 Guest用
-                else if (tx.splitType === 'host_all') tags.push({ label: '代墊', color: 'gray' }); // Guest付 Host用
+                if (tx.splitType === 'guest_all') tags.push({ label: '私人', color: 'gray' }); 
+                else if (tx.splitType === 'host_all') tags.push({ label: '代墊', color: 'gray' }); 
             }
         }
         if (tx.isSettled) tags.push({ label: '已結清', color: 'green' });

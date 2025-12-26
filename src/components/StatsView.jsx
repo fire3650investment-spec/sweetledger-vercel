@@ -16,7 +16,20 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
     const { filteredTxs, sortedHistory, rates, hostId, guestId, hostTotal, guestTotal, hostRatio, guestRatio, totalExpense, categoryStats, pieChartGradient } = useMemo(() => {
         const rawTxs = ledgerData.transactions || [];
         const safeUsers = ledgerData.users || {};
-        const allTxs = rawTxs.filter(t => t && t.id && t.amount !== undefined).map(t => ({ ...t, amount: parseFloat(t.amount) || 0, category: t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' } }));
+        const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
+
+        // [Fix] Hydrate Category
+        const allTxs = rawTxs
+            .filter(t => t && t.id && t.amount !== undefined)
+            .map(t => {
+                let displayCategory = t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' };
+                if (t.category?.id) {
+                    const latestCat = currentCategories.find(c => c.id === t.category.id);
+                    if (latestCat) displayCategory = latestCat;
+                }
+                return { ...t, amount: parseFloat(t.amount) || 0, category: displayCategory };
+            });
+
         const txs = allTxs.filter(t => t.date.startsWith(statsMonth) && (t.projectId || 'daily') === currentProjectId);
         const sorted = [...txs].sort((a, b) => new Date(b.date) - new Date(a.date));
         const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
@@ -58,11 +71,10 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
             totalExp += val;
         });
 
-        const allCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
         const catStats = [];
         Object.entries(statsMap).forEach(([id, amt]) => { 
             if (id === 'uncategorized') catStats.push({ id: 'uncategorized', name: '未分類', hex: '#999999', icon: 'Coins', total: amt });
-            else { const cat = allCats.find(c => c.id === id); if(cat) catStats.push({ ...cat, total: amt }); }
+            else { const cat = currentCategories.find(c => c.id === id); if(cat) catStats.push({ ...cat, total: amt }); }
         });
         catStats.sort((a,b) => b.total - a.total);
 
