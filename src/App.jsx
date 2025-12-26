@@ -30,6 +30,7 @@ import EditTransactionModal from './components/EditTransactionModal';
 import SubscriptionsView from './components/SubscriptionsView';
 
 export default function SweetLedger() {
+  // --- Context Hooks ---
   const { user, loading: authLoading, loginWithGoogle, logout } = useAuth();
   const { 
     ledgerCode, 
@@ -198,16 +199,20 @@ export default function SweetLedger() {
 
   const confirmAvatarUpdate = async () => {
     if (!ledgerCode || !tempAvatar) return;
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    await updateDoc(docRef, { [`users.${user.uid}.avatar`]: tempAvatar });
+    // [Optimistic UI] Close Modal Immediately
     setIsAvatarModalOpen(false);
+    const prevAvatar = tempAvatar; 
     setTempAvatar('');
+    
+    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+    await updateDoc(docRef, { [`users.${user.uid}.avatar`]: prevAvatar });
   };
 
   const updateLedgerCurrency = async (currencyKey, val) => {
     if (!ledgerCode || !currentProjectId || !ledgerData) return;
     const numVal = parseFloat(val);
     if (numVal && numVal > 0) {
+        // [Optimistic UI] Input change is handled by local state in SettingsView, just need to fire update
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newProjects = ledgerData.projects.map(p => {
             if (p.id === currentProjectId) {
@@ -228,9 +233,9 @@ export default function SweetLedger() {
   
   const updateNickname = async () => {
     if (!ledgerCode || !myNickname) return;
+    // [Optimistic UI] Background Write
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { [`users.${user.uid}.name`]: myNickname });
-    alert("暱稱已更新！");
   };
   
   const handleResetAccount = async () => {
@@ -275,22 +280,28 @@ export default function SweetLedger() {
 
   const handleSaveProject = async () => {
     if (!editingProjectData.name) return;
+    // [Optimistic UI] Close Editor Immediately
+    setIsEditingProject(false);
+    const projectToSave = { ...editingProjectData };
+    setEditingProjectData({ id: '', name: '', icon: 'project_daily' });
+
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     let newProjects = [...(ledgerData?.projects || [])];
-    const projectWithRates = { ...editingProjectData, rates: editingProjectData.rates || { JPY: 0.23, THB: 1 } };
+    const projectWithRates = { ...projectToSave, rates: projectToSave.rates || { JPY: 0.23, THB: 1 } };
 
-    if (editingProjectData.id) {
-        newProjects = newProjects.map(p => p.id === editingProjectData.id ? projectWithRates : p);
+    if (projectToSave.id) {
+        newProjects = newProjects.map(p => p.id === projectToSave.id ? projectWithRates : p);
     } else {
         newProjects.push({ ...projectWithRates, id: generateId() });
     }
     await updateDoc(docRef, { projects: newProjects });
-    setIsEditingProject(false);
-    setEditingProjectData({ id: '', name: '', icon: 'project_daily' });
   };
 
   const handleDeleteProject = async (projectId) => {
     if (confirm('確定要刪除這個專案嗎？（警告：該專案下的所有帳務紀錄將一併刪除且無法復原）')) {
+        // [Optimistic UI]
+        if (currentProjectId === projectId) setCurrentProjectId('daily');
+        
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
         const newTransactions = ledgerData.transactions.filter(t => t.projectId !== projectId);
@@ -301,13 +312,13 @@ export default function SweetLedger() {
             transactions: newTransactions,
             subscriptions: newSubscriptions
         });
-        if (currentProjectId === projectId) setCurrentProjectId('daily');
     }
   };
 
   const handleDeleteSubscription = async (subToDelete) => {
     if (!ledgerCode || !subToDelete) return;
     if (confirm(`確定要取消「${subToDelete.name}」的固定扣款嗎？`)) {
+        // [Optimistic UI] Background Write
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.id !== subToDelete.id);
         await updateDoc(docRef, { subscriptions: newSubscriptions });
@@ -316,26 +327,29 @@ export default function SweetLedger() {
 
   const handleSaveCategory = async () => {
     if (!editingCategoryData.name) return;
+    // [Optimistic UI] Close Editor Immediately
+    setIsEditingCategory(false);
+    const categoryToSave = { ...editingCategoryData };
+    
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     let newCategories = [...(ledgerData?.customCategories || DEFAULT_CATEGORIES)];
-    if (editingCategoryData.id) {
-        newCategories = newCategories.map(c => c.id === editingCategoryData.id ? editingCategoryData : c);
+    if (categoryToSave.id) {
+        newCategories = newCategories.map(c => c.id === categoryToSave.id ? categoryToSave : c);
     } else {
         const newId = generateId();
-        newCategories.push({ ...editingCategoryData, id: newId });
+        newCategories.push({ ...categoryToSave, id: newId });
         await updateDoc(docRef, { 
            customCategories: newCategories,
            'settings.selectedCategories': arrayUnion(newId)
         });
-        setIsEditingCategory(false);
         return;
     }
     await updateDoc(docRef, { customCategories: newCategories });
-    setIsEditingCategory(false);
   };
 
   const handleDeleteCategory = async (catId) => {
      if (confirm('確定要刪除這個分類嗎？')) {
+        setIsEditingCategory(false); // [Optimistic UI] Close immediately
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newCategories = (ledgerData?.customCategories || DEFAULT_CATEGORIES).filter(c => c.id !== catId);
         await updateDoc(docRef, { customCategories: newCategories });
@@ -346,6 +360,7 @@ export default function SweetLedger() {
     if (!amountToSettle || amountToSettle <= 0) return;
     if (confirm(`確定要結清 ${formatCurrency(amountToSettle, 'TWD')} 給 ${payeeName} 嗎？`)) {
         try {
+            // [Optimistic UI] Fire and forget
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
             await updateDoc(docRef, { 
                 transactions: arrayUnion({ 
@@ -361,7 +376,6 @@ export default function SweetLedger() {
                     isSettlement: true
                 }) 
             });
-            alert("還款紀錄已新增！");
         } catch (e) {
             console.error("Settle Up Error:", e);
             alert("結清失敗");
@@ -385,17 +399,18 @@ export default function SweetLedger() {
 
   const addTransaction = async () => {
     if (!amount || !ledgerData || !ledgerCode) return;
+    if (isSubmittingTransaction) return;
+
+    // [Optimistic UI Step 1] Prepare Data
     setIsSubmittingTransaction(true);
     const amountFloat = parseFloat(amount);
     let customSplitData = null;
     let finalSplitType = splitType;
 
-    // [Fix] Logic Upgrade: Support multi_payer alongside custom
     if (splitType === 'custom' || splitType === 'multi_payer') {
         const hostAmt = parseFloat(customSplitHost) || 0;
         const guestAmt = parseFloat(customSplitGuest) || 0;
         
-        // 驗證總和
         if (Math.round((hostAmt + guestAmt) * 100) / 100 !== Math.round(amountFloat * 100) / 100) {
             alert("雙方金額總和必須等於支出總額！");
             setIsSubmittingTransaction(false);
@@ -417,14 +432,16 @@ export default function SweetLedger() {
         finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     }
 
-    setIsSubmittingTransaction(false);
+    // [Optimistic UI Step 2] Navigate Immediately
     setView('dashboard');
-
+    
+    // [Optimistic UI Step 3] Reset Form immediately
     setTimeout(() => {
         setAmount(''); setNote(''); setAiInput(''); 
         setIsSubscription(false); setSubCycle('monthly'); setSubPayDay(''); 
         setSplitType('even'); setCustomSplitHost(''); setCustomSplitGuest('');
         setDate(new Date().toISOString().slice(0, 10));
+        setIsSubmittingTransaction(false); 
     }, 500);
 
     try {
@@ -435,9 +452,9 @@ export default function SweetLedger() {
             amount: amountFloat, 
             currency: currency, 
             category: selectedCategory, 
-            payer: payer || user.uid, // 雖然 multi_payer 不看此欄位，但仍需有值
+            payer: payer || user.uid, 
             splitType: finalSplitType, 
-            customSplit: customSplitData, // Now includes multi_payer data
+            customSplit: customSplitData, 
             note: note || selectedCategory.name, 
             projectId: currentProjectId,
         };
@@ -473,26 +490,32 @@ export default function SweetLedger() {
         }
     } catch (e) {
         console.error("Background Write Error:", e);
-        alert("⚠️ 連線異常，剛剛的記帳可能未成功寫入，請檢查網路。");
     }
   };
 
   const handleUpdateTransaction = async (updatedTx) => {
+    // [Fix] Receive updatedTx from child
     if (!editingTx || !ledgerData || !ledgerCode) return;
+    
+    // [Optimistic UI] Close Modal Immediately
+    setIsEditTxModalOpen(false);
+    setEditingTx(null);
+
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const updatedTxs = ledgerData.transactions.map(tx => tx.id === editingTx.id ? updatedTx : tx);
     await updateDoc(docRef, { transactions: updatedTxs });
-    setIsEditTxModalOpen(false);
-    setEditingTx(null);
   };
 
   const handleDeleteTransaction = async (txId) => {
      if (!editingTx || !ledgerData || !ledgerCode) return;
-     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-     const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== editingTx.id);
-     await updateDoc(docRef, { transactions: updatedTxs });
+     
+     // [Optimistic UI] Close Modal Immediately
      setIsEditTxModalOpen(false);
      setEditingTx(null);
+
+     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+     const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== txId); // Use passed txId
+     await updateDoc(docRef, { transactions: updatedTxs });
   };
 
   const handleAiModalSubmit = async () => {
@@ -578,7 +601,10 @@ export default function SweetLedger() {
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         await updateDoc(docRef, { projects: newProjects });
-    } catch (e) { console.error("Reorder Projects Error:", e); alert("排序儲存失敗，請檢查網路"); }
+    } catch (e) {
+        console.error("Reorder Projects Error:", e);
+        alert("排序儲存失敗，請檢查網路");
+    }
   };
 
   const handleReorderCategories = async (newCategories) => {
@@ -586,7 +612,10 @@ export default function SweetLedger() {
     try {
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         await updateDoc(docRef, { customCategories: newCategories });
-    } catch (e) { console.error("Reorder Categories Error:", e); alert("排序儲存失敗"); }
+    } catch (e) {
+        console.error("Reorder Categories Error:", e);
+        alert("排序儲存失敗");
+    }
   };
 
   const hasCachedData = ledgerCode && ledgerData && user;
@@ -753,10 +782,11 @@ export default function SweetLedger() {
                     </div>
                 </div>
                 
+                {/* [Fix] Prop Names Corrected & Optimistic UI Ready */}
                 <EditTransactionModal 
                     isOpen={isEditTxModalOpen}
                     onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
-                    transaction={editingTx}
+                    transaction={editingTx} 
                     ledgerData={ledgerData}
                     user={user}
                     onUpdate={handleUpdateTransaction}
