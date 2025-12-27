@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, 
-  Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle 
+  Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image 
 } from 'lucide-react';
 import { getIconComponent, parseReceiptWithGemini, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
@@ -61,7 +61,11 @@ export default function AddExpenseView({
     const [activeOverlay, setActiveOverlay] = useState('amount'); 
     const [localAmount, setLocalAmount] = useState(''); 
     const noteInputRef = useRef(null);
-    const cameraInputRef = useRef(null);
+    
+    // [Updated] Dual Input Strategy
+    const cameraInputRef = useRef(null); // Force Camera
+    const fileInputRef = useRef(null);   // Allow Gallery
+    
     const [isScanning, setIsScanning] = useState(false);
     const [isScanModalOpen, setIsScanModalOpen] = useState(false);
     const [scannedItems, setScannedItems] = useState([]);
@@ -91,24 +95,17 @@ export default function AddExpenseView({
         return [...new Set(notes)].slice(0, 5);
     }, [ledgerData.transactions, selectedCategory]);
 
-    // --- Effects (Fixing Race Condition) ---
-    
-    // [Fix] 移除 Mount 時強制 setAmount('') 的邏輯
-    // 改為信任 Unmount 時的 Cleanup，或是信任父層傳入的狀態
+    // --- Effects ---
     useEffect(() => {
         if (initialAmount) {
             setLocalAmount(initialAmount.toString());
         } else {
-            // 這裡不再呼叫 setAmount('')，避免與下方的 sync effect 打架
-            // 如果父層傳入的是 100，我們就先顯示 100，
-            // 但因為 Unmount cleanup 會清空，所以通常這裡拿到的是 ''
             if (!amount) setLocalAmount('');
         }
         setActiveOverlay('amount');
         if (!payer && user) setPayer(user.uid);
 
         return () => {
-            // Cleanup on unmount: 這是最安全的歸零時機
             setAmount(''); 
             setNote(''); 
             setSelectedCategory(null); 
@@ -121,12 +118,10 @@ export default function AddExpenseView({
         };
     }, []); 
 
-    // Sync local -> parent
     useEffect(() => { 
         setAmount(localAmount); 
     }, [localAmount, setAmount]);
 
-    // Sync parent -> local (防止 Echo，只在數值真的不同時更新)
     useEffect(() => {
         if (amount !== undefined && amount !== null && amount.toString() !== localAmount) {
             setLocalAmount(amount.toString());
@@ -184,11 +179,17 @@ export default function AddExpenseView({
         });
     };
 
-    const handleScanClick = () => { cameraInputRef.current?.click(); };
+    // [Updated] Dual Handlers
+    const handleCameraClick = () => { cameraInputRef.current?.click(); };
+    const handleAlbumClick = () => { fileInputRef.current?.click(); };
 
     const handleImageUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
+        
+        // Reset inputs to allow selecting same file again if needed
+        e.target.value = ''; 
+        
         setIsScanning(true);
         const reader = new FileReader();
         reader.onloadend = async () => {
@@ -201,7 +202,6 @@ export default function AddExpenseView({
             } else { alert("掃描失敗，請再試一次或手動輸入"); }
         };
         reader.readAsDataURL(file);
-        e.target.value = '';
     };
 
     const handleScanConfirm = (result) => {
@@ -233,13 +233,15 @@ export default function AddExpenseView({
 
     const isMathPending = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
     
-    // [Updated] Use Input Mode Style
     const selectedCatStyle = getCategoryStyle(selectedCategory, 'input');
     const CatIcon = getIconComponent(selectedCategory?.icon || 'food');
 
     return (
       <div className="fixed inset-0 z-[50] flex flex-col h-[100dvh] bg-gray-50 overflow-hidden"> 
+        {/* [Updated] Dual Hidden Inputs */}
         <input type="file" ref={cameraInputRef} accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload}/>
+        <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleImageUpload}/>
+        
         <ScanReceiptModal isOpen={isScanModalOpen} onClose={() => setIsScanModalOpen(false)} onConfirm={handleScanConfirm} initialItems={scannedItems} currency={currency} users={ledgerData.users}/>
 
         {/* HUD */}
@@ -249,10 +251,20 @@ export default function AddExpenseView({
                 <div className="font-bold text-slate-700 text-sm bg-gray-100 px-3 py-1 rounded-full border border-gray-200">
                     {ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常'}
                 </div>
+                
+                {/* [Updated] Action Buttons Group */}
                 <div className="flex gap-1 -mr-2">
-                    <button onClick={handleScanClick} disabled={isScanning} className={`p-2 rounded-full ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'text-blue-500 hover:bg-blue-50'}`}>
+                    {/* 1. Album (New) */}
+                    <button onClick={handleAlbumClick} disabled={isScanning} className={`p-2 rounded-full ${isScanning ? 'opacity-30' : 'text-slate-400 hover:bg-slate-50'}`}>
+                        <Image size={20}/>
+                    </button>
+                    
+                    {/* 2. Camera (Existing) */}
+                    <button onClick={handleCameraClick} disabled={isScanning} className={`p-2 rounded-full ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'text-blue-500 hover:bg-blue-50'}`}>
                         {isScanning ? <RefreshCw className="animate-spin" size={20}/> : <Camera size={20}/>}
                     </button>
+
+                    {/* 3. AI (Existing) */}
                     <button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'text-purple-400 hover:bg-purple-50'}`}>
                         {isAiProcessing ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}
                     </button>
@@ -287,7 +299,6 @@ export default function AddExpenseView({
 
                 <div className="flex gap-3 mb-4">
                     <button onClick={handleCategoryTriggerClick} className={`flex-none w-[35%] flex items-center gap-2 p-3 rounded-2xl border transition-all ${activeOverlay === 'category' ? 'bg-rose-50 border-rose-200 ring-2 ring-rose-100' : 'bg-gray-50 border-gray-100'}`}>
-                        {/* [Updated] Use Input Mode Style */}
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-sm shrink-0 transition-colors ${selectedCategory ? selectedCatStyle.activeClass : 'bg-white text-rose-500'}`}>
                             <CatIcon size={18} />
                         </div>
@@ -310,7 +321,6 @@ export default function AddExpenseView({
             {/* Logic Module */}
             <div className="px-4">
                 <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-5">
-                    {/* ... (Rest of the UI logic remains unchanged) ... */}
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-gray-500">
                             <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500"><Users size={16} /></div>
