@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   User, LogOut, RotateCcw, Download, X, Check, Trash2, 
-  Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe
+  Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe,
+  ShieldAlert, FileText, Zap, Coffee, Star, Crown, Ghost, Smile
 } from 'lucide-react';
 import { getIconComponent, renderAvatar } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS } from '../utils/constants';
@@ -10,7 +11,6 @@ import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS } from '../utils/constants'
 export default function SettingsView({ 
   user, 
   ledgerData, 
-  setView, 
   isEditingCategory, 
   setIsEditingCategory, 
   editingCategoryData, 
@@ -39,26 +39,20 @@ export default function SettingsView({
     window.scrollTo(0, 0);
   }, []);
 
-  // 準備分類資料與匯率
-  const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
-  const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
-  const serverRates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
-
   // --- Local State ---
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [activeSortId, setActiveSortId] = useState(null); 
   const [copied, setCopied] = useState(false);
   
-  // [Fix] Local Rates State for smooth typing
+  // Local Rates State
+  const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
+  const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
+  const serverRates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
   const [localRates, setLocalRates] = useState(serverRates);
 
-  // Sync server rates to local when not editing (or initially)
   useEffect(() => {
       if (serverRates) {
-          setLocalRates(prev => ({
-              ...prev,
-              ...serverRates
-          }));
+          setLocalRates(prev => ({ ...prev, ...serverRates }));
       }
   }, [serverRates]);
 
@@ -78,7 +72,6 @@ export default function SettingsView({
       if (val && !isNaN(parseFloat(val))) {
           updateLedgerCurrency(currency, val);
       } else {
-          // Revert if invalid
           setLocalRates(prev => ({ ...prev, [currency]: serverRates[currency] }));
       }
   };
@@ -124,30 +117,36 @@ export default function SettingsView({
       setIsEditingCategory(true);
   };
 
+  // 定義新的 Premium Avatar 列表
+  const AVATAR_OPTIONS = [
+    'user', 'smile', 'zap', 'coffee', 
+    'star', 'crown', 'ghost', 'music',
+    'sun', 'moon', 'flower', 'anchor'
+  ];
+
   return (
     <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 animate-in fade-in duration-500">
       
-      {/* Header - Aligned with StatsView */}
+      {/* Header */}
       <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">設定</h2>
+          <h2 className="text-3xl font-bold text-gray-900 tracking-tight">設定</h2>
       </div>
 
       <div className="space-y-6">
 
-        {/* --- Island A: Identity & Group --- */}
+        {/* --- Island A: Identity (Clean & Personal) --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
              {/* 1. Personal Profile */}
              <div className="p-4 flex items-center gap-4">
                 <button onClick={() => setIsAvatarModalOpen(true)} className="relative group shrink-0">
-                    <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center text-3xl shadow-inner overflow-hidden border-2 border-white ring-2 ring-gray-100 group-active:scale-95 transition-transform">
-                        {renderAvatar(ledgerData?.users?.[user.uid]?.avatar, "w-12 h-12")}
-                    </div>
-                    <div className="absolute bottom-0 right-0 bg-gray-900 text-white p-1 rounded-full border-2 border-white">
+                    {/* 使用 renderAvatar 渲染 Lucide Icon */}
+                    {renderAvatar(ledgerData?.users?.[user.uid]?.avatar, "w-16 h-16")}
+                    
+                    <div className="absolute bottom-0 right-0 bg-gray-900 text-white p-1.5 rounded-full border-2 border-white shadow-sm">
                         <Pencil size={10} />
                     </div>
                 </button>
                 
-                {/* [Layout Defense] Fixed Save Button Overflow */}
                 <div className="flex-1 min-w-0">
                     <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">顯示名稱</label>
                     <div className="flex items-center gap-2">
@@ -156,30 +155,27 @@ export default function SettingsView({
                             value={myNickname} 
                             onChange={(e) => setMyNickname(e.target.value)} 
                             onBlur={updateNickname}
-                            className="flex-1 min-w-0 bg-gray-50 border-b-2 border-gray-200 focus:border-rose-500 outline-none text-gray-800 font-bold py-1 px-2 transition-colors rounded-t-sm"
+                            className="flex-1 min-w-0 bg-transparent border-b border-gray-200 focus:border-rose-500 outline-none text-gray-900 font-bold py-1 px-0 transition-colors text-lg"
                         />
-                        <button onClick={updateNickname} className="shrink-0 bg-gray-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg active:scale-95 transition-transform">
-                            儲存
-                        </button>
                     </div>
                 </div>
              </div>
 
-             {/* 2. Ledger Code (Moved from Top Right) */}
+             {/* 2. Ledger Code */}
              <div 
                 onClick={handleCopyCode}
                 className="border-t border-gray-50 p-4 active:bg-gray-50 transition-colors cursor-pointer flex justify-between items-center group"
              >
                 <div>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">帳本代碼</p>
-                    <p className="text-lg font-mono font-bold text-rose-500 tracking-widest group-hover:scale-105 transition-transform origin-left">{ledgerCode}</p>
+                    <p className="text-base font-mono font-medium text-gray-600 tracking-widest group-hover:text-rose-500 transition-colors">{ledgerCode}</p>
                 </div>
-                <div className={`p-2 rounded-full transition-colors ${copied ? 'bg-green-100 text-green-600' : 'bg-gray-50 text-gray-400'}`}>
+                <div className={`p-2 rounded-full transition-colors ${copied ? 'bg-green-50 text-green-600' : 'text-gray-300'}`}>
                     {copied ? <Check size={16} /> : <Copy size={16} />}
                 </div>
              </div>
 
-             {/* 3. Members List */}
+             {/* 3. Members List (Simplified Colors) */}
              <div className="border-t border-gray-50 p-4 bg-gray-50/50">
                 <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                     <User size={12}/> 帳本成員
@@ -195,10 +191,10 @@ export default function SettingsView({
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2">
                                         <span className={`font-bold text-sm ${isMe ? 'text-gray-900' : 'text-gray-600'}`}>{u.name}</span>
-                                        {isMe && <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 rounded-full">(我)</span>}
+                                        {isMe && <span className="text-[10px] text-gray-400 bg-gray-200 px-1.5 rounded-full">(我)</span>}
                                     </div>
                                 </div>
-                                <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${isHost ? 'bg-blue-50 text-blue-600' : 'bg-pink-50 text-pink-600'}`}>
+                                <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${isHost ? 'bg-rose-50 text-rose-600' : 'bg-gray-200 text-gray-500'}`}>
                                     {isHost ? '戶長' : '成員'}
                                 </span>
                             </div>
@@ -208,40 +204,28 @@ export default function SettingsView({
              </div>
         </section>
 
-        {/* --- Island B: Preferences (Rates & Categories) --- */}
+        {/* --- Island B: Preferences (Clean Inputs) --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             {/* Rates */}
             <div className="p-4 border-b border-gray-50">
                 <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Globe size={14}/> 匯率設定</h3>
                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-                    <div className="flex-1 min-w-[140px] flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
-                        <span className="text-sm font-bold text-gray-700">JPY</span>
-                        <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-gray-200">
-                            <input 
-                                type="number" 
-                                value={localRates.JPY} 
-                                onChange={(e) => handleRateChange('JPY', e.target.value)}
-                                onBlur={() => handleRateBlur('JPY')}
-                                className="w-16 bg-transparent text-sm font-bold text-gray-800 outline-none text-right"
-                                placeholder="0.23"
-                                step="0.01"
-                            />
+                    {['JPY', 'THB'].map(curr => (
+                        <div key={curr} className="flex-1 min-w-[120px] flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-transparent focus-within:border-rose-200 focus-within:bg-white transition-colors">
+                            <span className="text-sm font-bold text-gray-500">{curr}</span>
+                            <div className="flex items-center gap-1">
+                                <input 
+                                    type="number" 
+                                    value={localRates[curr]} 
+                                    onChange={(e) => handleRateChange(curr, e.target.value)}
+                                    onBlur={() => handleRateBlur(curr)}
+                                    className="w-16 bg-transparent text-sm font-bold text-gray-900 outline-none text-right"
+                                    placeholder="1.0"
+                                    step="0.01"
+                                />
+                            </div>
                         </div>
-                    </div>
-                    <div className="flex-1 min-w-[140px] flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100">
-                        <span className="text-sm font-bold text-gray-700">THB</span>
-                        <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-gray-200">
-                            <input 
-                                type="number" 
-                                value={localRates.THB} 
-                                onChange={(e) => handleRateChange('THB', e.target.value)}
-                                onBlur={() => handleRateBlur('THB')}
-                                className="w-16 bg-transparent text-sm font-bold text-gray-800 outline-none text-right"
-                                placeholder="1.0"
-                                step="0.1"
-                            />
-                        </div>
-                    </div>
+                    ))}
                 </div>
             </div>
 
@@ -251,13 +235,13 @@ export default function SettingsView({
                     <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2"><LayoutGrid size={16}/> 分類管理</h2>
                     <button 
                         onClick={() => { setIsReorderMode(!isReorderMode); setActiveSortId(null); }}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all flex items-center gap-1 ${isReorderMode ? 'bg-rose-500 text-white shadow-lg shadow-rose-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                        className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all flex items-center gap-1 ${isReorderMode ? 'bg-rose-500 text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
                     >
                         <ArrowLeftRight size={12}/> {isReorderMode ? '完成' : '排序'}
                     </button>
                 </div>
 
-                <div className="grid grid-cols-5 gap-3">
+                <div className="grid grid-cols-5 gap-2 sm:gap-3">
                     {categories.map((cat) => {
                         const Icon = getIconComponent(cat.icon);
                         const isSelected = activeSortId === cat.id;
@@ -270,73 +254,88 @@ export default function SettingsView({
                                 className={`flex flex-col items-center gap-1 group relative transition-all duration-300 ${isSelected ? 'scale-110 z-10' : 'active:scale-95'}`}
                             >
                                 <div 
-                                    className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-sm ${isSelected ? 'ring-4 ring-rose-300 shadow-xl' : ''}`}
+                                    className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-sm ${isSelected ? 'ring-2 ring-rose-500 shadow-lg' : ''}`}
                                     style={{ backgroundColor: isSelected ? '#fff' : cat.hex, color: isSelected ? cat.hex : '#fff' }}
                                 >
                                     <Icon size={20} />
                                 </div>
-                                <span className="text-[10px] font-bold text-gray-500 truncate w-full text-center">{cat.name}</span>
+                                <span className="text-[10px] font-medium text-gray-500 truncate w-full text-center">{cat.name}</span>
                             </button>
                         );
                     })}
                     {!isReorderMode && (
                         <button onClick={openNewCategoryModal} className="flex flex-col items-center gap-1 group active:scale-95 transition-transform">
-                            <div className="w-12 h-12 rounded-2xl bg-gray-50 border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-400 group-hover:border-rose-300 group-hover:text-rose-500 transition-colors">
+                            <div className="w-12 h-12 rounded-2xl bg-gray-50 border border-dashed border-gray-300 flex items-center justify-center text-gray-400 group-hover:border-rose-300 group-hover:text-rose-500 transition-colors">
                                 <Plus size={20} />
                             </div>
-                            <span className="text-[10px] font-bold text-gray-400">新增</span>
+                            <span className="text-[10px] font-medium text-gray-400">新增</span>
                         </button>
                     )}
                 </div>
             </div>
         </section>
 
-        {/* --- Island C: System --- */}
+        {/* --- Island C: System (Monochrome Apple Style) --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
+             {/* Reset */}
              <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleResetAccount}>
                  <div className="flex items-center gap-3">
-                     <div className="p-2 bg-blue-50 text-blue-500 rounded-xl"><RotateCcw size={18}/></div>
+                     <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><RotateCcw size={18}/></div>
                      <span className="font-bold text-gray-700 text-sm">重置帳本</span>
                  </div>
                  <ChevronRight size={16} className="text-gray-300"/>
              </div>
              
+             {/* Export */}
              <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleExport}>
                  <div className="flex items-center gap-3">
-                     <div className="p-2 bg-green-50 text-green-500 rounded-xl"><Download size={18}/></div>
+                     <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><FileText size={18}/></div>
                      <span className="font-bold text-gray-700 text-sm">匯出 CSV</span>
                  </div>
                  <ChevronRight size={16} className="text-gray-300"/>
              </div>
 
+             {/* Logout */}
              <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleLogout}>
                  <div className="flex items-center gap-3">
-                     <div className="p-2 bg-gray-100 text-gray-500 rounded-xl"><LogOut size={18}/></div>
-                     <span className="font-bold text-gray-700 text-sm">登出帳號</span>
+                     <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><LogOut size={18}/></div>
+                     <span className="font-bold text-red-500 text-sm">登出帳號</span>
                  </div>
-                 <ChevronRight size={16} className="text-gray-300"/>
              </div>
         </section>
 
         <div className="text-center pt-4 pb-8">
-             <button onClick={handleFixIdentity} className="text-[10px] text-gray-300 hover:text-gray-400 underline">修復帳號權限 (Debug)</button>
-             <p className="text-[10px] text-gray-300 mt-1">SweetLedger v1.4.1 (Fix Rates Input)</p>
+             <button onClick={handleFixIdentity} className="text-[10px] text-gray-300 hover:text-gray-400 flex items-center gap-1 mx-auto">
+                <ShieldAlert size={10}/> 修復帳號權限 (Debug)
+             </button>
+             <p className="text-[10px] text-gray-300 mt-2 font-mono">SweetLedger v1.6.0 (Lucide Avatars)</p>
         </div>
       </div>
 
-      {/* --- Modals (Unchanged) --- */}
-      {/* Avatar Modal */}
+      {/* --- Modals --- */}
+      {/* Avatar Modal (Updated to Premium Lucide Icons) */}
       {isAvatarModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4" onClick={() => setIsAvatarModalOpen(false)}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsAvatarModalOpen(false)}>
             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
                 <h3 className="text-center font-bold text-lg mb-6 text-gray-800">選擇你的頭像</h3>
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                    {['cat', 'dog', 'fox', 'rabbit'].map(key => (
-                        <button key={key} onClick={() => handleAvatarSelect(key)} className={`h-24 rounded-2xl text-4xl flex items-center justify-center transition-all border-2 ${tempAvatar === key ? 'bg-rose-50 border-rose-500 scale-105 shadow-lg' : 'bg-gray-50 border-transparent grayscale hover:grayscale-0'}`}>
-                            {renderAvatar(key, "w-12 h-12")}
+                
+                {/* Avatar Grid */}
+                <div className="grid grid-cols-4 gap-4 mb-6">
+                    {AVATAR_OPTIONS.map(iconName => (
+                        <button 
+                            key={iconName} 
+                            onClick={() => handleAvatarSelect(iconName)} 
+                            className={`aspect-square rounded-2xl flex items-center justify-center transition-all border-2 
+                                ${tempAvatar === iconName 
+                                    ? 'bg-rose-50 border-rose-500 text-rose-500 shadow-md scale-110' 
+                                    : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+                                }`}
+                        >
+                            {renderAvatar(iconName, "w-full h-full !bg-transparent !text-current !rounded-none")}
                         </button>
                     ))}
                 </div>
+                
                 <div className="flex gap-3">
                     <button onClick={() => setIsAvatarModalOpen(false)} className="flex-1 py-3 font-bold text-gray-500 bg-gray-100 rounded-xl">取消</button>
                     <button onClick={confirmAvatarUpdate} className="flex-1 py-3 font-bold text-white bg-gray-900 rounded-xl shadow-lg shadow-gray-200">確認</button>
@@ -345,15 +344,15 @@ export default function SettingsView({
         </div>
       )}
 
-      {/* Category Editor Modal */}
+      {/* Category Editor Modal (Style Conserved) */}
       {isEditingCategory && (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:px-4">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsEditingCategory(false)} />
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsEditingCategory(false)} />
             <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl shadow-2xl relative z-10 flex flex-col max-h-[90vh] animate-slide-up">
                 
-                <div className="bg-gray-50 px-6 py-4 flex justify-between items-center border-b border-gray-100 rounded-t-3xl">
+                <div className="bg-white px-6 py-4 flex justify-between items-center border-b border-gray-100 rounded-t-3xl">
                     <h3 className="font-bold text-gray-800 text-lg">{editingCategoryData.id ? '編輯分類' : '新增分類'}</h3>
-                    <button onClick={() => setIsEditingCategory(false)} className="p-2 bg-white rounded-full text-gray-400 hover:text-gray-600 shadow-sm"><X size={20}/></button>
+                    <button onClick={() => setIsEditingCategory(false)} className="p-2 bg-gray-50 rounded-full text-gray-400 hover:text-gray-600"><X size={20}/></button>
                 </div>
 
                 <div className="p-6 space-y-6 overflow-y-auto">
@@ -374,7 +373,7 @@ export default function SettingsView({
                             type="text" 
                             value={editingCategoryData.name} 
                             onChange={(e) => setEditingCategoryData({...editingCategoryData, name: e.target.value})} 
-                            className="w-full bg-gray-50 text-gray-800 font-bold py-3 px-4 rounded-xl outline-none border-2 border-transparent focus:border-rose-500 transition-colors"
+                            className="w-full bg-gray-50 text-gray-900 font-bold py-3 px-4 rounded-xl outline-none border-2 border-transparent focus:border-rose-500 transition-colors"
                             placeholder="輸入分類名稱..."
                         />
                     </div>
@@ -417,7 +416,7 @@ export default function SettingsView({
 
                 <div className="p-4 border-t border-gray-100 flex gap-3 bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] rounded-b-3xl">
                     {editingCategoryData.id && (
-                        <button onClick={() => onDeleteCategoryWrapper(editingCategoryData.id)} className="p-4 bg-gray-100 text-gray-500 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-colors">
+                        <button onClick={() => onDeleteCategoryWrapper(editingCategoryData.id)} className="p-4 bg-gray-50 text-gray-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-colors">
                             <Trash2 size={20} />
                         </button>
                     )}
@@ -433,7 +432,7 @@ export default function SettingsView({
         </div>
       )}
 
-      {/* Wiggle Animation Style */}
+      {/* Wiggle Animation */}
       <style>{`
         @keyframes wiggle {
           0% { transform: rotate(0deg); }

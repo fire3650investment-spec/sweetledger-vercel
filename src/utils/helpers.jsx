@@ -1,31 +1,121 @@
+// src/utils/helpers.jsx
 import React from 'react';
-import { ICON_MAP, CHARACTERS } from './constants';
-import { User } from 'lucide-react';
+// 引入需要的 Lucide 圖示
+import { 
+  // Categories
+  Utensils, Bus, ShoppingBag, Clapperboard, Home, Landmark, 
+  Gamepad2, GraduationCap, Stethoscope, Gift, Wrench, 
+  Briefcase, Heart, Plane, LayoutGrid, HelpCircle,
+  // Avatars (Premium Selection)
+  User, Zap, Coffee, Star, Crown, Ghost, Smile, Flower, Music, Sun, Moon, Anchor,
+  // Fallback for compatibility
+  Cat, Dog, Rabbit
+} from 'lucide-react';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
-export const formatCurrency = (amount, currency = 'TWD', privacy = false) => {
-  if (privacy) return '****';
-  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency, minimumFractionDigits: 0 }).format(amount);
+// --- Icon System ---
+
+// Icon Mapping: 定義字串與 Lucide 元件的對照表
+const ICON_MAP = {
+  // Categories
+  'food': Utensils,
+  'transport': Bus,
+  'shopping': ShoppingBag,
+  'entertainment': Clapperboard,
+  'house': Home,
+  'investment': Landmark,
+  'game': Gamepad2,
+  'education': GraduationCap,
+  'medical': Stethoscope,
+  'gift': Gift,
+  'repair': Wrench,
+  'work': Briefcase,
+  'love': Heart,
+  'travel': Plane,
+  'other': LayoutGrid,
+  'help-circle': HelpCircle,
+  'project_daily': LayoutGrid,
+  'project_travel': Plane,
+  'project_house': Home,
+  'project_private': User,
+  'car': Bus,
+  
+  // Avatars (New Premium Set)
+  'user': User,
+  'zap': Zap,
+  'coffee': Coffee,
+  'star': Star,
+  'crown': Crown,
+  'ghost': Ghost,
+  'smile': Smile,
+  'flower': Flower,
+  'music': Music,
+  'sun': Sun,
+  'moon': Moon,
+  'anchor': Anchor,
+
+  // Legacy Compatibility (舊動物頭像映射 - 防止舊資料破圖)
+  'cat': Cat,      
+  'dog': Dog,      
+  'rabbit': Rabbit,
+  'bear': User,    
+  'fox': Ghost,    
+  'panda': User,   
 };
 
-export const calculateTwdValue = (amount, currency, rates) => {
-    if (currency === 'TWD') return amount;
-    const rate = rates?.[currency] || 1; 
-    return amount * rate;
+export const getIconComponent = (iconName) => {
+  return ICON_MAP[iconName] || HelpCircle;
 };
+
+// [Refactor] 改用 Lucide 渲染頭像
+export const renderAvatar = (avatarName, className = "w-10 h-10") => {
+  // 若傳入的是網址 (Google Login)，直接顯示圖片
+  if (avatarName && typeof avatarName === 'string' && avatarName.includes('http')) {
+      return <img src={avatarName} className={`${className} rounded-full object-cover border border-gray-200`} alt="avatar" />;
+  }
+
+  // 否則使用 Lucide Icon
+  const Icon = ICON_MAP[avatarName] || User;
+  
+  return (
+    <div className={`${className} flex items-center justify-center bg-gray-100 rounded-full text-gray-600 border border-gray-200`}>
+      {/* 根據容器大小動態調整 Icon 尺寸，預設佔 60% */}
+      <Icon className="w-[60%] h-[60%]" strokeWidth={2} />
+    </div>
+  );
+};
+
+// --- Formatters ---
 
 export const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
-export const getIconComponent = (iconName) => {
-  const Component = ICON_MAP[iconName];
-  return Component || ICON_MAP['default'];
+export const formatCurrency = (amount, currency = 'TWD', privacyMode = false) => {
+    if (privacyMode) return '****';
+    
+    return new Intl.NumberFormat('zh-TW', {
+        style: 'currency',
+        currency: currency,
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+    }).format(amount);
 };
+
+export const calculateTwdValue = (amount, currency, rates) => {
+    if (!amount) return 0;
+    if (currency === 'TWD') return parseFloat(amount);
+    
+    const rate = rates?.[currency] || 1;
+    return parseFloat(amount) * rate;
+};
+
+// --- AI / Gemini Functions (Restored) ---
 
 export const callGemini = async (prompt, imageBase64 = null) => {
   if (!GEMINI_API_KEY) {
       console.error("Gemini API Key is missing! Please check your .env file or Vercel settings.");
-      alert("系統錯誤：缺少 AI 金鑰，請聯繫管理員或檢查環境變數設定。");
+      // 移除 alert，避免在非互動時阻斷流程，改用 console 警告
+      console.warn("系統錯誤：缺少 AI 金鑰，請聯繫管理員或檢查環境變數設定。");
       return null;
   }
 
@@ -62,26 +152,6 @@ export const callGemini = async (prompt, imageBase64 = null) => {
   }
 };
 
-export const renderAvatar = (avatarKeyOrUrl, sizeClass = "w-12 h-12") => {
-    if (avatarKeyOrUrl && CHARACTERS[avatarKeyOrUrl]) {
-        const Icon = getIconComponent(CHARACTERS[avatarKeyOrUrl].icon);
-        return (
-            <div className={`${sizeClass} rounded-full bg-gray-100 flex items-center justify-center text-gray-600 border border-gray-200`}>
-                <Icon size={20} />
-            </div>
-        );
-    }
-    if (avatarKeyOrUrl && typeof avatarKeyOrUrl === 'string' && avatarKeyOrUrl.includes('http')) {
-        return <img src={avatarKeyOrUrl} className={`${sizeClass} rounded-full object-cover border border-gray-200`} alt="avatar" />;
-    }
-    return (
-        <div className={`${sizeClass} rounded-full bg-gray-100 flex items-center justify-center text-gray-400 border border-gray-200`}>
-            <User size={20} />
-        </div>
-    );
-};
-
-// [New Feature] Phase 1: AI Receipt Parser
 export const parseReceiptWithGemini = async (imageBase64) => {
     const prompt = `你是一個專業的收據識別助手。請分析這張發票或收據圖片，並提取所有「收費項目」。
   
