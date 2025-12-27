@@ -1,5 +1,5 @@
 // src/contexts/LedgerContext.jsx
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   doc, 
   onSnapshot, 
@@ -20,6 +20,7 @@ export const useLedger = () => useContext(LedgerContext);
 export const LedgerProvider = ({ children }) => {
   const { user } = useAuth();
   
+  // Cache check to avoid flickering
   const [ledgerCode, setLedgerCode] = useState(() => {
       return localStorage.getItem('sweet_ledger_code') || '';
   });
@@ -33,7 +34,6 @@ export const LedgerProvider = ({ children }) => {
           const cached = localStorage.getItem(cacheKey);
           if (cached) {
               const parsed = JSON.parse(cached);
-              // Simple validity check
               if (parsed && Array.isArray(parsed.transactions || [])) {
                   return parsed;
               }
@@ -43,32 +43,28 @@ export const LedgerProvider = ({ children }) => {
   });
 
   const [isLedgerInitializing, setIsLedgerInitializing] = useState(!ledgerData);
+  const isRepairingRef = useRef(false); // [Perf] 防止修復邏輯重入
 
-  
-useEffect(() => {
-    // [新增] 阻斷崩潰的關鍵檢查
+  // 1. LocalStorage Sync
+  useEffect(() => {
     if (!db) {
-        console.error("🔥 Firebase DB not initialized. Check Environment Variables.");
+        console.error("🔥 Firebase DB not initialized.");
         setIsLedgerInitializing(false);
         return; 
     }
-
-    if (!ledgerCode) {
-      // ... 原有代碼
+    if (ledgerCode) {
         localStorage.setItem('sweet_ledger_code', ledgerCode);
     } else {
         localStorage.removeItem('sweet_ledger_code');
     }
   }, [ledgerCode]);
 
+  // 2. Firebase Listener
   useEffect(() => {
-    // [Safety] 如果 Firebase db 初始化失敗，這裡必須停止，否則 doc() 會讓 App 崩潰
     if (!db) {
-        console.error("🔥 Firebase DB not initialized. Check your Vercel Environment Variables.");
         setIsLedgerInitializing(false);
         return;
     }
-
     if (!ledgerCode) {
       if (!localStorage.getItem('sweet_ledger_code')) {
           setLedgerData(null);
@@ -76,28 +72,40 @@ useEffect(() => {
       }
       return;
     }
+
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
+        // [Perf] 只有當資料真的變動（字串化比對）才寫入 Cache 與 State，避免無效渲染
+        // 注意：這裡簡單比對，若效能仍差可考慮 deepEqual 或省略
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
-      } else { console.warn("Ledger not found (remote)"); }
+      } else { 
+          console.warn("Ledger not found (remote)"); 
+      }
       setIsLedgerInitializing(false);
-    }, (error) => { console.error("Snapshot error:", error); setIsLedgerInitializing(false); });
+    }, (error) => { 
+        console.error("Snapshot error:", error); 
+        setIsLedgerInitializing(false); 
+    });
 
     return () => unsubscribe();
   }, [ledgerCode]);
 
-  // Auto-Repair Logic
+  // 3. Auto-Repair Logic (Optimized)
   useEffect(() => {
-    if (!ledgerCode || !ledgerData || !user || !db) return; // Added !db check
+    if (!ledgerCode || !ledgerData || !user || !db) return;
+    if (isRepairingRef.current) return;
+
     const repairData = async () => {
+        isRepairingRef.current = true;
         let needsRepair = false;
         let updates = {};
 
+        // User Check
         if (!ledgerData.users || Object.keys(ledgerData.users).length === 0) {
             needsRepair = true;
             updates.users = {
@@ -118,12 +126,12 @@ useEffect(() => {
              };
         }
 
+        // Transaction Clean Check (O(N) operation - be careful)
         if (ledgerData.transactions && ledgerData.transactions.length > 0) {
             const cleanTransactions = ledgerData.transactions.map(tx => {
                 let isDirty = false;
                 let newTx = { ...tx };
                 
-                // [Fix] Ensure Date exists
                 if (!newTx.date) {
                     newTx.date = new Date().toISOString();
                     isDirty = true;
@@ -148,6 +156,7 @@ useEffect(() => {
                 return isDirty ? newTx : tx;
             });
 
+            // Deep compare strictly to avoid loops
             if (JSON.stringify(cleanTransactions) !== JSON.stringify(ledgerData.transactions)) {
                 needsRepair = true;
                 updates.transactions = cleanTransactions;
@@ -158,17 +167,23 @@ useEffect(() => {
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
                 await updateDoc(docRef, updates);
-                console.log("✅ 自動修復完成。");
+                console.log("✅ 自動修復完成 (Data Repaired).");
             } catch (e) { console.error("❌ 自動修復失敗:", e); }
         }
+        
+        // Release lock after a delay to allow Firebase to sync back
+        setTimeout(() => { isRepairingRef.current = false; }, 3000);
     };
+
+    // Debounce: wait 2s of inactivity before checking repairs
     const timer = setTimeout(repairData, 2000);
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode, user]);
 
 
+  // 4. Subscription Logic (Kept as is, relatively cheap)
   useEffect(() => {
-    if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return; // Added !db check
+    if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return;
     const todayStr = new Date().toISOString().slice(0, 10);
     const lastCheckKey = `last_subs_check_${ledgerCode}`;
     const lastCheckDate = localStorage.getItem(lastCheckKey);
@@ -230,7 +245,9 @@ useEffect(() => {
   }, [ledgerData, ledgerCode]);
 
 
-  const checkUserBinding = async (uid) => {
+  // --- Actions (Memoized) ---
+  
+  const checkUserBinding = useCallback(async (uid) => {
       if (!db) return null;
       try {
           const userDocRef = doc(db, 'users', uid); 
@@ -241,9 +258,9 @@ useEffect(() => {
           }
       } catch (e) { console.error("Check binding failed:", e); }
       return null;
-  };
+  }, []);
 
-  const createLedger = async (currentUser) => {
+  const createLedger = useCallback(async (currentUser) => {
     if (!currentUser) throw new Error("請先登入");
     if (!db) throw new Error("資料庫未連線");
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -262,9 +279,9 @@ useEffect(() => {
     localStorage.setItem('sweet_ledger_code', code);
     setLedgerCode(code);
     return code;
-  };
+  }, []);
 
-  const joinLedger = async (code, currentUser) => {
+  const joinLedger = useCallback(async (code, currentUser) => {
     if (!currentUser) throw new Error("請先登入");
     if (!db) throw new Error("資料庫未連線");
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code);
@@ -287,18 +304,18 @@ useEffect(() => {
       setLedgerCode(code);
       return true;
     } else { throw new Error("找不到這個帳本代碼！"); }
-  };
+  }, []);
   
-  const disconnectLedger = () => {
+  const disconnectLedger = useCallback(() => {
       setLedgerCode('');
       setLedgerData(null);
       localStorage.removeItem('sweet_ledger_code');
       Object.keys(localStorage).forEach(key => {
           if (key.startsWith('sweet_ledger_data_')) localStorage.removeItem(key);
       });
-  };
+  }, []);
 
-  const addTransaction = async (payload) => {
+  const addTransaction = useCallback(async (payload) => {
     if (!ledgerCode || !user || !db) throw new Error("無效的帳本狀態");
     
     const { 
@@ -314,7 +331,6 @@ useEffect(() => {
     if (isNaN(cleanAmount)) throw new Error("金額無效");
 
     let cleanCustomSplit = null;
-    
     if ((splitType === 'custom' || splitType === 'multi_payer') && customSplit) {
         cleanCustomSplit = {};
         Object.keys(customSplit).forEach(uid => {
@@ -363,9 +379,9 @@ useEffect(() => {
           transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 
       });
     }
-  };
+  }, [ledgerCode, user]);
 
-  const updateTransaction = async (updatedTx) => {
+  const updateTransaction = useCallback(async (updatedTx) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       
@@ -378,26 +394,26 @@ useEffect(() => {
           });
           cleanTx.customSplit = cleanSplit;
       }
-
+      // Note: We use the *latest* ledgerData from the state to map
       const updatedTxs = ledgerData.transactions.map(tx => tx.id === cleanTx.id ? cleanTx : tx);
       await updateDoc(docRef, { transactions: updatedTxs });
-  };
+  }, [ledgerCode, ledgerData]);
 
-  const deleteTransaction = async (txId) => {
+  const deleteTransaction = useCallback(async (txId) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== txId);
       await updateDoc(docRef, { transactions: updatedTxs });
-  };
+  }, [ledgerCode, ledgerData]);
   
-  const deleteSubscription = async (subId) => {
+  const deleteSubscription = useCallback(async (subId) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.id !== subId);
       await updateDoc(docRef, { subscriptions: newSubscriptions });
-  };
+  }, [ledgerCode, ledgerData]);
 
-  const settleUp = async ({ amount, payerId, payeeName, projectId }) => {
+  const settleUp = useCallback(async ({ amount, payerId, payeeName, projectId }) => {
       if (!ledgerCode || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       const settlementCategory = { id: 'settlement', name: '還款結清', icon: 'settlement', color: 'bg-emerald-100 text-emerald-600', hex: '#059669' };
@@ -416,9 +432,10 @@ useEffect(() => {
             isSettlement: true
         }) 
     });
-  };
+  }, [ledgerCode]);
 
-  const saveProject = async (projectData) => {
+  // Project Actions
+  const saveProject = useCallback(async (projectData) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       let newProjects = [...(ledgerData.projects || [])];
@@ -429,9 +446,9 @@ useEffect(() => {
           newProjects.push({ ...projectWithRates, id: generateId() });
       }
       await updateDoc(docRef, { projects: newProjects });
-  };
+  }, [ledgerCode, ledgerData]);
 
-  const deleteProject = async (projectId) => {
+  const deleteProject = useCallback(async (projectId) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
@@ -442,15 +459,15 @@ useEffect(() => {
           transactions: newTransactions,
           subscriptions: newSubscriptions
       });
-  };
+  }, [ledgerCode, ledgerData]);
 
-  const reorderProjects = async (newProjects) => {
+  const reorderProjects = useCallback(async (newProjects) => {
       if (!ledgerCode || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       await updateDoc(docRef, { projects: newProjects });
-  };
+  }, [ledgerCode]);
 
-  const updateProjectRates = async (projectId, currency, val) => {
+  const updateProjectRates = useCallback(async (projectId, currency, val) => {
     if (!ledgerCode || !ledgerData || !db) return;
     const numVal = parseFloat(val);
     if (!numVal || numVal <= 0) return;
@@ -460,9 +477,10 @@ useEffect(() => {
         return p;
     });
     await updateDoc(docRef, { projects: newProjects });
-  };
+  }, [ledgerCode, ledgerData]);
 
-  const saveCategory = async (categoryData) => {
+  // Category Actions
+  const saveCategory = useCallback(async (categoryData) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       let newCategories = [...(ledgerData.customCategories || DEFAULT_CATEGORIES)];
@@ -475,34 +493,35 @@ useEffect(() => {
           return;
       }
       await updateDoc(docRef, { customCategories: newCategories });
-  };
+  }, [ledgerCode, ledgerData]);
 
-  const deleteCategory = async (catId) => {
+  const deleteCategory = useCallback(async (catId) => {
      if (!ledgerCode || !ledgerData || !db) return;
      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
      const newCategories = (ledgerData.customCategories || DEFAULT_CATEGORIES).filter(c => c.id !== catId);
      await updateDoc(docRef, { customCategories: newCategories });
-  };
+  }, [ledgerCode, ledgerData]);
 
-  const reorderCategories = async (newCategories) => {
+  const reorderCategories = useCallback(async (newCategories) => {
     if (!ledgerCode || !db) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { customCategories: newCategories });
-  };
+  }, [ledgerCode]);
 
-  const updateUserSetting = async (field, value) => {
+  // User Settings Actions
+  const updateUserSetting = useCallback(async (field, value) => {
     if (!ledgerCode || !user || !db) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { [`users.${user.uid}.${field}`]: value });
-  };
+  }, [ledgerCode, user]);
 
-  const resetAccount = async () => {
+  const resetAccount = useCallback(async () => {
     if (!ledgerCode || !db) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { transactions: [], subscriptions: [] });
-  };
+  }, [ledgerCode]);
 
-  const fixIdentity = async () => {
+  const fixIdentity = useCallback(async () => {
     if (!ledgerCode || !ledgerData || !user || !db) return;
     const zombieHostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host' && uid !== user.uid);
     if (!zombieHostId) return; 
@@ -524,14 +543,57 @@ useEffect(() => {
         return newTx;
     });
     await updateDoc(docRef, { users: newUsers, transactions: newTransactions });
-  };
+  }, [ledgerCode, ledgerData, user]);
 
-  const value = {
-    ledgerCode, ledgerData, isLedgerInitializing, createLedger, joinLedger, disconnectLedger, setLedgerCode, checkUserBinding,
-    addTransaction, updateTransaction, deleteTransaction, deleteSubscription, settleUp,
-    saveProject, deleteProject, reorderProjects, updateProjectRates,
-    saveCategory, deleteCategory, reorderCategories, updateUserSetting, resetAccount, fixIdentity
-  };
+  // Construct Value with useMemo to prevent downstream re-renders
+  const value = useMemo(() => ({
+    ledgerCode, 
+    ledgerData, 
+    isLedgerInitializing, 
+    createLedger, 
+    joinLedger, 
+    disconnectLedger, 
+    setLedgerCode, 
+    checkUserBinding,
+    addTransaction, 
+    updateTransaction, 
+    deleteTransaction, 
+    deleteSubscription, 
+    settleUp,
+    saveProject, 
+    deleteProject, 
+    reorderProjects, 
+    updateProjectRates,
+    saveCategory, 
+    deleteCategory, 
+    reorderCategories, 
+    updateUserSetting, 
+    resetAccount, 
+    fixIdentity
+  }), [
+    ledgerCode, 
+    ledgerData, 
+    isLedgerInitializing, 
+    createLedger, 
+    joinLedger, 
+    disconnectLedger, 
+    checkUserBinding,
+    addTransaction, 
+    updateTransaction, 
+    deleteTransaction, 
+    deleteSubscription, 
+    settleUp,
+    saveProject, 
+    deleteProject, 
+    reorderProjects, 
+    updateProjectRates,
+    saveCategory, 
+    deleteCategory, 
+    reorderCategories, 
+    updateUserSetting, 
+    resetAccount, 
+    fixIdentity
+  ]);
 
   return (
     <LedgerContext.Provider value={value}>
