@@ -1,6 +1,6 @@
 // src/components/add-expense/CategorySelector.jsx
 import React from 'react';
-import { getIconComponent } from '../../utils/helpers'; // 注意路徑修正
+import { getIconComponent, getCategoryStyle } from '../../utils/helpers';
 
 export default function CategorySelector({ categories, selectedCategory, onSelect }) {
   return (
@@ -17,13 +17,21 @@ export default function CategorySelector({ categories, selectedCategory, onSelec
                 {categories.map(cat => {
                     const Icon = getIconComponent(cat.icon);
                     const isSelected = selectedCategory?.id === cat.id;
+                    
+                    // [Key Logic] 使用 Input Mode 取得樣式
+                    // input 模式下：
+                    // containerClass -> bg-gray-50 border-gray-100 (未選中)
+                    // activeClass -> bg-rose-500 text-white (選中)
+                    const style = getCategoryStyle(cat, 'input');
+                    
                     return (
                         <button key={cat.id} onClick={() => onSelect(cat)} className="flex flex-col items-center gap-2 group p-1">
                             <div className={`
-                                w-14 h-14 rounded-3xl flex items-center justify-center transition-all shrink-0 
-                                ${isSelected ? 'bg-rose-500 text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-500 border border-gray-100 group-active:scale-95'}
+                                w-14 h-14 rounded-3xl flex items-center justify-center transition-all shrink-0 border
+                                ${isSelected ? style.activeClass : style.containerClass}
+                                ${isSelected ? 'scale-110 shadow-lg' : 'group-active:scale-95'}
                             `}>
-                                <Icon size={24} />
+                                <Icon size={24} className={isSelected ? 'text-white' : style.iconClass} />
                             </div>
                             <span className={`text-xs font-bold ${isSelected ? 'text-gray-900' : 'text-gray-400'}`}>
                                 {cat.name}

@@ -5,8 +5,8 @@ import {
   Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe,
   ShieldAlert, FileText
 } from 'lucide-react';
-import { getIconComponent, renderAvatar } from '../utils/helpers';
-// [Critical] 引入 CHARACTERS
+// [Updated] 引入 getCategoryStyle
+import { getIconComponent, renderAvatar, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS } from '../utils/constants';
 
 export default function SettingsView({ 
@@ -35,7 +35,6 @@ export default function SettingsView({
   currentProjectId,
   handleReorderCategories 
 }) {
-  // 強制重置捲動位置
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
@@ -45,7 +44,6 @@ export default function SettingsView({
   const [activeSortId, setActiveSortId] = useState(null); 
   const [copied, setCopied] = useState(false);
   
-  // Local Rates State
   const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
   const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
   const serverRates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
@@ -109,7 +107,7 @@ export default function SettingsView({
   };
 
   const openNewCategoryModal = () => {
-      setEditingCategoryData({ id: '', name: '', icon: 'food', color: COLORS[0].class, hex: COLORS[0].hex });
+      setEditingCategoryData({ id: '', name: '', icon: 'food', colorId: 'slate' });
       setIsEditingCategory(true);
   };
 
@@ -128,19 +126,16 @@ export default function SettingsView({
 
       <div className="space-y-6">
 
-        {/* --- Island A: Identity (Clean & Personal) --- */}
+        {/* --- Island A: Identity --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
              {/* 1. Personal Profile */}
              <div className="p-4 flex items-center gap-4">
                 <button onClick={() => setIsAvatarModalOpen(true)} className="relative group shrink-0">
-                    {/* 使用 renderAvatar 渲染 Lucide Icon */}
                     {renderAvatar(ledgerData?.users?.[user.uid]?.avatar, "w-16 h-16")}
-                    
                     <div className="absolute bottom-0 right-0 bg-gray-900 text-white p-1.5 rounded-full border-2 border-white shadow-sm">
                         <Pencil size={10} />
                     </div>
                 </button>
-                
                 <div className="flex-1 min-w-0">
                     <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">顯示名稱</label>
                     <div className="flex items-center gap-2">
@@ -156,10 +151,7 @@ export default function SettingsView({
              </div>
 
              {/* 2. Ledger Code */}
-             <div 
-                onClick={handleCopyCode}
-                className="border-t border-gray-50 p-4 active:bg-gray-50 transition-colors cursor-pointer flex justify-between items-center group"
-             >
+             <div onClick={handleCopyCode} className="border-t border-gray-50 p-4 active:bg-gray-50 transition-colors cursor-pointer flex justify-between items-center group">
                 <div>
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">帳本代碼</p>
                     <p className="text-base font-mono font-medium text-gray-600 tracking-widest group-hover:text-rose-500 transition-colors">{ledgerCode}</p>
@@ -169,11 +161,9 @@ export default function SettingsView({
                 </div>
              </div>
 
-             {/* 3. Members List (Simplified Colors) */}
+             {/* 3. Members List */}
              <div className="border-t border-gray-50 p-4 bg-gray-50/50">
-                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                    <User size={12}/> 帳本成員
-                </h4>
+                <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><User size={12}/> 帳本成員</h4>
                 <div className="space-y-3">
                     {Object.keys(ledgerData.users || {}).map(uid => {
                         const u = ledgerData.users[uid];
@@ -198,7 +188,7 @@ export default function SettingsView({
              </div>
         </section>
 
-        {/* --- Island B: Preferences (Clean Inputs) --- */}
+        {/* --- Island B: Preferences --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             {/* Rates */}
             <div className="p-4 border-b border-gray-50">
@@ -208,22 +198,14 @@ export default function SettingsView({
                         <div key={curr} className="flex-1 min-w-[120px] flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-transparent focus-within:border-rose-200 focus-within:bg-white transition-colors">
                             <span className="text-sm font-bold text-gray-500">{curr}</span>
                             <div className="flex items-center gap-1">
-                                <input 
-                                    type="number" 
-                                    value={localRates[curr]} 
-                                    onChange={(e) => handleRateChange(curr, e.target.value)}
-                                    onBlur={() => handleRateBlur(curr)}
-                                    className="w-16 bg-transparent text-sm font-bold text-gray-900 outline-none text-right"
-                                    placeholder="1.0"
-                                    step="0.01"
-                                />
+                                <input type="number" value={localRates[curr]} onChange={(e) => handleRateChange(curr, e.target.value)} onBlur={() => handleRateBlur(curr)} className="w-16 bg-transparent text-sm font-bold text-gray-900 outline-none text-right" placeholder="1.0" step="0.01"/>
                             </div>
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* Category Grid */}
+            {/* Category Grid (Input Mode: Minimalist) */}
             <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2"><LayoutGrid size={16}/> 分類管理</h2>
@@ -239,7 +221,10 @@ export default function SettingsView({
                     {categories.map((cat) => {
                         const Icon = getIconComponent(cat.icon);
                         const isSelected = activeSortId === cat.id;
+                        // [Updated] 使用 Input Mode
+                        const style = getCategoryStyle(cat, 'input'); 
                         const wiggleStyle = isReorderMode ? { animation: `wiggle 0.3s ease-in-out infinite ${Math.random() * 0.5}s` } : {};
+                        
                         return (
                             <button 
                                 key={cat.id} 
@@ -248,10 +233,13 @@ export default function SettingsView({
                                 className={`flex flex-col items-center gap-1 group relative transition-all duration-300 ${isSelected ? 'scale-110 z-10' : 'active:scale-95'}`}
                             >
                                 <div 
-                                    className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-sm ${isSelected ? 'ring-2 ring-rose-500 shadow-lg' : ''}`}
-                                    style={{ backgroundColor: isSelected ? '#fff' : cat.hex, color: isSelected ? cat.hex : '#fff' }}
+                                    className={`
+                                        w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-sm border
+                                        ${isSelected ? style.activeClass : style.containerClass}
+                                        ${isSelected ? 'shadow-lg' : ''}
+                                    `}
                                 >
-                                    <Icon size={20} />
+                                    <Icon size={20} className={isSelected ? 'text-white' : style.iconClass} />
                                 </div>
                                 <span className="text-[10px] font-medium text-gray-500 truncate w-full text-center">{cat.name}</span>
                             </button>
@@ -269,9 +257,8 @@ export default function SettingsView({
             </div>
         </section>
 
-        {/* --- Island C: System (Monochrome Apple Style) --- */}
+        {/* --- Island C: System --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
-             {/* Reset */}
              <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleResetAccount}>
                  <div className="flex items-center gap-3">
                      <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><RotateCcw size={18}/></div>
@@ -279,8 +266,6 @@ export default function SettingsView({
                  </div>
                  <ChevronRight size={16} className="text-gray-300"/>
              </div>
-             
-             {/* Export */}
              <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleExport}>
                  <div className="flex items-center gap-3">
                      <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><FileText size={18}/></div>
@@ -288,8 +273,6 @@ export default function SettingsView({
                  </div>
                  <ChevronRight size={16} className="text-gray-300"/>
              </div>
-
-             {/* Logout */}
              <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleLogout}>
                  <div className="flex items-center gap-3">
                      <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><LogOut size={18}/></div>
@@ -302,18 +285,16 @@ export default function SettingsView({
              <button onClick={handleFixIdentity} className="text-[10px] text-gray-300 hover:text-gray-400 flex items-center gap-1 mx-auto">
                 <ShieldAlert size={10}/> 修復帳號權限 (Debug)
              </button>
-             <p className="text-[10px] text-gray-300 mt-2 font-mono">SweetLedger v1.6.1 (Animal Party)</p>
+             <p className="text-[10px] text-gray-300 mt-2 font-mono">SweetLedger v1.6.2 (Input Mode)</p>
         </div>
       </div>
 
       {/* --- Modals --- */}
-      {/* Avatar Modal (Dynamic Characters) */}
+      {/* Avatar Modal */}
       {isAvatarModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsAvatarModalOpen(false)}>
             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
                 <h3 className="text-center font-bold text-lg mb-6 text-gray-800">選擇你的頭像</h3>
-                
-                {/* Avatar Grid: 直接從 CHARACTERS 產生列表 */}
                 <div className="grid grid-cols-3 gap-4 mb-6">
                     {Object.keys(CHARACTERS).map(key => (
                         <button 
@@ -325,13 +306,11 @@ export default function SettingsView({
                                     : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100 hover:text-gray-600'
                                 }`}
                         >
-                            {/* Force Transparent Bg for Grid */}
                             {renderAvatar(key, "w-10 h-10 !bg-transparent !text-current !rounded-none !border-0")}
                             <span className="text-[10px] font-bold">{CHARACTERS[key].name}</span>
                         </button>
                     ))}
                 </div>
-                
                 <div className="flex gap-3">
                     <button onClick={() => setIsAvatarModalOpen(false)} className="flex-1 py-3 font-bold text-gray-500 bg-gray-100 rounded-xl">取消</button>
                     <button onClick={confirmAvatarUpdate} className="flex-1 py-3 font-bold text-white bg-gray-900 rounded-xl shadow-lg shadow-gray-200">確認</button>
@@ -340,7 +319,7 @@ export default function SettingsView({
         </div>
       )}
 
-      {/* Category Editor Modal (保持不變) */}
+      {/* Category Editor Modal (Display Mode: Color Picking) */}
       {isEditingCategory && (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:px-4">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsEditingCategory(false)} />
@@ -352,12 +331,18 @@ export default function SettingsView({
                 </div>
 
                 <div className="p-6 space-y-6 overflow-y-auto">
-                    {/* Preview */}
+                    {/* Preview (Display Mode for Confirmation) */}
                     <div className="flex justify-center">
                         <div className="flex flex-col items-center gap-2">
-                            <div className="w-20 h-20 rounded-3xl flex items-center justify-center text-white shadow-xl transition-colors" style={{ backgroundColor: editingCategoryData.hex }}>
-                                {React.createElement(getIconComponent(editingCategoryData.icon), { size: 36 })}
-                            </div>
+                            {/* 這裡我們預覽「Display Mode」的樣子，讓使用者知道選了什麼顏色 */}
+                            {(() => {
+                                const style = getCategoryStyle(editingCategoryData, 'display');
+                                return (
+                                    <div className={`w-20 h-20 rounded-3xl flex items-center justify-center shadow-xl transition-colors ${style.containerClass}`}>
+                                        {React.createElement(getIconComponent(editingCategoryData.icon), { size: 36, className: style.iconClass })}
+                                    </div>
+                                );
+                            })()}
                             <span className="font-bold text-gray-800">{editingCategoryData.name || '分類名稱'}</span>
                         </div>
                     </div>
@@ -374,15 +359,25 @@ export default function SettingsView({
                         />
                     </div>
 
-                    {/* Color Picker */}
+                    {/* Color Picker (Updated to use COLORS from constants which maps PALETTE) */}
                     <div>
                         <label className="block text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-2"><Palette size={12}/> 顏色</label>
                         <div className="flex gap-3 overflow-x-auto pb-2 p-1 no-scrollbar">
                             {COLORS.map(c => (
                                 <button 
                                     key={c.hex} 
-                                    onClick={() => setEditingCategoryData({...editingCategoryData, color: c.class, hex: c.hex})} 
-                                    className={`w-10 h-10 rounded-full shrink-0 transition-transform ${editingCategoryData.hex === c.hex ? 'ring-4 ring-offset-2 ring-gray-200 scale-110' : 'hover:scale-105'}`}
+                                    // [Update] 儲存 colorId 而非 hex
+                                    // 我們需要反向查找 PALETTE 的 Key，或是 COLORS 應該包含 id
+                                    // 為了簡化，我們假設 COLORS 順序對應，或者直接傳遞 style
+                                    onClick={() => {
+                                        // 找出對應的 PALETTE key (如果 COLORS 是 array of objects generated from PALETTE)
+                                        // 簡單起見，我們存入 colorId (需確保 COLORS 有 name/id)
+                                        // 先前 constants.js 中 COLORS = Object.values(PALETTE)...
+                                        // PALETTE 物件有 name, id, hex. 所以 c.id 存在。
+                                        const colorId = c.id || Object.keys(COLORS).find(k => COLORS[k].hex === c.hex) || 'slate';
+                                        setEditingCategoryData({...editingCategoryData, colorId: c.name?.toLowerCase() || 'slate' }); 
+                                    }} 
+                                    className={`w-10 h-10 rounded-full shrink-0 transition-transform ${editingCategoryData.colorId === (c.name?.toLowerCase()) ? 'ring-4 ring-offset-2 ring-gray-200 scale-110' : 'hover:scale-105'}`}
                                     style={{ backgroundColor: c.hex }}
                                 />
                             ))}
