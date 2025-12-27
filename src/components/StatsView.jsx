@@ -1,7 +1,8 @@
 // src/components/StatsView.jsx
 import React, { useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Coins } from 'lucide-react';
-import { formatCurrency, getIconComponent, calculateTwdValue } from '../utils/helpers';
+// [Updated] 引入 getCategoryStyle
+import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
 export default function StatsView({ ledgerData, currentProjectId, statsMonth, setStatsMonth, privacyMode, setEditingTx, setIsEditTxModalOpen }) {
@@ -18,11 +19,10 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const safeUsers = ledgerData.users || {};
         const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
 
-        // [Fix] Hydrate Category
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined)
             .map(t => {
-                let displayCategory = t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' };
+                let displayCategory = t.category || { name: '未分類', icon: 'help-circle' };
                 if (t.category?.id) {
                     const latestCat = currentCategories.find(c => c.id === t.category.id);
                     if (latestCat) displayCategory = latestCat;
@@ -37,6 +37,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const hId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'host');
         const gId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'guest');
 
+        // ... (User Paid Calculation Logic Omitted for brevity, kept same) ...
         const calculateTotalPaid = (uid) => {
             return txs.reduce((sum, tx) => {
                 if (tx.isSettlement) return sum; 
@@ -52,12 +53,12 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                 return sum + (tx.payer === uid ? amountTwd : 0);
             }, 0);
         };
-
         const hTotal = calculateTotalPaid(hId);
         const gTotal = calculateTotalPaid(gId);
         const combinedTotal = hTotal + gTotal;
         const hRatio = combinedTotal > 0 ? (hTotal / combinedTotal) * 100 : 50;
         const gRatio = combinedTotal > 0 ? (gTotal / combinedTotal) * 100 : 50;
+        // ...
 
         const statsMap = {};
         let totalExp = 0;
@@ -73,8 +74,16 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
 
         const catStats = [];
         Object.entries(statsMap).forEach(([id, amt]) => { 
-            if (id === 'uncategorized') catStats.push({ id: 'uncategorized', name: '未分類', hex: '#999999', icon: 'Coins', total: amt });
-            else { const cat = currentCategories.find(c => c.id === id); if(cat) catStats.push({ ...cat, total: amt }); }
+            if (id === 'uncategorized') {
+                catStats.push({ id: 'uncategorized', name: '未分類', hex: '#999999', icon: 'Coins', total: amt });
+            } else { 
+                const cat = currentCategories.find(c => c.id === id); 
+                if(cat) {
+                    // [Critical Update] Resolve Hex for Charts
+                    const style = getCategoryStyle(cat, 'display');
+                    catStats.push({ ...cat, total: amt, hex: style.hex }); 
+                }
+            }
         });
         catStats.sort((a,b) => b.total - a.total);
 
@@ -93,13 +102,10 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const tags = [];
         const safeUsers = ledgerData.users || {};
         if (tx.isSettlement) { const payerName = safeUsers[tx.payer]?.name || '未知'; tags.push({ label: `${payerName} 轉帳`, color: 'gray' }); return tags; }
-
         if (tx.splitType === 'multi_payer') { tags.push({ label: '混合出資', color: 'blue' }); return tags; }
-
         const payerUser = safeUsers[tx.payer];
         const payerName = payerUser?.name || '未知';
         tags.push({ label: payerName, color: 'gray' });
-
         if (tx.splitType === 'custom') tags.push({ label: '自訂分攤', color: 'gray' });
         else if (tx.splitType === 'even') tags.push({ label: '平均分攤', color: 'gray' });
         else {
@@ -126,6 +132,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                 <button onClick={() => handleMonthChange(1)} className="p-1"><ChevronRight size={16}/></button>
             </div>
          </div>
+         {/* ... Contribution Chart Omitted for brevity ... */}
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
             <h3 className="text-gray-600 font-bold mb-4">消費貢獻度 (支付金額 - TWD)</h3>
             <div className="flex justify-between items-center mb-2 text-sm">
@@ -144,13 +151,18 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
             </div>
             <div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden"><div style={{ width: `${hostRatio}%` }} className="bg-blue-500 transition-all duration-1000"></div><div style={{ width: `${guestRatio}%` }} className="bg-pink-500 transition-all duration-1000"></div></div>
          </div>
+
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center">
             <h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比 (TWD)</h3>
             <div className="relative w-48 h-48 rounded-full mb-6" style={{ background: pieChartGradient }}><div className="absolute inset-4 bg-white rounded-full flex flex-col items-center justify-center"><span className="text-sm text-gray-400">總支出</span><span className="text-xl font-bold text-gray-800">{formatCurrency(totalExpense, 'TWD')}</span></div></div>
             <div className="w-full space-y-3">
                 {categoryStats.map(stat => (
                     <div key={stat.id} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.hex }}></div><span className="text-sm text-gray-600 font-medium">{stat.name}</span></div>
+                        <div className="flex items-center gap-2">
+                            {/* [Updated] Use hex from stat (which is now authoritative) */}
+                            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.hex }}></div>
+                            <span className="text-sm text-gray-600 font-medium">{stat.name}</span>
+                        </div>
                         <div className="text-sm"><span className="font-bold text-gray-800 mr-2">{formatCurrency(stat.total, 'TWD')}</span><span className="text-gray-400 text-xs">{Math.round((stat.total/totalExpense)*100)}%</span></div>
                     </div>
                 ))}
@@ -162,12 +174,16 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                 {sortedHistory.map((tx) => {
                     const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                     const tags = getSmartTags(tx);
+                    // [Updated] Apply Display Mode Style
+                    const style = getCategoryStyle(tx.category, 'display');
+
                     return (
                         <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-3 active:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 last:pb-0`}>
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                                 <div className="text-gray-400 text-xs w-8 text-center shrink-0">{new Date(tx.date).getDate()}日</div>
-                                <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0" style={{ backgroundColor: `${tx.category?.hex || '#eee'}33`, color: tx.category?.hex || '#999'}}>
-                                    <CatIcon size={16} />
+                                {/* [Updated] Container Style */}
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${style.containerClass}`}>
+                                    <CatIcon size={16} className={style.iconClass} />
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="font-medium text-gray-800 text-sm truncate">{tx.note || tx.category?.name || '未分類'}</p>

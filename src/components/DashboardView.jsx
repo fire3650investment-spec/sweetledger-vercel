@@ -1,7 +1,8 @@
 // src/components/DashboardView.jsx
 import React, { useMemo } from 'react';
 import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins } from 'lucide-react';
-import { formatCurrency, getIconComponent, calculateTwdValue } from '../utils/helpers';
+// [Updated] 引入 getCategoryStyle
+import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
 export default function DashboardView({
@@ -25,19 +26,17 @@ export default function DashboardView({
         const safeUsers = ledgerData.users || {};
         const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
 
-        // [Critical Fix] 資料清洗與防禦：防止因缺少 date 導致白屏
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => {
                 const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
-                let displayCategory = t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' };
+                let displayCategory = t.category || { name: '未分類', icon: 'help-circle' }; // Hex removed, let helper handle it
                 
                 if (t.category?.id) {
                     const latestCat = currentCategories.find(c => c.id === t.category.id);
                     if (latestCat) displayCategory = latestCat;
                 }
 
-                // 🔥 這裡是最重要的修復：如果 date 不存在，給一個預設值，防止 .startsWith 崩潰
                 const safeDate = t.date || new Date().toISOString();
 
                 return { ...t, amount: parseFloat(t.amount) || 0, type: safeType, category: displayCategory, date: safeDate };
@@ -46,7 +45,6 @@ export default function DashboardView({
         const pTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
         const currentMonthStr = new Date().toISOString().slice(0, 7);
         
-        // [Safe] 現在 t.date 保證存在，這裡不會再報錯
         const thisMonthTxs = pTxs.filter(t => t.date.startsWith(currentMonthStr));
         
         const grouped = {};
@@ -171,6 +169,8 @@ export default function DashboardView({
              {privacyMode ? <EyeOff size={16} className="text-gray-400"/> : <Eye size={16} className="text-rose-500"/>}
            </button>
         </div>
+        
+        {/* Settlement Card (Unchanged logic, just keeping structure) */}
         <div className={`rounded-3xl p-6 text-white shadow-lg shadow-rose-200 mb-8 relative overflow-hidden transition-colors ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-rose-500 to-pink-600'}`}>
             <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
             <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14}/> 總結算狀態 ({currentProjectName})</p>
@@ -186,6 +186,7 @@ export default function DashboardView({
                 </button>
             )}
         </div>
+
         <div className="space-y-6">
             {Object.entries(groupedTransactions).map(([date, txs]) => (
                 <div key={date}>
@@ -194,11 +195,16 @@ export default function DashboardView({
                         {txs.map((tx, idx) => { 
                             const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                             const tags = getSmartTags(tx);
+                            
+                            // [Updated] Apply Display Mode Style
+                            const style = getCategoryStyle(tx.category, 'display');
+
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
                                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0" style={{ backgroundColor: `${tx.category?.hex || '#eee'}33`, color: tx.category?.hex || '#999'}}>
-                                            <CatIcon size={20} />
+                                        {/* [Updated] Use containerClass instead of inline styles */}
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0 ${style.containerClass}`}>
+                                            <CatIcon size={20} className={style.iconClass} />
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <p className="font-medium text-gray-800 truncate text-sm">{tx.note || tx.category?.name}</p>

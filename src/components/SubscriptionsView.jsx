@@ -1,7 +1,8 @@
 // src/components/SubscriptionsView.jsx
 import React from 'react';
 import { X, Trash2, Calendar, RefreshCw, AlertCircle, ArrowLeft } from 'lucide-react';
-import { getIconComponent, formatCurrency } from '../utils/helpers';
+// [Updated]
+import { getIconComponent, formatCurrency, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
 export default function SubscriptionsView({
@@ -9,14 +10,13 @@ export default function SubscriptionsView({
   user,
   setView,
   handleDeleteSubscription,
-  onBack // [New] 支援上一頁路由
+  onBack 
 }) {
   if (!ledgerData) return null;
 
   const subscriptions = ledgerData.subscriptions || [];
   const sortedSubs = [...subscriptions].sort((a, b) => new Date(a.nextPaymentDate) - new Date(b.nextPaymentDate));
 
-  // [Logic Preserved] 舊版倒數日計算
   const getDaysUntil = (dateStr) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -31,7 +31,6 @@ export default function SubscriptionsView({
     return `${diffDays} 天後`;
   };
 
-  // [Logic Preserved] 週期顯示
   const getCycleLabel = (cycle, payDay) => {
     if (cycle === 'monthly') return `每月 ${payDay} 號`;
     if (cycle === 'weekly') return '每週';
@@ -40,7 +39,6 @@ export default function SubscriptionsView({
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] pb-6 relative animate-in fade-in">
-      {/* Header (Updated for consistency) */}
       <div className="px-4 mb-6 flex justify-between items-center">
         <div className="flex items-center gap-3">
             <button 
@@ -66,25 +64,22 @@ export default function SubscriptionsView({
            </div>
         ) : (
            sortedSubs.map((sub, idx) => {
-               // [Logic Preserved] Hydration & Fallback
                const categoryId = sub.category?.id || 'other';
                const category = (ledgerData.customCategories || DEFAULT_CATEGORIES).find(c => c.id === categoryId) || DEFAULT_CATEGORIES[0];
                const CatIcon = getIconComponent(category.icon);
                const project = ledgerData.projects?.find(p => p.id === sub.projectId);
                const isExpired = new Date(sub.nextPaymentDate) < new Date();
 
+               // [Updated] Get Style
+               const style = getCategoryStyle(category, 'display');
+
                return (
                    <div key={idx} className={`bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden transition-all ${isExpired ? 'ring-2 ring-rose-100' : ''}`}>
                        <div className="flex justify-between items-start mb-3">
                            <div className="flex items-center gap-3">
-                               <div 
-                                    className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm"
-                                    style={{ 
-                                        backgroundColor: category.hex, 
-                                        color: '#fff' 
-                                    }}
-                               >
-                                   <CatIcon size={24} />
+                               {/* [Updated] Use containerClass */}
+                               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm ${style.containerClass}`}>
+                                   <CatIcon size={24} className={style.iconClass} />
                                </div>
                                <div>
                                    <h3 className="font-bold text-gray-800 text-lg">{sub.name}</h3>
@@ -104,7 +99,6 @@ export default function SubscriptionsView({
                                {getDaysUntil(sub.nextPaymentDate)} ({new Date(sub.nextPaymentDate).toLocaleDateString()})
                            </div>
                            
-                           {/* [Optimistic UI] 直接觸發刪除 */}
                            <button 
                                onClick={(e) => {
                                    e.stopPropagation();
@@ -122,7 +116,6 @@ export default function SubscriptionsView({
            })
         )}
         
-        {/* [Logic Preserved] 說明區塊 */}
         <div className="bg-blue-50 p-4 rounded-2xl flex gap-3 items-start mt-6 border border-blue-100">
             <AlertCircle size={20} className="text-blue-500 flex-shrink-0 mt-0.5" />
             <div className="text-xs text-blue-700 leading-relaxed">
