@@ -1,11 +1,10 @@
 // src/components/ProjectsView.jsx
 import React from 'react';
 import { 
-  ArrowLeft, Plus, MoreVertical, Edit2, Trash2, 
-  Check, X, Briefcase, Globe 
+  ArrowLeft, Plus, Edit2, Trash2, 
+  Check, X, Globe
 } from 'lucide-react';
 import { getIconComponent } from '../utils/helpers';
-import { COLORS } from '../utils/constants';
 
 export default function ProjectsView({
   ledgerData,
@@ -17,8 +16,7 @@ export default function ProjectsView({
   editingProjectData,
   setEditingProjectData,
   handleSaveProject,
-  handleDeleteProject,
-  handleReorderProjects
+  handleDeleteProject
 }) {
   if (!ledgerData) return null;
   const projects = ledgerData.projects || [];
@@ -36,73 +34,75 @@ export default function ProjectsView({
       setIsEditingProject(true);
   };
 
-  // [Optimistic UI] 直接呼叫父層函式，不等待 Promise
   const onSaveWrapper = () => {
+      // 在存檔前確保匯率是數字 (簡單防禦)
+      if (editingProjectData.rates) {
+          editingProjectData.rates.JPY = parseFloat(editingProjectData.rates.JPY);
+          editingProjectData.rates.THB = parseFloat(editingProjectData.rates.THB);
+      }
       handleSaveProject(); 
-      // 注意：App.jsx 中的 handleSaveProject 已經包含 setIsEditingProject(false)
-      // 所以這裡不需要手動關閉，交由狀態流驅動即可
   };
 
   const onDeleteWrapper = (id) => {
       handleDeleteProject(id);
-      setIsEditingProject(false); // 確保視窗立即關閉
+      setIsEditingProject(false);
   };
 
   const onSelectProject = (id) => {
       setCurrentProjectId(id);
-      // 可選擇是否自動返回首頁，目前保持在專案頁讓使用者確認
   };
 
-  // --- Render Helpers ---
+  // --- Component: Project Card ---
   const ProjectCard = ({ project }) => {
       const isSelected = currentProjectId === project.id;
       const Icon = getIconComponent(project.icon || 'briefcase');
-      
-      // 匯率顯示邏輯
       const rates = project.rates || { JPY: 0.23, THB: 1 };
       
       return (
           <div 
             onClick={() => onSelectProject(project.id)}
-            className={`relative p-5 rounded-3xl border-2 transition-all active:scale-95 duration-200 cursor-pointer overflow-hidden group
+            className={`relative p-5 rounded-2xl transition-all duration-300 cursor-pointer overflow-hidden group border
                 ${isSelected 
-                    ? 'bg-gray-900 border-gray-900 text-white shadow-xl shadow-gray-200' 
-                    : 'bg-white border-gray-100 text-gray-600 hover:border-gray-200'
+                    ? 'bg-white border-rose-500 ring-4 ring-rose-100 shadow-xl z-10' 
+                    : 'bg-white border-gray-100 hover:border-gray-200 shadow-sm'
                 }`}
           >
-              <div className="flex justify-between items-start mb-4">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl
-                      ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+              <div className="flex justify-between items-start mb-3">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all duration-300
+                      ${isSelected ? 'bg-rose-500 text-white shadow-lg shadow-rose-200 rotate-3 scale-110' : 'bg-gray-50 text-gray-400'}`}>
                       <Icon size={24} />
                   </div>
                   
-                  {/* Edit Button */}
                   <button 
                     onClick={(e) => onEditClick(e, project)}
-                    className={`p-2 rounded-full transition-colors ${isSelected ? 'hover:bg-white/20 text-white/50 hover:text-white' : 'hover:bg-gray-100 text-gray-300 hover:text-gray-500'}`}
+                    className={`p-2 rounded-full transition-colors active:scale-95 ${isSelected ? 'text-rose-200 hover:text-rose-500 hover:bg-rose-50' : 'text-gray-300 hover:text-gray-500 hover:bg-gray-100'}`}
                   >
                       <Edit2 size={16} />
                   </button>
               </div>
 
               <div>
-                  <h3 className={`font-bold text-lg mb-1 ${isSelected ? 'text-white' : 'text-gray-800'}`}>{project.name}</h3>
-                  <div className={`flex items-center gap-2 text-xs font-bold ${isSelected ? 'text-white/60' : 'text-gray-400'}`}>
+                  <h3 className={`font-bold text-lg mb-2 transition-colors ${isSelected ? 'text-gray-900' : 'text-gray-700'}`}>{project.name}</h3>
+                  <div className="flex flex-wrap gap-2">
                       {project.id === 'daily' ? (
-                          <span>預設專案</span>
+                          <span className="bg-gray-100 text-gray-500 px-2 py-1 rounded-lg text-[10px] font-bold">預設專案</span>
                       ) : (
-                          <div className="flex gap-2">
-                              <span className="flex items-center gap-1"><Globe size={10}/> JPY {rates.JPY}</span>
-                              <span className="flex items-center gap-1"><Globe size={10}/> THB {rates.THB}</span>
-                          </div>
+                          <>
+                              <span className="bg-blue-50 text-blue-600 px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1">
+                                  <span className="opacity-50 text-xs">JPY</span> {rates.JPY}
+                              </span>
+                              <span className="bg-orange-50 text-orange-600 px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1">
+                                  <span className="opacity-50 text-xs">THB</span> {rates.THB}
+                              </span>
+                          </>
                       )}
                   </div>
               </div>
 
-              {/* Selection Indicator */}
+              {/* Selection Indicator (Animated) */}
               {isSelected && (
-                  <div className="absolute bottom-5 right-5 text-emerald-400">
-                      <Check size={24} strokeWidth={3} />
+                  <div className="absolute top-5 right-5 text-rose-500 animate-in fade-in zoom-in duration-300">
+                      <Check size={20} strokeWidth={3} />
                   </div>
               )}
           </div>
@@ -110,17 +110,18 @@ export default function ProjectsView({
   };
 
   return (
-    <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 min-h-screen bg-gray-50 animate-in fade-in">
+    <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 min-h-screen bg-gray-50/50 animate-in fade-in">
       
-      {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      {/* Header - Aligned with StatsView */}
+      <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-              <button onClick={onBack} className="p-2 bg-white rounded-full text-gray-500 shadow-sm active:scale-90 transition-transform">
-                  <ArrowLeft size={20} />
+              <button onClick={onBack} className="p-2 -ml-2 text-gray-400 hover:text-gray-600 active:scale-90 transition-transform">
+                  <ArrowLeft size={24} />
               </button>
-              <h1 className="text-2xl font-bold text-gray-900">專案切換</h1>
+              <h2 className="text-2xl font-bold text-gray-800">專案切換</h2>
           </div>
-          <button onClick={onAddClick} className="p-3 bg-gray-900 text-white rounded-full shadow-lg shadow-gray-300 active:scale-90 transition-transform">
+          {/* Top Add Button (Secondary) */}
+          <button onClick={onAddClick} className="p-2 bg-gray-900 text-white rounded-xl shadow-lg shadow-gray-300 active:scale-90 transition-transform">
               <Plus size={20} />
           </button>
       </div>
@@ -131,28 +132,32 @@ export default function ProjectsView({
               <ProjectCard key={project.id} project={project} />
           ))}
           
-          {/* New Project Placeholder */}
+          {/* New Project Placeholder - Elegant White Card */}
           <button 
             onClick={onAddClick}
-            className="p-5 rounded-3xl border-2 border-dashed border-gray-200 flex items-center justify-center gap-2 text-gray-400 font-bold hover:bg-white hover:border-gray-300 transition-all min-h-[140px]"
+            className="p-5 rounded-2xl border border-gray-100 bg-white flex flex-col items-center justify-center gap-2 text-gray-400 font-bold hover:bg-gray-50 hover:border-gray-200 transition-all shadow-sm min-h-[120px] group"
           >
-              <Plus size={20} /> 建立新專案
+              <div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center group-hover:bg-rose-50 group-hover:text-rose-500 transition-colors">
+                 <Plus size={20} />
+              </div>
+              <span className="text-xs group-hover:text-rose-500 transition-colors">建立新專案</span>
           </button>
       </div>
 
-      {/* Edit Project Modal */}
+      {/* Edit Project Modal - Island Style */}
       {isEditingProject && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:px-4">
               <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setIsEditingProject(false)} />
-              <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl relative z-10 overflow-hidden animate-scale-up">
+              <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl shadow-2xl relative z-10 flex flex-col max-h-[90vh] animate-slide-up">
                   
-                  <div className="bg-gray-50 px-6 py-4 flex justify-between items-center border-b border-gray-100">
+                  {/* Modal Header */}
+                  <div className="bg-gray-50 px-6 py-4 flex justify-between items-center border-b border-gray-100 rounded-t-3xl">
                       <h3 className="font-bold text-gray-800 text-lg">{editingProjectData.id ? '編輯專案' : '新專案'}</h3>
                       <button onClick={() => setIsEditingProject(false)} className="p-2 bg-white rounded-full text-gray-400 hover:text-gray-600 shadow-sm"><X size={20}/></button>
                   </div>
 
-                  <div className="p-6 space-y-6">
-                      {/* Name */}
+                  <div className="p-6 space-y-6 overflow-y-auto">
+                      {/* Name Input */}
                       <div>
                           <label className="block text-xs font-bold text-gray-400 uppercase mb-2">專案名稱</label>
                           <input 
@@ -160,67 +165,76 @@ export default function ProjectsView({
                               value={editingProjectData.name} 
                               onChange={(e) => setEditingProjectData({...editingProjectData, name: e.target.value})} 
                               placeholder="例如：2024 日本行" 
-                              className="w-full bg-gray-50 px-4 py-3 rounded-xl font-bold text-gray-800 outline-none focus:ring-2 focus:ring-rose-100 transition-all"
+                              className="w-full bg-gray-50 px-4 py-3 rounded-xl font-bold text-gray-800 outline-none focus:ring-2 focus:ring-rose-100 transition-all placeholder:text-gray-300"
                               autoFocus
                           />
                       </div>
 
-                      {/* Icon */}
-                      {/* 簡化版圖示選擇，未來可擴充 */}
+                      {/* Icon Picker */}
                       <div>
                           <label className="block text-xs font-bold text-gray-400 uppercase mb-2">圖示</label>
-                          <div className="flex gap-3">
-                              {['project_daily', 'project_travel', 'project_house', 'briefcase'].map(icon => {
+                          <div className="flex gap-3 overflow-x-auto pb-4 -mb-2 no-scrollbar px-1">
+                              {['project_daily', 'project_travel', 'project_house', 'briefcase', 'gift', 'heart', 'coffee', 'car'].map(icon => {
                                   const Icon = getIconComponent(icon);
                                   const isSelected = editingProjectData.icon === icon;
                                   return (
                                       <button 
                                           key={icon}
                                           onClick={() => setEditingProjectData({...editingProjectData, icon})}
-                                          className={`p-3 rounded-xl transition-all ${isSelected ? 'bg-gray-900 text-white shadow-lg' : 'bg-gray-50 text-gray-400'}`}
+                                          className={`p-3 rounded-xl shrink-0 transition-all ${isSelected ? 'bg-gray-900 text-white shadow-lg scale-110' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
                                       >
-                                          <Icon size={20} />
+                                          <Icon size={24} />
                                       </button>
                                   )
                               })}
                           </div>
                       </div>
 
-                      {/* Rates (Only for new or non-daily) */}
+                      {/* Rates Settings */}
                       {editingProjectData.id !== 'daily' && (
-                          <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                              <h4 className="text-xs font-bold text-blue-500 mb-3 flex items-center gap-2"><Globe size={14}/> 專案匯率設定</h4>
-                              <div className="grid grid-cols-2 gap-3">
-                                  <div>
-                                      <label className="text-[10px] font-bold text-blue-300 block mb-1">JPY (日幣)</label>
-                                      <input 
-                                          type="number" 
-                                          value={editingProjectData.rates?.JPY || 0.23} 
-                                          onChange={(e) => setEditingProjectData({
-                                              ...editingProjectData, 
-                                              rates: { ...editingProjectData.rates, JPY: parseFloat(e.target.value) }
-                                          })}
-                                          className="w-full bg-white px-3 py-2 rounded-lg text-sm font-bold text-gray-700 outline-none"
-                                      />
+                          <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100">
+                              <h4 className="text-xs font-bold text-blue-500 mb-4 flex items-center gap-2 uppercase tracking-wider"><Globe size={14}/> 專案匯率</h4>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div className="bg-white p-3 rounded-xl border border-blue-100">
+                                      <label className="text-[10px] font-bold text-gray-400 block mb-1">JPY (日幣)</label>
+                                      <div className="flex items-center gap-2">
+                                        <input 
+                                            type="number" 
+                                            value={editingProjectData.rates?.JPY} 
+                                            onChange={(e) => setEditingProjectData({
+                                                ...editingProjectData, 
+                                                rates: { ...editingProjectData.rates, JPY: e.target.value }
+                                            })}
+                                            className="w-full bg-transparent font-bold text-gray-800 outline-none"
+                                            placeholder="0.23"
+                                        />
+                                        <span className="text-[10px] text-gray-400 font-bold shrink-0">TWD</span>
+                                      </div>
                                   </div>
-                                  <div>
-                                      <label className="text-[10px] font-bold text-blue-300 block mb-1">THB (泰銖)</label>
-                                      <input 
-                                          type="number" 
-                                          value={editingProjectData.rates?.THB || 1} 
-                                          onChange={(e) => setEditingProjectData({
-                                              ...editingProjectData, 
-                                              rates: { ...editingProjectData.rates, THB: parseFloat(e.target.value) }
-                                          })}
-                                          className="w-full bg-white px-3 py-2 rounded-lg text-sm font-bold text-gray-700 outline-none"
-                                      />
+                                  <div className="bg-white p-3 rounded-xl border border-blue-100">
+                                      <label className="text-[10px] font-bold text-gray-400 block mb-1">THB (泰銖)</label>
+                                      <div className="flex items-center gap-2">
+                                        <input 
+                                            type="number" 
+                                            value={editingProjectData.rates?.THB} 
+                                            onChange={(e) => setEditingProjectData({
+                                                ...editingProjectData, 
+                                                rates: { ...editingProjectData.rates, THB: e.target.value }
+                                            })}
+                                            className="w-full bg-transparent font-bold text-gray-800 outline-none"
+                                            placeholder="1.0"
+                                        />
+                                        <span className="text-[10px] text-gray-400 font-bold shrink-0">TWD</span>
+                                      </div>
                                   </div>
                               </div>
+                              <p className="text-[10px] text-blue-300 mt-3 text-center">💡 用於自動計算消費分析的 TWD 總額</p>
                           </div>
                       )}
                   </div>
 
-                  <div className="p-4 border-t border-gray-100 flex gap-3 bg-white">
+                  {/* Modal Footer */}
+                  <div className="p-4 border-t border-gray-100 flex gap-3 bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] rounded-b-3xl">
                       {editingProjectData.id && editingProjectData.id !== 'daily' && (
                           <button 
                               onClick={() => onDeleteWrapper(editingProjectData.id)} 
