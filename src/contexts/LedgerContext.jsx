@@ -33,7 +33,8 @@ export const LedgerProvider = ({ children }) => {
           const cached = localStorage.getItem(cacheKey);
           if (cached) {
               const parsed = JSON.parse(cached);
-              if (parsed && parsed.transactions && Array.isArray(parsed.transactions)) {
+              // Simple validity check
+              if (parsed && Array.isArray(parsed.transactions || [])) {
                   return parsed;
               }
           }
@@ -52,6 +53,13 @@ export const LedgerProvider = ({ children }) => {
   }, [ledgerCode]);
 
   useEffect(() => {
+    // [Safety] 如果 Firebase db 初始化失敗，這裡必須停止，否則 doc() 會讓 App 崩潰
+    if (!db) {
+        console.error("🔥 Firebase DB not initialized. Check your Vercel Environment Variables.");
+        setIsLedgerInitializing(false);
+        return;
+    }
+
     if (!ledgerCode) {
       if (!localStorage.getItem('sweet_ledger_code')) {
           setLedgerData(null);
@@ -76,13 +84,12 @@ export const LedgerProvider = ({ children }) => {
 
   // Auto-Repair Logic
   useEffect(() => {
-    if (!ledgerCode || !ledgerData || !user) return;
+    if (!ledgerCode || !ledgerData || !user || !db) return; // Added !db check
     const repairData = async () => {
         let needsRepair = false;
         let updates = {};
 
         if (!ledgerData.users || Object.keys(ledgerData.users).length === 0) {
-            console.log("🏥 檢測到 users 結構遺失，正在執行自動修復...");
             needsRepair = true;
             updates.users = {
                 [user.uid]: {
@@ -93,7 +100,6 @@ export const LedgerProvider = ({ children }) => {
                 }
             };
         } else if (!ledgerData.users[user.uid]) {
-             console.log("🏥 檢測到使用者不在名單中，正在自動加入...");
              needsRepair = true;
              updates[`users.${user.uid}`] = {
                 name: user.displayName || 'Guest',
@@ -108,7 +114,7 @@ export const LedgerProvider = ({ children }) => {
                 let isDirty = false;
                 let newTx = { ...tx };
                 
-                // [Fix] Ensure Date exists (避免 White Screen)
+                // [Fix] Ensure Date exists
                 if (!newTx.date) {
                     newTx.date = new Date().toISOString();
                     isDirty = true;
@@ -122,20 +128,18 @@ export const LedgerProvider = ({ children }) => {
                 if ((tx.splitType === 'custom' || tx.splitType === 'multi_payer') && tx.customSplit) {
                     const cleanSplit = {};
                     Object.keys(tx.customSplit).forEach(uid => {
-                        if (typeof tx.customSplit[uid] === 'string') {
-                            cleanSplit[uid] = parseFloat(tx.customSplit[uid]) || 0;
-                            isDirty = true;
-                        } else {
-                            cleanSplit[uid] = tx.customSplit[uid];
-                        }
+                        const val = parseFloat(tx.customSplit[uid]);
+                        cleanSplit[uid] = isNaN(val) ? 0 : val;
                     });
-                    newTx.customSplit = cleanSplit;
+                    if (JSON.stringify(cleanSplit) !== JSON.stringify(tx.customSplit)) {
+                        newTx.customSplit = cleanSplit;
+                        isDirty = true;
+                    }
                 }
                 return isDirty ? newTx : tx;
             });
 
             if (JSON.stringify(cleanTransactions) !== JSON.stringify(ledgerData.transactions)) {
-                console.log("🏥 檢測到交易紀錄含有髒資料(缺日期/格式錯誤)，正在清洗...");
                 needsRepair = true;
                 updates.transactions = cleanTransactions;
             }
@@ -155,7 +159,7 @@ export const LedgerProvider = ({ children }) => {
 
 
   useEffect(() => {
-    if (!ledgerData || !ledgerData.subscriptions || ledgerData.subscriptions.length === 0 || !ledgerCode) return;
+    if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return; // Added !db check
     const todayStr = new Date().toISOString().slice(0, 10);
     const lastCheckKey = `last_subs_check_${ledgerCode}`;
     const lastCheckDate = localStorage.getItem(lastCheckKey);
@@ -190,8 +194,7 @@ export const LedgerProvider = ({ children }) => {
                     const nextMonth = currentMonth + 1;
                     nextDate.setMonth(nextMonth);
                     if (sub.payDay) {
-                        const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
-                        const targetDay = Math.min(sub.payDay, daysInNextMonth);
+                        const targetDay = Math.min(sub.payDay, new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate());
                         nextDate.setDate(targetDay);
                     }
                 } else if (sub.cycle === 'weekly') {
@@ -206,7 +209,6 @@ export const LedgerProvider = ({ children }) => {
         });
 
         if (updatesNeeded) {
-            console.log("Auto-subscriptions processed.");
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
             await updateDoc(docRef, { 
                 transactions: newTransactions,
@@ -220,6 +222,7 @@ export const LedgerProvider = ({ children }) => {
 
 
   const checkUserBinding = async (uid) => {
+      if (!db) return null;
       try {
           const userDocRef = doc(db, 'users', uid); 
           const userDoc = await getDoc(userDocRef);
@@ -233,6 +236,7 @@ export const LedgerProvider = ({ children }) => {
 
   const createLedger = async (currentUser) => {
     if (!currentUser) throw new Error("請先登入");
+    if (!db) throw new Error("資料庫未連線");
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     const userName = currentUser.displayName || 'Host';
     const newLedger = {
@@ -253,6 +257,7 @@ export const LedgerProvider = ({ children }) => {
 
   const joinLedger = async (code, currentUser) => {
     if (!currentUser) throw new Error("請先登入");
+    if (!db) throw new Error("資料庫未連線");
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
@@ -285,7 +290,7 @@ export const LedgerProvider = ({ children }) => {
   };
 
   const addTransaction = async (payload) => {
-    if (!ledgerCode || !user) throw new Error("無效的帳本狀態");
+    if (!ledgerCode || !user || !db) throw new Error("無效的帳本狀態");
     
     const { 
         amount, currency, category, payer, 
@@ -352,7 +357,7 @@ export const LedgerProvider = ({ children }) => {
   };
 
   const updateTransaction = async (updatedTx) => {
-      if (!ledgerCode || !ledgerData) return;
+      if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       
       const cleanTx = { ...updatedTx };
@@ -370,21 +375,21 @@ export const LedgerProvider = ({ children }) => {
   };
 
   const deleteTransaction = async (txId) => {
-      if (!ledgerCode || !ledgerData) return;
+      if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== txId);
       await updateDoc(docRef, { transactions: updatedTxs });
   };
   
   const deleteSubscription = async (subId) => {
-      if (!ledgerCode || !ledgerData) return;
+      if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.id !== subId);
       await updateDoc(docRef, { subscriptions: newSubscriptions });
   };
 
   const settleUp = async ({ amount, payerId, payeeName, projectId }) => {
-      if (!ledgerCode) return;
+      if (!ledgerCode || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       const settlementCategory = { id: 'settlement', name: '還款結清', icon: 'settlement', color: 'bg-emerald-100 text-emerald-600', hex: '#059669' };
 
@@ -405,7 +410,7 @@ export const LedgerProvider = ({ children }) => {
   };
 
   const saveProject = async (projectData) => {
-      if (!ledgerCode || !ledgerData) return;
+      if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       let newProjects = [...(ledgerData.projects || [])];
       const projectWithRates = { ...projectData, rates: projectData.rates || { JPY: 0.23, THB: 1 } };
@@ -418,7 +423,7 @@ export const LedgerProvider = ({ children }) => {
   };
 
   const deleteProject = async (projectId) => {
-      if (!ledgerCode || !ledgerData) return;
+      if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
       const newTransactions = ledgerData.transactions.filter(t => t.projectId !== projectId);
@@ -431,13 +436,13 @@ export const LedgerProvider = ({ children }) => {
   };
 
   const reorderProjects = async (newProjects) => {
-      if (!ledgerCode) return;
+      if (!ledgerCode || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       await updateDoc(docRef, { projects: newProjects });
   };
 
   const updateProjectRates = async (projectId, currency, val) => {
-    if (!ledgerCode || !ledgerData) return;
+    if (!ledgerCode || !ledgerData || !db) return;
     const numVal = parseFloat(val);
     if (!numVal || numVal <= 0) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -449,7 +454,7 @@ export const LedgerProvider = ({ children }) => {
   };
 
   const saveCategory = async (categoryData) => {
-      if (!ledgerCode || !ledgerData) return;
+      if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       let newCategories = [...(ledgerData.customCategories || DEFAULT_CATEGORIES)];
       if (categoryData.id) {
@@ -464,32 +469,32 @@ export const LedgerProvider = ({ children }) => {
   };
 
   const deleteCategory = async (catId) => {
-     if (!ledgerCode || !ledgerData) return;
+     if (!ledgerCode || !ledgerData || !db) return;
      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
      const newCategories = (ledgerData.customCategories || DEFAULT_CATEGORIES).filter(c => c.id !== catId);
      await updateDoc(docRef, { customCategories: newCategories });
   };
 
   const reorderCategories = async (newCategories) => {
-    if (!ledgerCode) return;
+    if (!ledgerCode || !db) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { customCategories: newCategories });
   };
 
   const updateUserSetting = async (field, value) => {
-    if (!ledgerCode || !user) return;
+    if (!ledgerCode || !user || !db) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { [`users.${user.uid}.${field}`]: value });
   };
 
   const resetAccount = async () => {
-    if (!ledgerCode) return;
+    if (!ledgerCode || !db) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { transactions: [], subscriptions: [] });
   };
 
   const fixIdentity = async () => {
-    if (!ledgerCode || !ledgerData || !user) return;
+    if (!ledgerCode || !ledgerData || !user || !db) return;
     const zombieHostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host' && uid !== user.uid);
     if (!zombieHostId) return; 
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
