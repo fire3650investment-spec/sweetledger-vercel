@@ -1,26 +1,64 @@
 // src/utils/helpers.jsx
 import React from 'react';
 import { User, HelpCircle } from 'lucide-react';
-// [Critical] 直接從 constants 引入 MAP 和 CHARACTERS，確保同步
-import { ICON_MAP, CHARACTERS } from './constants';
+import { ICON_MAP, CHARACTERS, PALETTE } from './constants';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 // --- Icon System ---
 
 export const getIconComponent = (iconName) => {
-  // 從 constants.js 的 MAP 查找，若無則回傳預設
   return ICON_MAP[iconName] || HelpCircle;
 };
 
-// [Refactor] 恢復為動物頭像渲染邏輯
+// --- Color System Resolver (NEW) ---
+/**
+ * 根據使用情境解析分類樣式
+ * @param {Object} category - 分類物件
+ * @param {string} mode - 'input' (極簡/輸入模式) | 'display' (展示/閱讀模式)
+ * @returns {Object} { containerClass, iconClass, hex, activeClass }
+ */
+export const getCategoryStyle = (category, mode = 'display') => {
+    // 1. 防呆
+    if (!category) return { containerClass: 'bg-gray-100', iconClass: 'text-gray-500', hex: '#94a3b8' };
+
+    // 2. Input Mode (極簡主義：平時灰，選中紅)
+    if (mode === 'input') {
+        return {
+            // 平時狀態：極簡灰
+            containerClass: 'bg-gray-50 border border-gray-100',
+            iconClass: 'text-gray-400',
+            // 選中狀態 (Action)：Rose-500
+            activeClass: 'bg-rose-500 text-white shadow-md shadow-rose-200 border-transparent',
+            // 讓圖表在這個模式下也保持低調
+            hex: '#64748b' 
+        };
+    }
+
+    // 3. Display Mode (資料區隔：全彩)
+    // 優先使用 colorId 查詢 PALETTE
+    if (category.colorId && PALETTE[category.colorId]) {
+        const token = PALETTE[category.colorId];
+        return {
+            containerClass: `${token.bg} ${token.text}`,
+            iconClass: token.text, 
+            hex: token.hex
+        };
+    }
+    
+    // Legacy Fallback (相容舊資料)
+    return {
+        containerClass: category.color || 'bg-slate-100 text-slate-600',
+        iconClass: '', // 舊版 color 字串通常包含 text color
+        hex: category.hex || '#475569'
+    };
+};
+
 export const renderAvatar = (avatarKeyOrUrl, className = "w-10 h-10") => {
-  // 1. Google Login 的圖片
   if (avatarKeyOrUrl && typeof avatarKeyOrUrl === 'string' && avatarKeyOrUrl.includes('http')) {
       return <img src={avatarKeyOrUrl} className={`${className} rounded-full object-cover border border-gray-200`} alt="avatar" />;
   }
 
-  // 2. 從 CHARACTERS 定義中查找 (Cat, Dog, Fish...)
   if (avatarKeyOrUrl && CHARACTERS[avatarKeyOrUrl]) {
       const iconName = CHARACTERS[avatarKeyOrUrl].icon;
       const Icon = ICON_MAP[iconName] || User;
@@ -32,7 +70,6 @@ export const renderAvatar = (avatarKeyOrUrl, className = "w-10 h-10") => {
       );
   }
 
-  // 3. Fallback (以防萬一)
   const Icon = ICON_MAP[avatarKeyOrUrl] || User;
   return (
     <div className={`${className} flex items-center justify-center bg-gray-100 rounded-full text-gray-600 border border-gray-200`}>
@@ -127,7 +164,6 @@ export const parseReceiptWithGemini = async (imageBase64) => {
     if (!rawResult) return null;
 
     try {
-        // 清理可能存在的 Markdown標記
         const cleanJson = rawResult.replace(/```json/g, '').replace(/```/g, '').trim();
         return JSON.parse(cleanJson);
     } catch (e) {
