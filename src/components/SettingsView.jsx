@@ -39,21 +39,48 @@ export default function SettingsView({
     window.scrollTo(0, 0);
   }, []);
 
+  // 準備分類資料與匯率
+  const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
+  const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
+  const serverRates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
+
   // --- Local State ---
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [activeSortId, setActiveSortId] = useState(null); 
   const [copied, setCopied] = useState(false);
+  
+  // [Fix] Local Rates State for smooth typing
+  const [localRates, setLocalRates] = useState(serverRates);
 
-  // 準備分類資料
-  const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
-  const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
-  const rates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
+  // Sync server rates to local when not editing (or initially)
+  useEffect(() => {
+      if (serverRates) {
+          setLocalRates(prev => ({
+              ...prev,
+              ...serverRates
+          }));
+      }
+  }, [serverRates]);
 
   // --- Handlers ---
   const handleCopyCode = () => {
       navigator.clipboard.writeText(ledgerCode);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRateChange = (currency, value) => {
+      setLocalRates(prev => ({ ...prev, [currency]: value }));
+  };
+
+  const handleRateBlur = (currency) => {
+      const val = localRates[currency];
+      if (val && !isNaN(parseFloat(val))) {
+          updateLedgerCurrency(currency, val);
+      } else {
+          // Revert if invalid
+          setLocalRates(prev => ({ ...prev, [currency]: serverRates[currency] }));
+      }
   };
 
   const onSaveCategoryWrapper = () => {
@@ -192,10 +219,12 @@ export default function SettingsView({
                         <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-gray-200">
                             <input 
                                 type="number" 
-                                value={rates.JPY} 
-                                onChange={(e) => updateLedgerCurrency('JPY', e.target.value)}
-                                className="w-12 bg-transparent text-sm font-bold text-gray-800 outline-none text-right"
+                                value={localRates.JPY} 
+                                onChange={(e) => handleRateChange('JPY', e.target.value)}
+                                onBlur={() => handleRateBlur('JPY')}
+                                className="w-16 bg-transparent text-sm font-bold text-gray-800 outline-none text-right"
                                 placeholder="0.23"
+                                step="0.01"
                             />
                         </div>
                     </div>
@@ -204,10 +233,12 @@ export default function SettingsView({
                         <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-lg border border-gray-200">
                             <input 
                                 type="number" 
-                                value={rates.THB} 
-                                onChange={(e) => updateLedgerCurrency('THB', e.target.value)}
-                                className="w-12 bg-transparent text-sm font-bold text-gray-800 outline-none text-right"
+                                value={localRates.THB} 
+                                onChange={(e) => handleRateChange('THB', e.target.value)}
+                                onBlur={() => handleRateBlur('THB')}
+                                className="w-16 bg-transparent text-sm font-bold text-gray-800 outline-none text-right"
                                 placeholder="1.0"
+                                step="0.1"
                             />
                         </div>
                     </div>
@@ -289,7 +320,7 @@ export default function SettingsView({
 
         <div className="text-center pt-4 pb-8">
              <button onClick={handleFixIdentity} className="text-[10px] text-gray-300 hover:text-gray-400 underline">修復帳號權限 (Debug)</button>
-             <p className="text-[10px] text-gray-300 mt-1">SweetLedger v1.4.0 (Island UI)</p>
+             <p className="text-[10px] text-gray-300 mt-1">SweetLedger v1.4.1 (Fix Rates Input)</p>
         </div>
       </div>
 
