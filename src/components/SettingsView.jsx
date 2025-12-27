@@ -1,11 +1,11 @@
 // src/components/SettingsView.jsx
 import React, { useState, useEffect } from 'react';
+// [Fix] Added 'Copy' to imports
 import { 
   User, LogOut, RotateCcw, Download, X, Check, Trash2, 
-  Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid
+  Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy
 } from 'lucide-react';
 import { getIconComponent, renderAvatar } from '../utils/helpers';
-// [Fix] Corrected import from ICONS to AVAILABLE_ICONS
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS } from '../utils/constants';
 
 export default function SettingsView({ 
@@ -43,12 +43,11 @@ export default function SettingsView({
   // --- Local State ---
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [activeSortId, setActiveSortId] = useState(null); 
-  const [copied, setCopied] = useState(false); // [Added] 補回複製代碼的狀態
+  const [copied, setCopied] = useState(false);
 
   // 準備分類資料
   const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
   const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
-  // [Fix] 取回匯率資料
   const rates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
 
   // --- Handlers ---
