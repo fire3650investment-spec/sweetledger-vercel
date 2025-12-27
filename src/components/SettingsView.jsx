@@ -1,9 +1,9 @@
 // src/components/SettingsView.jsx
 import React, { useState, useEffect } from 'react';
-// [Fix] Added 'Copy' to imports
+// [Fix] Added 'Globe' and 'Copy' to imports
 import { 
   User, LogOut, RotateCcw, Download, X, Check, Trash2, 
-  Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy
+  Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe
 } from 'lucide-react';
 import { getIconComponent, renderAvatar } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS } from '../utils/constants';
@@ -311,7 +311,7 @@ export default function SettingsView({
 
       <div className="text-center mt-8 mb-4">
           <button onClick={handleFixIdentity} className="text-[10px] text-gray-300 hover:text-gray-400 underline">修復帳號權限 (Debug)</button>
-          <p className="text-[10px] text-gray-300 mt-1">SweetLedger v1.3.0</p>
+          <p className="text-[10px] text-gray-300 mt-1">SweetLedger v1.3.1</p>
       </div>
 
       {/* Avatar Modal */}
