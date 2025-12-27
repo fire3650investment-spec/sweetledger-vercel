@@ -16,7 +16,6 @@ export default function DashboardView({
   handleSettleUp,
   handleOpenAddExpense 
 }) {
-    // [Safety] Early return if critical data is missing
     if (!ledgerData || !user) return null;
 
     const { projectTxs, groupedTransactions, monthlyTotal, settlement, currentProjectName, partnerName, otherUserId } = useMemo(() => {
@@ -26,39 +25,28 @@ export default function DashboardView({
         const safeUsers = ledgerData.users || {};
         const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
 
-        // [Fix] Data Hygiene: 嚴格過濾與清洗資料
-        // 1. 確保 id, amount 存在
-        // 2. 確保 date 存在 (這是白屏主因)
+        // [Critical Fix] 資料清洗與防禦：防止因缺少 date 導致白屏
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => {
                 const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
                 let displayCategory = t.category || { name: '未分類', icon: 'help-circle', hex: '#9ca3af' };
                 
-                // Hydrate Category: 優先使用 master list 的最新資料
                 if (t.category?.id) {
                     const latestCat = currentCategories.find(c => c.id === t.category.id);
-                    if (latestCat) {
-                        displayCategory = latestCat;
-                    }
+                    if (latestCat) displayCategory = latestCat;
                 }
 
-                // [Critical Fix] Fallback for missing date to prevent crash
+                // 🔥 這裡是最重要的修復：如果 date 不存在，給一個預設值，防止 .startsWith 崩潰
                 const safeDate = t.date || new Date().toISOString();
 
-                return { 
-                    ...t, 
-                    amount: parseFloat(t.amount) || 0, 
-                    type: safeType, 
-                    category: displayCategory,
-                    date: safeDate 
-                };
+                return { ...t, amount: parseFloat(t.amount) || 0, type: safeType, category: displayCategory, date: safeDate };
             });
 
         const pTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
         const currentMonthStr = new Date().toISOString().slice(0, 7);
         
-        // [Safe] 此處 t.date 已保證存在，不會再 Crash
+        // [Safe] 現在 t.date 保證存在，這裡不會再報錯
         const thisMonthTxs = pTxs.filter(t => t.date.startsWith(currentMonthStr));
         
         const grouped = {};
@@ -66,14 +54,12 @@ export default function DashboardView({
         sorted.forEach(tx => { 
             try { 
                 const dateObj = new Date(tx.date);
-                // [Safe] Check for invalid date strings
                 if (isNaN(dateObj.getTime())) return;
-                
                 const dateStr = dateObj.toLocaleDateString('zh-TW'); 
                 if (!grouped[dateStr]) grouped[dateStr] = []; 
                 grouped[dateStr].push(tx); 
             } 
-            catch (e) { console.warn("Date parse error", e); }
+            catch (e) {}
         });
 
         const currProject = ledgerData.projects?.find(p => p.id === currentProjectId);
