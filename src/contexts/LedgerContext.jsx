@@ -44,8 +44,17 @@ export const LedgerProvider = ({ children }) => {
 
   const [isLedgerInitializing, setIsLedgerInitializing] = useState(!ledgerData);
 
-  useEffect(() => {
-    if (ledgerCode) {
+  
+useEffect(() => {
+    // [新增] 阻斷崩潰的關鍵檢查
+    if (!db) {
+        console.error("🔥 Firebase DB not initialized. Check Environment Variables.");
+        setIsLedgerInitializing(false);
+        return; 
+    }
+
+    if (!ledgerCode) {
+      // ... 原有代碼
         localStorage.setItem('sweet_ledger_code', ledgerCode);
     } else {
         localStorage.removeItem('sweet_ledger_code');
