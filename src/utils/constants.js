@@ -1,10 +1,13 @@
+// src/utils/constants.js
 import { 
   Utensils, Train, ShoppingBag, Home, BedDouble, Ticket, Smartphone, Shield, Sun, 
   MessageCircle, Cat, Dog, Rabbit, Bird, Sparkles, Calendar, Plane, Wallet, Coffee, 
-  Music, Gamepad, Heart, Gift, Zap, BookOpen, Coins
+  Music, Gamepad, Heart, Gift, Zap, BookOpen, Coins,
+  Fish, Turtle // [New] 引入新動物
 } from 'lucide-react';
 
 export const ICON_MAP = {
+  // Categories
   food: Utensils,
   transport: Train,
   shopping: ShoppingBag,
@@ -15,15 +18,20 @@ export const ICON_MAP = {
   insurance: Shield,
   life: Sun,
   other: MessageCircle,
+  // Characters
   cat: Cat,
   dog: Dog,
   rabbit: Rabbit,
   bird: Bird,
+  fish: Fish,     // [New]
+  turtle: Turtle, // [New]
+  // System
   default: Sparkles,
   project_daily: Calendar,
   project_travel: Plane,
   project_house: Home, 
   project_private: Wallet,
+  // Other
   coffee: Coffee,
   music: Music,
   game: Gamepad,
@@ -62,16 +70,22 @@ export const COLORS = [
   { name: 'Gray', class: 'bg-gray-100 text-gray-600', hex: '#4b5563' },
 ];
 
-export const AVAILABLE_ICONS = ['food', 'transport', 'shopping', 'housing', 'hotel', 'ticket', 'telecom', 'insurance', 'life', 'other', 'coffee', 'music', 'game', 'heart', 'gift', 'zap', 'book'];
+export const AVAILABLE_ICONS = [
+  'food', 'transport', 'shopping', 'housing', 'hotel', 'ticket', 'telecom', 'insurance', 'life', 'other', 
+  'coffee', 'music', 'game', 'heart', 'gift', 'zap', 'book',
+  'cat', 'dog', 'rabbit', 'bird', 'fish', 'turtle' // [New] 加入可用列表
+];
 
 export const CHARACTERS = {
   cat: { id: 'cat', name: '貓咪', icon: 'cat', prompt: '你是一隻傲嬌毒舌的貓，覺得人類花錢很笨，回答簡短，句尾加「喵」。', greeting: '人類，今天有亂花錢嗎？喵 🐱' },
   dog: { id: 'dog', name: '狗狗', icon: 'dog', prompt: '你是一隻超級熱情樂觀的狗，對什麼都充滿希望，句尾加「汪」。', greeting: '又是美好的一天！我們來記帳吧！汪 🐶' },
   rabbit: { id: 'rabbit', name: '兔兔', icon: 'rabbit', prompt: '你是一隻容易緊張的兔子，擔心錢不夠用，說話溫柔，多用顏文字。', greeting: '那個...今天也要好好理財喔 (///▽///) 🐰' },
   bird: { id: 'bird', name: '啾啾', icon: 'bird', prompt: '你是一隻愛說八卦的鳥，對數字很敏感，句尾加「啾」。', greeting: '啾啾！我好像看到錢包變瘦了？🐦' },
+  // [New] 新增動物
+  fish: { id: 'fish', name: '魚魚', icon: 'fish', prompt: '你是一隻只有7秒記憶的金魚，常常忘記上一筆花了什麼，說話呆萌，句尾加「啵」。', greeting: '啵...我們剛剛是要記帳嗎？🐟' },
+  turtle: { id: 'turtle', name: '龜龜', icon: 'turtle', prompt: '你是一隻講話非常慢、崇尚長期投資的烏龜，句尾加「...🐢」。', greeting: '慢慢來...錢要...慢慢存...🐢' }
 };
 
-// 簡化後的初始狀態：移除 gamification 與 inputMode
 export const INITIAL_LEDGER_STATE = {
   users: {}, 
   transactions: [],

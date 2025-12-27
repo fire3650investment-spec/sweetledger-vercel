@@ -3,10 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   User, LogOut, RotateCcw, Download, X, Check, Trash2, 
   Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe,
-  ShieldAlert, FileText, Zap, Coffee, Star, Crown, Ghost, Smile
+  ShieldAlert, FileText
 } from 'lucide-react';
 import { getIconComponent, renderAvatar } from '../utils/helpers';
-import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS } from '../utils/constants';
+// [Critical] 引入 CHARACTERS
+import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS } from '../utils/constants';
 
 export default function SettingsView({ 
   user, 
@@ -116,13 +117,6 @@ export default function SettingsView({
       setEditingCategoryData(cat);
       setIsEditingCategory(true);
   };
-
-  // 定義新的 Premium Avatar 列表
-  const AVATAR_OPTIONS = [
-    'user', 'smile', 'zap', 'coffee', 
-    'star', 'crown', 'ghost', 'music',
-    'sun', 'moon', 'flower', 'anchor'
-  ];
 
   return (
     <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 animate-in fade-in duration-500">
@@ -308,30 +302,32 @@ export default function SettingsView({
              <button onClick={handleFixIdentity} className="text-[10px] text-gray-300 hover:text-gray-400 flex items-center gap-1 mx-auto">
                 <ShieldAlert size={10}/> 修復帳號權限 (Debug)
              </button>
-             <p className="text-[10px] text-gray-300 mt-2 font-mono">SweetLedger v1.6.0 (Lucide Avatars)</p>
+             <p className="text-[10px] text-gray-300 mt-2 font-mono">SweetLedger v1.6.1 (Animal Party)</p>
         </div>
       </div>
 
       {/* --- Modals --- */}
-      {/* Avatar Modal (Updated to Premium Lucide Icons) */}
+      {/* Avatar Modal (Dynamic Characters) */}
       {isAvatarModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsAvatarModalOpen(false)}>
             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
                 <h3 className="text-center font-bold text-lg mb-6 text-gray-800">選擇你的頭像</h3>
                 
-                {/* Avatar Grid */}
-                <div className="grid grid-cols-4 gap-4 mb-6">
-                    {AVATAR_OPTIONS.map(iconName => (
+                {/* Avatar Grid: 直接從 CHARACTERS 產生列表 */}
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                    {Object.keys(CHARACTERS).map(key => (
                         <button 
-                            key={iconName} 
-                            onClick={() => handleAvatarSelect(iconName)} 
-                            className={`aspect-square rounded-2xl flex items-center justify-center transition-all border-2 
-                                ${tempAvatar === iconName 
-                                    ? 'bg-rose-50 border-rose-500 text-rose-500 shadow-md scale-110' 
+                            key={key} 
+                            onClick={() => handleAvatarSelect(key)} 
+                            className={`aspect-square rounded-2xl flex flex-col items-center justify-center gap-2 transition-all border-2 
+                                ${tempAvatar === key 
+                                    ? 'bg-rose-50 border-rose-500 text-rose-500 shadow-md scale-105' 
                                     : 'bg-gray-50 border-transparent text-gray-400 hover:bg-gray-100 hover:text-gray-600'
                                 }`}
                         >
-                            {renderAvatar(iconName, "w-full h-full !bg-transparent !text-current !rounded-none")}
+                            {/* Force Transparent Bg for Grid */}
+                            {renderAvatar(key, "w-10 h-10 !bg-transparent !text-current !rounded-none !border-0")}
+                            <span className="text-[10px] font-bold">{CHARACTERS[key].name}</span>
                         </button>
                     ))}
                 </div>
@@ -344,7 +340,7 @@ export default function SettingsView({
         </div>
       )}
 
-      {/* Category Editor Modal (Style Conserved) */}
+      {/* Category Editor Modal (保持不變) */}
       {isEditingCategory && (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:px-4">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsEditingCategory(false)} />

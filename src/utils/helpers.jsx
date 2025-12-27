@@ -1,92 +1,47 @@
 // src/utils/helpers.jsx
 import React from 'react';
-// 引入需要的 Lucide 圖示
-import { 
-  // Categories
-  Utensils, Bus, ShoppingBag, Clapperboard, Home, Landmark, 
-  Gamepad2, GraduationCap, Stethoscope, Gift, Wrench, 
-  Briefcase, Heart, Plane, LayoutGrid, HelpCircle,
-  // Avatars (Premium Selection)
-  User, Zap, Coffee, Star, Crown, Ghost, Smile, Flower, Music, Sun, Moon, Anchor,
-  // Fallback for compatibility
-  Cat, Dog, Rabbit
-} from 'lucide-react';
+import { User, HelpCircle } from 'lucide-react';
+// [Critical] 直接從 constants 引入 MAP 和 CHARACTERS，確保同步
+import { ICON_MAP, CHARACTERS } from './constants';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || "";
 
 // --- Icon System ---
 
-// Icon Mapping: 定義字串與 Lucide 元件的對照表
-const ICON_MAP = {
-  // Categories
-  'food': Utensils,
-  'transport': Bus,
-  'shopping': ShoppingBag,
-  'entertainment': Clapperboard,
-  'house': Home,
-  'investment': Landmark,
-  'game': Gamepad2,
-  'education': GraduationCap,
-  'medical': Stethoscope,
-  'gift': Gift,
-  'repair': Wrench,
-  'work': Briefcase,
-  'love': Heart,
-  'travel': Plane,
-  'other': LayoutGrid,
-  'help-circle': HelpCircle,
-  'project_daily': LayoutGrid,
-  'project_travel': Plane,
-  'project_house': Home,
-  'project_private': User,
-  'car': Bus,
-  
-  // Avatars (New Premium Set)
-  'user': User,
-  'zap': Zap,
-  'coffee': Coffee,
-  'star': Star,
-  'crown': Crown,
-  'ghost': Ghost,
-  'smile': Smile,
-  'flower': Flower,
-  'music': Music,
-  'sun': Sun,
-  'moon': Moon,
-  'anchor': Anchor,
-
-  // Legacy Compatibility (舊動物頭像映射 - 防止舊資料破圖)
-  'cat': Cat,      
-  'dog': Dog,      
-  'rabbit': Rabbit,
-  'bear': User,    
-  'fox': Ghost,    
-  'panda': User,   
-};
-
 export const getIconComponent = (iconName) => {
+  // 從 constants.js 的 MAP 查找，若無則回傳預設
   return ICON_MAP[iconName] || HelpCircle;
 };
 
-// [Refactor] 改用 Lucide 渲染頭像
-export const renderAvatar = (avatarName, className = "w-10 h-10") => {
-  // 若傳入的是網址 (Google Login)，直接顯示圖片
-  if (avatarName && typeof avatarName === 'string' && avatarName.includes('http')) {
-      return <img src={avatarName} className={`${className} rounded-full object-cover border border-gray-200`} alt="avatar" />;
+// [Refactor] 恢復為動物頭像渲染邏輯
+export const renderAvatar = (avatarKeyOrUrl, className = "w-10 h-10") => {
+  // 1. Google Login 的圖片
+  if (avatarKeyOrUrl && typeof avatarKeyOrUrl === 'string' && avatarKeyOrUrl.includes('http')) {
+      return <img src={avatarKeyOrUrl} className={`${className} rounded-full object-cover border border-gray-200`} alt="avatar" />;
   }
 
-  // 否則使用 Lucide Icon
-  const Icon = ICON_MAP[avatarName] || User;
-  
+  // 2. 從 CHARACTERS 定義中查找 (Cat, Dog, Fish...)
+  if (avatarKeyOrUrl && CHARACTERS[avatarKeyOrUrl]) {
+      const iconName = CHARACTERS[avatarKeyOrUrl].icon;
+      const Icon = ICON_MAP[iconName] || User;
+      
+      return (
+        <div className={`${className} flex items-center justify-center bg-gray-100 rounded-full text-gray-600 border border-gray-200`}>
+          <Icon className="w-[60%] h-[60%]" strokeWidth={2} />
+        </div>
+      );
+  }
+
+  // 3. Fallback (以防萬一)
+  const Icon = ICON_MAP[avatarKeyOrUrl] || User;
   return (
     <div className={`${className} flex items-center justify-center bg-gray-100 rounded-full text-gray-600 border border-gray-200`}>
-      {/* 根據容器大小動態調整 Icon 尺寸，預設佔 60% */}
       <Icon className="w-[60%] h-[60%]" strokeWidth={2} />
     </div>
   );
 };
 
-// --- Formatters ---
+// --- Formatters (保持不變) ---
 
 export const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
@@ -109,12 +64,9 @@ export const calculateTwdValue = (amount, currency, rates) => {
     return parseFloat(amount) * rate;
 };
 
-// --- AI / Gemini Functions (Restored) ---
-
+// --- AI / Gemini Functions (保持不變) ---
 export const callGemini = async (prompt, imageBase64 = null) => {
   if (!GEMINI_API_KEY) {
-      console.error("Gemini API Key is missing! Please check your .env file or Vercel settings.");
-      // 移除 alert，避免在非互動時阻斷流程，改用 console 警告
       console.warn("系統錯誤：缺少 AI 金鑰，請聯繫管理員或檢查環境變數設定。");
       return null;
   }
