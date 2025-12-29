@@ -3,11 +3,12 @@ import React, { useState, useEffect } from 'react';
 import { 
   User, LogOut, RotateCcw, Download, X, Check, Trash2, 
   Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe,
-  ShieldAlert, FileText
+  ShieldAlert, FileText, UserX, AlertTriangle // [Added] New Icons
 } from 'lucide-react';
 // [Updated] 引入 getCategoryStyle
 import { getIconComponent, renderAvatar, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS } from '../utils/constants';
+import { useLedger } from '../contexts/LedgerContext'; // [Added] Import Context
 
 export default function SettingsView({ 
   user, 
@@ -19,7 +20,7 @@ export default function SettingsView({
   handleSaveCategory, 
   handleDeleteCategory, 
   handleExport, 
-  handleResetAccount, 
+  // handleResetAccount, // [Modified] We use context version for RBAC
   handleLogout,
   isAvatarModalOpen,
   setIsAvatarModalOpen,
@@ -35,6 +36,8 @@ export default function SettingsView({
   currentProjectId,
   handleReorderCategories 
 }) {
+  const { leaveLedger, resetAccount } = useLedger(); // [Added] Use Context Actions
+
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
@@ -48,6 +51,10 @@ export default function SettingsView({
   const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
   const serverRates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
   const [localRates, setLocalRates] = useState(serverRates);
+
+  // [Added] Role Check
+  const currentUserRole = ledgerData?.users?.[user?.uid]?.role;
+  const isHost = currentUserRole === 'host';
 
   useEffect(() => {
       if (serverRates) {
@@ -168,7 +175,7 @@ export default function SettingsView({
                     {Object.keys(ledgerData.users || {}).map(uid => {
                         const u = ledgerData.users[uid];
                         const isMe = uid === user.uid;
-                        const isHost = u.role === 'host';
+                        const role = u.role || 'guest';
                         return (
                             <div key={uid} className="flex items-center gap-3">
                                 {renderAvatar(u.avatar, "w-8 h-8")}
@@ -178,8 +185,8 @@ export default function SettingsView({
                                         {isMe && <span className="text-[10px] text-gray-400 bg-gray-200 px-1.5 rounded-full">(我)</span>}
                                     </div>
                                 </div>
-                                <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${isHost ? 'bg-rose-50 text-rose-600' : 'bg-gray-200 text-gray-500'}`}>
-                                    {isHost ? '戶長' : '成員'}
+                                <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${role === 'host' ? 'bg-rose-50 text-rose-600' : 'bg-gray-200 text-gray-500'}`}>
+                                    {role === 'host' ? '戶長' : '成員'}
                                 </span>
                             </div>
                         );
@@ -221,7 +228,6 @@ export default function SettingsView({
                     {categories.map((cat) => {
                         const Icon = getIconComponent(cat.icon);
                         const isSelected = activeSortId === cat.id;
-                        // [Updated] 使用 Input Mode
                         const style = getCategoryStyle(cat, 'input'); 
                         const wiggleStyle = isReorderMode ? { animation: `wiggle 0.3s ease-in-out infinite ${Math.random() * 0.5}s` } : {};
                         
@@ -257,15 +263,8 @@ export default function SettingsView({
             </div>
         </section>
 
-        {/* --- Island C: System --- */}
+        {/* --- Island C: System Actions --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
-             <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleResetAccount}>
-                 <div className="flex items-center gap-3">
-                     <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><RotateCcw size={18}/></div>
-                     <span className="font-bold text-gray-700 text-sm">重置帳本</span>
-                 </div>
-                 <ChevronRight size={16} className="text-gray-300"/>
-             </div>
              <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleExport}>
                  <div className="flex items-center gap-3">
                      <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><FileText size={18}/></div>
@@ -273,23 +272,64 @@ export default function SettingsView({
                  </div>
                  <ChevronRight size={16} className="text-gray-300"/>
              </div>
+             
              <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleLogout}>
                  <div className="flex items-center gap-3">
                      <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><LogOut size={18}/></div>
-                     <span className="font-bold text-red-500 text-sm">登出帳號</span>
+                     <span className="font-bold text-gray-500 text-sm">登出帳號 (Logout)</span>
                  </div>
              </div>
         </section>
 
-        <div className="text-center pt-4 pb-8">
+        {/* --- Island D: Danger Zone (New) --- */}
+        <section className="space-y-3 pt-2">
+          <h3 className="text-xs font-bold text-rose-500 ml-2 flex items-center gap-1">
+              <AlertTriangle size={12}/> 危險區域
+          </h3>
+          <div className="bg-rose-50 rounded-2xl overflow-hidden border border-rose-100 divide-y divide-rose-100/50">
+            
+            {/* RBAC Protected Reset */}
+            <div 
+                className={`p-4 flex justify-between items-center transition-colors cursor-pointer ${!isHost ? 'opacity-50 grayscale cursor-not-allowed' : 'active:bg-rose-100 hover:bg-rose-100/50'}`}
+                onClick={resetAccount} // Use Context Action
+            >
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white text-rose-500 rounded-lg shadow-sm"><RotateCcw size={18}/></div>
+                    <div className="flex flex-col text-left">
+                        <span className="font-bold text-rose-700 text-sm">重置帳本</span>
+                        <span className="text-[10px] text-rose-400">{isHost ? '清空所有資料 (僅戶長)' : '僅戶長可執行此操作'}</span>
+                    </div>
+                </div>
+                {isHost && <ChevronRight size={16} className="text-rose-300"/>}
+            </div>
+
+            {/* Leave Ledger */}
+            <div 
+                className="p-4 flex justify-between items-center active:bg-rose-100 hover:bg-rose-100/50 transition-colors cursor-pointer"
+                onClick={leaveLedger} // Use Context Action
+            >
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white text-rose-500 rounded-lg shadow-sm"><UserX size={18}/></div>
+                    <div className="flex flex-col text-left">
+                        <span className="font-bold text-rose-700 text-sm">退出此帳本</span>
+                        <span className="text-[10px] text-rose-400">移除權限並離開</span>
+                    </div>
+                </div>
+                <ChevronRight size={16} className="text-rose-300"/>
+            </div>
+
+          </div>
+        </section>
+
+        <div className="text-center pt-8 pb-8">
              <button onClick={handleFixIdentity} className="text-[10px] text-gray-300 hover:text-gray-400 flex items-center gap-1 mx-auto">
                 <ShieldAlert size={10}/> 修復帳號權限 (Debug)
              </button>
-             <p className="text-[10px] text-gray-300 mt-2 font-mono">SweetLedger v1.6.2 (Input Mode)</p>
+             <p className="text-[10px] text-gray-300 mt-2 font-mono">SweetLedger v2.0.0 (Pro)</p>
         </div>
       </div>
 
-      {/* --- Modals --- */}
+      {/* --- Modals (Unchanged) --- */}
       {/* Avatar Modal */}
       {isAvatarModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsAvatarModalOpen(false)}>
@@ -319,7 +359,7 @@ export default function SettingsView({
         </div>
       )}
 
-      {/* Category Editor Modal (Display Mode: Color Picking) */}
+      {/* Category Editor Modal */}
       {isEditingCategory && (
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:px-4">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsEditingCategory(false)} />
@@ -331,10 +371,9 @@ export default function SettingsView({
                 </div>
 
                 <div className="p-6 space-y-6 overflow-y-auto">
-                    {/* Preview (Display Mode for Confirmation) */}
+                    {/* Preview */}
                     <div className="flex justify-center">
                         <div className="flex flex-col items-center gap-2">
-                            {/* 這裡我們預覽「Display Mode」的樣子，讓使用者知道選了什麼顏色 */}
                             {(() => {
                                 const style = getCategoryStyle(editingCategoryData, 'display');
                                 return (
@@ -359,21 +398,14 @@ export default function SettingsView({
                         />
                     </div>
 
-                    {/* Color Picker (Updated to use COLORS from constants which maps PALETTE) */}
+                    {/* Color Picker */}
                     <div>
                         <label className="block text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-2"><Palette size={12}/> 顏色</label>
                         <div className="flex gap-3 overflow-x-auto pb-2 p-1 no-scrollbar">
                             {COLORS.map(c => (
                                 <button 
                                     key={c.hex} 
-                                    // [Update] 儲存 colorId 而非 hex
-                                    // 我們需要反向查找 PALETTE 的 Key，或是 COLORS 應該包含 id
-                                    // 為了簡化，我們假設 COLORS 順序對應，或者直接傳遞 style
                                     onClick={() => {
-                                        // 找出對應的 PALETTE key (如果 COLORS 是 array of objects generated from PALETTE)
-                                        // 簡單起見，我們存入 colorId (需確保 COLORS 有 name/id)
-                                        // 先前 constants.js 中 COLORS = Object.values(PALETTE)...
-                                        // PALETTE 物件有 name, id, hex. 所以 c.id 存在。
                                         const colorId = c.id || Object.keys(COLORS).find(k => COLORS[k].hex === c.hex) || 'slate';
                                         setEditingCategoryData({...editingCategoryData, colorId: c.name?.toLowerCase() || 'slate' }); 
                                     }} 

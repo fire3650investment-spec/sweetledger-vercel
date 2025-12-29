@@ -6,7 +6,8 @@ import {
   updateDoc, 
   setDoc, 
   getDoc,
-  arrayUnion 
+  arrayUnion,
+  deleteField // [Modified] 引入 deleteField 用於退出帳本
 } from 'firebase/firestore';
 import { db, appId } from '../utils/firebase';
 import { useAuth } from './AuthContext';
@@ -315,6 +316,25 @@ export const LedgerProvider = ({ children }) => {
       });
   }, []);
 
+  // [Module A] 1. 退出帳本 (New)
+  const leaveLedger = useCallback(async () => {
+    if (!ledgerCode || !user || !db) return;
+    if (!window.confirm('確定要退出此帳本嗎？您將無法再存取這些資料。')) return;
+
+    try {
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      // 使用 deleteField() 乾淨移除 user 物件中的該欄位
+      await updateDoc(docRef, {
+        [`users.${user.uid}`]: deleteField()
+      });
+      disconnectLedger();
+      alert('您已成功退出帳本。');
+    } catch (e) {
+      console.error("Leave Ledger Error:", e);
+      alert("退出失敗，請檢查網路連線。");
+    }
+  }, [ledgerCode, user, disconnectLedger]);
+
   const addTransaction = useCallback(async (payload) => {
     if (!ledgerCode || !user || !db) throw new Error("無效的帳本狀態");
     
@@ -439,7 +459,17 @@ export const LedgerProvider = ({ children }) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       let newProjects = [...(ledgerData.projects || [])];
-      const projectWithRates = { ...projectData, rates: projectData.rates || { JPY: 0.23, THB: 1 } };
+      
+      // [Module B] Handle Private Project Fields
+      const { type = 'public', owner = null } = projectData;
+
+      const projectWithRates = { 
+          ...projectData, 
+          rates: projectData.rates || { JPY: 0.23, THB: 1 },
+          type, // 'public' | 'private'
+          ...(type === 'private' && owner ? { owner } : {}) // 僅 private 寫入 owner
+      };
+
       if (projectData.id) {
           newProjects = newProjects.map(p => p.id === projectData.id ? { ...p, ...projectWithRates } : p);
       } else {
@@ -515,11 +545,24 @@ export const LedgerProvider = ({ children }) => {
     await updateDoc(docRef, { [`users.${user.uid}.${field}`]: value });
   }, [ledgerCode, user]);
 
+  // [Module A] 2. 重置帳本 (RBAC 權限鎖)
   const resetAccount = useCallback(async () => {
-    if (!ledgerCode || !db) return;
+    if (!ledgerCode || !db || !user) return;
+    
+    // RBAC Check
+    const currentUserRole = ledgerData?.users?.[user.uid]?.role;
+    if (currentUserRole !== 'host') {
+        alert("權限不足：只有戶長 (Host) 可以執行重置帳本操作。");
+        return;
+    }
+
+    if (!window.confirm('警告：確定要刪除「所有」交易紀錄嗎？此操作無法復原！')) return;
+    if (!window.confirm('再次確認：這將清空所有記帳資料，是否繼續？')) return;
+
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { transactions: [], subscriptions: [] });
-  }, [ledgerCode]);
+    alert('帳本已重置。');
+  }, [ledgerCode, ledgerData, user]);
 
   const fixIdentity = useCallback(async () => {
     if (!ledgerCode || !ledgerData || !user || !db) return;
@@ -552,7 +595,8 @@ export const LedgerProvider = ({ children }) => {
     isLedgerInitializing, 
     createLedger, 
     joinLedger, 
-    disconnectLedger, 
+    disconnectLedger,
+    leaveLedger, // [Module A] Export
     setLedgerCode, 
     checkUserBinding,
     addTransaction, 
@@ -576,7 +620,8 @@ export const LedgerProvider = ({ children }) => {
     isLedgerInitializing, 
     createLedger, 
     joinLedger, 
-    disconnectLedger, 
+    disconnectLedger,
+    leaveLedger,
     checkUserBinding,
     addTransaction, 
     updateTransaction, 
