@@ -199,7 +199,6 @@ export default function SweetLedger() {
 
   const confirmAvatarUpdate = async () => {
     if (!ledgerCode || !tempAvatar) return;
-    // [Optimistic UI] Close Modal Immediately
     setIsAvatarModalOpen(false);
     const prevAvatar = tempAvatar; 
     setTempAvatar('');
@@ -212,7 +211,6 @@ export default function SweetLedger() {
     if (!ledgerCode || !currentProjectId || !ledgerData) return;
     const numVal = parseFloat(val);
     if (numVal && numVal > 0) {
-        // [Optimistic UI] Input change is handled by local state in SettingsView, just need to fire update
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newProjects = ledgerData.projects.map(p => {
             if (p.id === currentProjectId) {
@@ -233,7 +231,6 @@ export default function SweetLedger() {
   
   const updateNickname = async () => {
     if (!ledgerCode || !myNickname) return;
-    // [Optimistic UI] Background Write
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { [`users.${user.uid}.name`]: myNickname });
   };
@@ -280,9 +277,14 @@ export default function SweetLedger() {
 
   const handleSaveProject = async () => {
     if (!editingProjectData.name) return;
-    // [Optimistic UI] Close Editor Immediately
     setIsEditingProject(false);
+    
+    // [Updated] Handle Private Project Fields
     const projectToSave = { ...editingProjectData };
+    if (projectToSave.type === 'private' && !projectToSave.owner) {
+        projectToSave.owner = user.uid; // Assign current user as owner
+    }
+    
     setEditingProjectData({ id: '', name: '', icon: 'project_daily' });
 
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -299,7 +301,6 @@ export default function SweetLedger() {
 
   const handleDeleteProject = async (projectId) => {
     if (confirm('確定要刪除這個專案嗎？（警告：該專案下的所有帳務紀錄將一併刪除且無法復原）')) {
-        // [Optimistic UI]
         if (currentProjectId === projectId) setCurrentProjectId('daily');
         
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -318,7 +319,6 @@ export default function SweetLedger() {
   const handleDeleteSubscription = async (subToDelete) => {
     if (!ledgerCode || !subToDelete) return;
     if (confirm(`確定要取消「${subToDelete.name}」的固定扣款嗎？`)) {
-        // [Optimistic UI] Background Write
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.id !== subToDelete.id);
         await updateDoc(docRef, { subscriptions: newSubscriptions });
@@ -327,7 +327,6 @@ export default function SweetLedger() {
 
   const handleSaveCategory = async () => {
     if (!editingCategoryData.name) return;
-    // [Optimistic UI] Close Editor Immediately
     setIsEditingCategory(false);
     const categoryToSave = { ...editingCategoryData };
     
@@ -349,7 +348,7 @@ export default function SweetLedger() {
 
   const handleDeleteCategory = async (catId) => {
      if (confirm('確定要刪除這個分類嗎？')) {
-        setIsEditingCategory(false); // [Optimistic UI] Close immediately
+        setIsEditingCategory(false);
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const newCategories = (ledgerData?.customCategories || DEFAULT_CATEGORIES).filter(c => c.id !== catId);
         await updateDoc(docRef, { customCategories: newCategories });
@@ -360,7 +359,6 @@ export default function SweetLedger() {
     if (!amountToSettle || amountToSettle <= 0) return;
     if (confirm(`確定要結清 ${formatCurrency(amountToSettle, 'TWD')} 給 ${payeeName} 嗎？`)) {
         try {
-            // [Optimistic UI] Fire and forget
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
             await updateDoc(docRef, { 
                 transactions: arrayUnion({ 
@@ -401,7 +399,6 @@ export default function SweetLedger() {
     if (!amount || !ledgerData || !ledgerCode) return;
     if (isSubmittingTransaction) return;
 
-    // [Optimistic UI Step 1] Prepare Data
     setIsSubmittingTransaction(true);
     const amountFloat = parseFloat(amount);
     let customSplitData = null;
@@ -432,10 +429,8 @@ export default function SweetLedger() {
         finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     }
 
-    // [Optimistic UI Step 2] Navigate Immediately
     setView('dashboard');
     
-    // [Optimistic UI Step 3] Reset Form immediately
     setTimeout(() => {
         setAmount(''); setNote(''); setAiInput(''); 
         setIsSubscription(false); setSubCycle('monthly'); setSubPayDay(''); 
@@ -494,13 +489,9 @@ export default function SweetLedger() {
   };
 
   const handleUpdateTransaction = async (updatedTx) => {
-    // [Fix] Receive updatedTx from child
     if (!editingTx || !ledgerData || !ledgerCode) return;
-    
-    // [Optimistic UI] Close Modal Immediately
     setIsEditTxModalOpen(false);
     setEditingTx(null);
-
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const updatedTxs = ledgerData.transactions.map(tx => tx.id === editingTx.id ? updatedTx : tx);
     await updateDoc(docRef, { transactions: updatedTxs });
@@ -508,13 +499,10 @@ export default function SweetLedger() {
 
   const handleDeleteTransaction = async (txId) => {
      if (!editingTx || !ledgerData || !ledgerCode) return;
-     
-     // [Optimistic UI] Close Modal Immediately
      setIsEditTxModalOpen(false);
      setEditingTx(null);
-
      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-     const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== txId); // Use passed txId
+     const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== txId); 
      await updateDoc(docRef, { transactions: updatedTxs });
   };
 
@@ -580,14 +568,33 @@ export default function SweetLedger() {
     }
   };
 
+  // [Updated] Export Guard: Filter out others' private transactions
   const handleExport = () => {
     if (!ledgerData) return;
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Date,Project,Category,Note,Amount,Currency,Payer,SplitType\n";
+    
     ledgerData.transactions.forEach(tx => {
-        const row = [new Date(tx.date).toLocaleDateString(), ledgerData.projects.find(p => p.id === tx.projectId)?.name || 'Unknown', tx.category.name, tx.note, tx.amount, tx.currency || 'TWD', ledgerData.users[tx.payer]?.name || 'Unknown', tx.splitType].join(",");
+        const project = ledgerData.projects.find(p => p.id === tx.projectId);
+        
+        // Privacy Check
+        if (project?.type === 'private' && project.owner !== user.uid) {
+            return; // Skip this transaction
+        }
+
+        const row = [
+            new Date(tx.date).toLocaleDateString(), 
+            project?.name || 'Unknown', 
+            tx.category.name, 
+            `"${tx.note || ''}"`, // Quote note to handle commas
+            tx.amount, 
+            tx.currency || 'TWD', 
+            ledgerData.users[tx.payer]?.name || 'Unknown', 
+            tx.splitType
+        ].join(",");
         csvContent += row + "\n";
     });
+
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
@@ -723,6 +730,7 @@ export default function SweetLedger() {
                     <div className={view === 'projects' ? 'block' : 'hidden'}>
                         <ProjectsView 
                             ledgerData={ledgerData}
+                            user={user} // [New] Pass user for private project filtering
                             isEditingProject={isEditingProject}
                             setIsEditingProject={setIsEditingProject}
                             editingProjectData={editingProjectData}
@@ -782,7 +790,6 @@ export default function SweetLedger() {
                     </div>
                 </div>
                 
-                {/* [Fix] Prop Names Corrected & Optimistic UI Ready */}
                 <EditTransactionModal 
                     isOpen={isEditTxModalOpen}
                     onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}

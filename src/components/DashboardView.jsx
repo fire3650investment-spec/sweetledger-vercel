@@ -1,6 +1,6 @@
 // src/components/DashboardView.jsx
 import React, { useMemo } from 'react';
-import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins, Lock, Wallet } from 'lucide-react';
 // [Updated] 引入 getCategoryStyle
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
@@ -19,8 +19,13 @@ export default function DashboardView({
 }) {
     if (!ledgerData || !user) return null;
 
-    const { projectTxs, groupedTransactions, monthlyTotal, settlement, currentProjectName, partnerName, otherUserId } = useMemo(() => {
-        if (!user) return { projectTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0 };
+    // [New] Filter Projects (Exclude others' private projects)
+    const visibleProjects = (ledgerData.projects || []).filter(p => p.type !== 'private' || p.owner === user.uid);
+    const currentProjectObj = ledgerData.projects?.find(p => p.id === currentProjectId) || { name: '日常', type: 'public' };
+    const isPrivateProject = currentProjectObj.type === 'private';
+
+    const { projectTxs, groupedTransactions, monthlyTotal, settlement, currentProjectName, partnerName, otherUserId, dailyAverage } = useMemo(() => {
+        if (!user) return { projectTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0, dailyAverage: 0 };
         
         const rawTxs = ledgerData.transactions || [];
         const safeUsers = ledgerData.users || {};
@@ -30,7 +35,7 @@ export default function DashboardView({
             .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => {
                 const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
-                let displayCategory = t.category || { name: '未分類', icon: 'help-circle' }; // Hex removed, let helper handle it
+                let displayCategory = t.category || { name: '未分類', icon: 'help-circle' };
                 
                 if (t.category?.id) {
                     const latestCat = currentCategories.find(c => c.id === t.category.id);
@@ -60,15 +65,20 @@ export default function DashboardView({
             catch (e) {}
         });
 
-        const currProject = ledgerData.projects?.find(p => p.id === currentProjectId);
-        const rates = currProject?.rates || { JPY: 0.23, THB: 1 };
-        const currProjectName = currProject?.name || '日常開銷';
+        const rates = currentProjectObj.rates || { JPY: 0.23, THB: 1 };
+        const currProjectName = currentProjectObj.name || '日常開銷';
 
         const mTotal = thisMonthTxs.reduce((acc, curr) => {
             const val = calculateTwdValue(curr.amount || 0, curr.currency || 'TWD', rates);
             return acc + (isNaN(val) ? 0 : val);
         }, 0);
 
+        // Calculate Daily Average
+        const today = new Date();
+        const daysPassed = today.getDate();
+        const dailyAvg = daysPassed > 0 ? mTotal / daysPassed : mTotal;
+
+        // Settlement Logic (Only relevant for public projects)
         let myPaid = 0;
         let myLiability = 0;
 
@@ -99,6 +109,10 @@ export default function DashboardView({
                     }
                 } else if (tx.splitType === 'host_all') liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
                 else if (tx.splitType === 'guest_all') liability = safeUsers[user.uid]?.role === 'guest' ? amountTwd : 0;
+                
+                // For Private Projects, liability is 100% self if I paid (handled implicitly by filter usually, but here we calculate it)
+                if (isPrivateProject) liability = amountTwd; 
+
                 if (!isNaN(liability)) myLiability += liability;
             }
         });
@@ -114,9 +128,9 @@ export default function DashboardView({
         const oUserId = Object.keys(safeUsers).find(uid => uid !== user.uid);
         const pName = oUserId && safeUsers[oUserId] ? (safeUsers[oUserId].name || '對方') : '對方';
 
-        return { projectTxs: pTxs, groupedTransactions: grouped, monthlyTotal: isNaN(mTotal) ? 0 : mTotal, settlement: isNaN(finalSettlement) ? 0 : finalSettlement, currentProjectName: currProjectName, partnerName: pName, otherUserId: oUserId };
+        return { projectTxs: pTxs, groupedTransactions: grouped, monthlyTotal: isNaN(mTotal) ? 0 : mTotal, settlement: isNaN(finalSettlement) ? 0 : finalSettlement, currentProjectName: currProjectName, partnerName: pName, otherUserId: oUserId, dailyAverage: dailyAvg };
 
-    }, [ledgerData, currentProjectId, user]); 
+    }, [ledgerData, currentProjectId, user, currentProjectObj, isPrivateProject]); 
 
     const getSmartTags = (tx) => {
         const tags = [];
@@ -160,32 +174,61 @@ export default function DashboardView({
       <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
         <div className="flex justify-between items-center mb-4">
            <div className="relative">
-             <select value={currentProjectId} onChange={(e) => setCurrentProjectId(e.target.value)} className="appearance-none bg-gray-900 text-white pl-4 pr-8 py-2 rounded-full font-bold text-sm outline-none shadow-lg shadow-gray-200">
-                {ledgerData.projects?.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
+             <select value={currentProjectId} onChange={(e) => setCurrentProjectId(e.target.value)} className={`appearance-none text-white pl-4 pr-8 py-2 rounded-full font-bold text-sm outline-none shadow-lg shadow-gray-200 transition-colors ${isPrivateProject ? 'bg-gray-800' : 'bg-gray-900'}`}>
+                {visibleProjects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
              </select>
              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white"><ChevronDown size={14} /></div>
            </div>
-           <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 bg-white rounded-full shadow-sm border border-gray-100 active:scale-95 transition-transform">
-             {privacyMode ? <EyeOff size={16} className="text-gray-400"/> : <Eye size={16} className="text-rose-500"/>}
-           </button>
+           
+           <div className="flex gap-2">
+                {isPrivateProject && <div className="p-2 bg-gray-100 rounded-full text-gray-400"><Lock size={16}/></div>}
+                <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 bg-white rounded-full shadow-sm border border-gray-100 active:scale-95 transition-transform">
+                    {privacyMode ? <EyeOff size={16} className="text-gray-400"/> : <Eye size={16} className="text-rose-500"/>}
+                </button>
+           </div>
         </div>
         
-        {/* Settlement Card (Unchanged logic, just keeping structure) */}
-        <div className={`rounded-3xl p-6 text-white shadow-lg shadow-rose-200 mb-8 relative overflow-hidden transition-colors ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-rose-500 to-pink-600'}`}>
-            <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
-            <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14}/> 總結算狀態 ({currentProjectName})</p>
-            <div className="flex justify-between items-end mb-2">
-                <h1 className="text-3xl font-bold tracking-tight">
-                    {settlement >= 0 ? `${partnerName} 欠你 ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}` : `你欠 ${partnerName} ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}`}
-                </h1>
+        {/* Card Switcher */}
+        {isPrivateProject ? (
+            // [Private Mode] Personal Summary Card
+            <div className="rounded-3xl p-6 text-white shadow-lg shadow-gray-200 mb-8 relative overflow-hidden bg-gradient-to-br from-slate-700 to-gray-900">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10"></div>
+                <p className="text-white/60 mb-1 font-bold text-xs flex items-center gap-2 uppercase tracking-wider"><Wallet size={12}/> 個人支出概況</p>
+                <div className="flex justify-between items-end mb-4">
+                    <h1 className="text-4xl font-bold tracking-tight">
+                        {formatCurrency(monthlyTotal, 'TWD', privacyMode)}
+                    </h1>
+                </div>
+                <div className="flex gap-4 border-t border-white/10 pt-3">
+                    <div>
+                        <p className="text-white/40 text-[10px] font-bold uppercase">本月累計</p>
+                        <p className="text-sm font-medium">{formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
+                    </div>
+                    <div className="w-[1px] h-8 bg-white/10"></div>
+                    <div>
+                        <p className="text-white/40 text-[10px] font-bold uppercase">平均日花費</p>
+                        <p className="text-sm font-medium">{formatCurrency(dailyAverage, 'TWD', privacyMode)}</p>
+                    </div>
+                </div>
             </div>
-            <p className="text-white/70 text-xs font-medium">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
-            {Math.abs(settlement) > 0 && (
-                <button onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你', settlement < 0 ? user.uid : otherUserId)} className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4">
-                    <Coins size={14}/> 結清債務
-                </button>
-            )}
-        </div>
+        ) : (
+            // [Public Mode] Settlement Card
+            <div className={`rounded-3xl p-6 text-white shadow-lg shadow-rose-200 mb-8 relative overflow-hidden transition-colors ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-rose-500 to-pink-600'}`}>
+                <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
+                <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14}/> 總結算狀態 ({currentProjectName})</p>
+                <div className="flex justify-between items-end mb-2">
+                    <h1 className="text-3xl font-bold tracking-tight">
+                        {settlement >= 0 ? `${partnerName} 欠你 ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}` : `你欠 ${partnerName} ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}`}
+                    </h1>
+                </div>
+                <p className="text-white/70 text-xs font-medium">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
+                {Math.abs(settlement) > 0 && (
+                    <button onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你', settlement < 0 ? user.uid : otherUserId)} className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4">
+                        <Coins size={14}/> 結清債務
+                    </button>
+                )}
+            </div>
+        )}
 
         <div className="space-y-6">
             {Object.entries(groupedTransactions).map(([date, txs]) => (
@@ -195,14 +238,11 @@ export default function DashboardView({
                         {txs.map((tx, idx) => { 
                             const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                             const tags = getSmartTags(tx);
-                            
-                            // [Updated] Apply Display Mode Style
                             const style = getCategoryStyle(tx.category, 'display');
 
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
                                     <div className="flex items-center gap-3 flex-1 min-w-0">
-                                        {/* [Updated] Use containerClass instead of inline styles */}
                                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg shrink-0 ${style.containerClass}`}>
                                             <CatIcon size={20} className={style.iconClass} />
                                         </div>

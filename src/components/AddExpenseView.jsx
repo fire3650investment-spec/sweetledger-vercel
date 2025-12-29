@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, 
-  Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image 
+  Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock 
 } from 'lucide-react';
 import { getIconComponent, parseReceiptWithGemini, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
@@ -61,17 +61,18 @@ export default function AddExpenseView({
     const [activeOverlay, setActiveOverlay] = useState('amount'); 
     const [localAmount, setLocalAmount] = useState(''); 
     const noteInputRef = useRef(null);
-    
-    // [Updated] Dual Input Strategy
-    const cameraInputRef = useRef(null); // Force Camera
-    const fileInputRef = useRef(null);   // Allow Gallery
-    
+    const cameraInputRef = useRef(null);
+    const fileInputRef = useRef(null);
     const [isScanning, setIsScanning] = useState(false);
     const [isScanModalOpen, setIsScanModalOpen] = useState(false);
     const [scannedItems, setScannedItems] = useState([]);
 
     // --- Data Preparation (Memoized) ---
     const currentCats = useMemo(() => ledgerData.customCategories || DEFAULT_CATEGORIES, [ledgerData.customCategories]);
+    
+    // [New] Private Project Detection
+    const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
+    const isPrivateProject = currentProject?.type === 'private';
     
     const filteredCategories = useMemo(() => {
         const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
@@ -117,6 +118,16 @@ export default function AddExpenseView({
             setSubPayDay('');
         };
     }, []); 
+
+    // [New] Force SplitType for Private Projects
+    useEffect(() => {
+        if (isPrivateProject) {
+            setSplitType('self');
+            if (user) setPayer(user.uid);
+        } else {
+            if (splitType === 'self') setSplitType('even');
+        }
+    }, [isPrivateProject, user]);
 
     useEffect(() => { 
         setAmount(localAmount); 
@@ -179,17 +190,13 @@ export default function AddExpenseView({
         });
     };
 
-    // [Updated] Dual Handlers
     const handleCameraClick = () => { cameraInputRef.current?.click(); };
     const handleAlbumClick = () => { fileInputRef.current?.click(); };
 
     const handleImageUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        
-        // Reset inputs to allow selecting same file again if needed
         e.target.value = ''; 
-        
         setIsScanning(true);
         const reader = new FileReader();
         reader.onloadend = async () => {
@@ -232,39 +239,30 @@ export default function AddExpenseView({
     };
 
     const isMathPending = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
-    
     const selectedCatStyle = getCategoryStyle(selectedCategory, 'input');
     const CatIcon = getIconComponent(selectedCategory?.icon || 'food');
 
     return (
       <div className="fixed inset-0 z-[50] flex flex-col h-[100dvh] bg-gray-50 overflow-hidden"> 
-        {/* [Updated] Dual Hidden Inputs */}
         <input type="file" ref={cameraInputRef} accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload}/>
         <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleImageUpload}/>
-        
         <ScanReceiptModal isOpen={isScanModalOpen} onClose={() => setIsScanModalOpen(false)} onConfirm={handleScanConfirm} initialItems={scannedItems} currency={currency} users={ledgerData.users}/>
 
         {/* HUD */}
         <div className="bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] z-20 shrink-0 shadow-sm border-b border-gray-100 relative">
             <div className="flex justify-between items-center mb-3">
                 <button onClick={() => setView('dashboard')} className="p-2 -ml-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={24}/></button>
-                <div className="font-bold text-slate-700 text-sm bg-gray-100 px-3 py-1 rounded-full border border-gray-200">
-                    {ledgerData.projects?.find(p => p.id === currentProjectId)?.name || '日常'}
+                <div className={`font-bold text-sm px-3 py-1 rounded-full border flex items-center gap-2 ${isPrivateProject ? 'bg-gray-800 text-white border-gray-700' : 'text-slate-700 bg-gray-100 border-gray-200'}`}>
+                    {isPrivateProject && <Lock size={12}/>}
+                    {currentProject?.name || '日常'}
                 </div>
-                
-                {/* [Updated] Action Buttons Group */}
                 <div className="flex gap-1 -mr-2">
-                    {/* 1. Album (New) */}
                     <button onClick={handleAlbumClick} disabled={isScanning} className={`p-2 rounded-full ${isScanning ? 'opacity-30' : 'text-slate-400 hover:bg-slate-50'}`}>
                         <Image size={20}/>
                     </button>
-                    
-                    {/* 2. Camera (Existing) */}
                     <button onClick={handleCameraClick} disabled={isScanning} className={`p-2 rounded-full ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'text-blue-500 hover:bg-blue-50'}`}>
                         {isScanning ? <RefreshCw className="animate-spin" size={20}/> : <Camera size={20}/>}
                     </button>
-
-                    {/* 3. AI (Existing) */}
                     <button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'text-purple-400 hover:bg-purple-50'}`}>
                         {isAiProcessing ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}
                     </button>
@@ -286,7 +284,6 @@ export default function AddExpenseView({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto overscroll-contain pb-32">
-            
             {/* Core Input */}
             <div className="px-4 py-6 bg-white mb-3 shadow-sm border-b border-gray-100">
                 <div className="flex justify-center mb-6">
@@ -314,30 +311,41 @@ export default function AddExpenseView({
                     </div>
                 </div>
                 
-                {/* Smart Tags */}
                 <SmartTagBar tags={recentNotes} onSelect={setNote} />
             </div>
 
             {/* Logic Module */}
             <div className="px-4">
                 <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-5">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-gray-500">
-                            <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500"><Users size={16} /></div>
-                            <span className="text-sm font-bold">分攤模式</span>
-                        </div>
-                        <div className="relative w-40">
-                            <select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="w-full appearance-none bg-gray-50 text-xs font-bold text-gray-700 py-2 pl-3 pr-8 rounded-xl outline-none border border-gray-100 focus:border-blue-200 text-right">
-                                <option value="even">平均分攤</option>
-                                <option value="multi_payer">混合出資</option>
-                                <option value="host_all">{getLabelForRole('host')}</option>
-                                <option value="guest_all">{getLabelForRole('guest')}</option>
-                            </select>
-                            <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"><ChevronDown size={14}/></div>
-                        </div>
-                    </div>
                     
-                    {splitType === 'multi_payer' && (
+                    {/* [Updated] Private Mode UI */}
+                    {isPrivateProject ? (
+                        <div className="flex items-center justify-between p-2 bg-gray-50 rounded-xl">
+                            <div className="flex items-center gap-3 text-gray-500">
+                                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500"><Lock size={16} /></div>
+                                <span className="text-sm font-bold">私人記帳模式</span>
+                            </div>
+                            <span className="text-xs font-bold text-gray-400 bg-white px-2 py-1 rounded border border-gray-100">不進行分攤</span>
+                        </div>
+                    ) : (
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-gray-500">
+                                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500"><Users size={16} /></div>
+                                <span className="text-sm font-bold">分攤模式</span>
+                            </div>
+                            <div className="relative w-40">
+                                <select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="w-full appearance-none bg-gray-50 text-xs font-bold text-gray-700 py-2 pl-3 pr-8 rounded-xl outline-none border border-gray-100 focus:border-blue-200 text-right">
+                                    <option value="even">平均分攤</option>
+                                    <option value="multi_payer">混合出資</option>
+                                    <option value="host_all">{getLabelForRole('host')}</option>
+                                    <option value="guest_all">{getLabelForRole('guest')}</option>
+                                </select>
+                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"><ChevronDown size={14}/></div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {splitType === 'multi_payer' && !isPrivateProject && (
                         <div className="bg-rose-50 p-3 rounded-xl border border-rose-100 animate-fade-in">
                             <div className="flex items-center justify-center gap-1 mb-2">
                                 <AlertCircle size={12} className="text-rose-500"/>
@@ -358,7 +366,7 @@ export default function AddExpenseView({
                     
                     {splitType !== 'multi_payer' && (
                         <>
-                            <div className="h-[1px] bg-gray-50 w-full"></div>
+                            {!isPrivateProject && <div className="h-[1px] bg-gray-50 w-full"></div>}
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-gray-500 flex-1 min-w-0">
                                     <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 shrink-0"><User size={16} /></div>
