@@ -1,7 +1,6 @@
 // src/components/SubscriptionsView.jsx
 import React from 'react';
 import { X, Trash2, Calendar, RefreshCw, AlertCircle, ArrowLeft } from 'lucide-react';
-// [Updated]
 import { getIconComponent, formatCurrency, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
@@ -14,8 +13,28 @@ export default function SubscriptionsView({
 }) {
   if (!ledgerData) return null;
 
-  const subscriptions = ledgerData.subscriptions || [];
-  const sortedSubs = [...subscriptions].sort((a, b) => new Date(a.nextPaymentDate) - new Date(b.nextPaymentDate));
+  // [Logic] 1. 取得原始列表
+  const rawSubscriptions = ledgerData.subscriptions || [];
+
+  // [Logic] 2. 過濾邏輯 (Filter Logic)
+  const filteredSubscriptions = rawSubscriptions.filter(sub => {
+      // 找出該訂閱所屬的專案
+      const project = ledgerData.projects?.find(p => p.id === sub.projectId);
+      
+      // 如果找不到專案 (可能是舊資料)，預設顯示
+      if (!project) return true;
+
+      // 如果是私人專案，必須檢查擁有者是否為自己
+      if (project.type === 'private') {
+          return project.owner === user.uid;
+      }
+
+      // 公開專案則全體可見
+      return true;
+  });
+
+  // [Logic] 3. 排序
+  const sortedSubs = [...filteredSubscriptions].sort((a, b) => new Date(a.nextPaymentDate) - new Date(b.nextPaymentDate));
 
   const getDaysUntil = (dateStr) => {
     const today = new Date();
