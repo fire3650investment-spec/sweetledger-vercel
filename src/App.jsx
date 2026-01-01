@@ -187,7 +187,7 @@ export default function SweetLedger() {
       }
   };
 
-  const handleExport = () => {
+  const handleExport = () => { 
       if (!ledgerData) return;
       let csvContent = "data:text/csv;charset=utf-8,Date,Project,Category,Note,Amount,Currency,Payer,SplitType\n";
       ledgerData.transactions.forEach(tx => {
@@ -212,7 +212,7 @@ export default function SweetLedger() {
   const shouldShowLoading = !hasCachedData && authLoading; 
   const isWaitingForFirstData = user && ledgerCode && !ledgerData && isLedgerInitializing;
 
-  // FIX: White Screen Guard (Broken State Detection)
+  // Broken State Detection
   const isBrokenState = user && ledgerCode && !ledgerData && !isLedgerInitializing;
 
   if (shouldShowLoading || isWaitingForFirstData || (loading && !ledgerData)) {
@@ -224,7 +224,7 @@ export default function SweetLedger() {
     );
   }
 
-  // FIX: Fallback UI for Broken State
+  // Fallback UI for Broken State
   if (isBrokenState) {
       return (
           <div className="min-h-screen flex flex-col items-center justify-center bg-white p-6 text-center animate-in fade-in duration-300">
@@ -319,11 +319,24 @@ export default function SweetLedger() {
                     </div>
                 </div>
                 
+                {/* [Fix] Connected New Props for EditTransactionModal */}
                 <EditTransactionModal 
-                    isOpen={isEditTxModalOpen} onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
-                    transaction={editingTx} ledgerData={ledgerData} user={user}
-                    onUpdate={async (tx) => { setIsEditTxModalOpen(false); setEditingTx(null); await updateTransaction(tx); }}
-                    onDelete={async (id) => { setIsEditTxModalOpen(false); setEditingTx(null); await deleteTransaction(id); }}
+                    isOpen={isEditTxModalOpen} 
+                    onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
+                    editingTx={editingTx} // Renamed prop
+                    ledgerData={ledgerData} 
+                    user={user}
+                    currentProjectId={currentProjectId} // Added Missing Prop
+                    updateTransaction={async (tx) => { // Renamed callback
+                        setIsEditTxModalOpen(false); 
+                        setEditingTx(null); 
+                        await updateTransaction(tx); 
+                    }}
+                    deleteTransaction={async (id) => { // Renamed callback
+                        setIsEditTxModalOpen(false); 
+                        setEditingTx(null); 
+                        await deleteTransaction(id); 
+                    }}
                 />
             </>
         )}
