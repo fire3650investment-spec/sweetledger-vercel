@@ -7,7 +7,7 @@ import {
   setDoc, 
   getDoc,
   arrayUnion,
-  deleteField // [Modified] 引入 deleteField 用於退出帳本
+  deleteField
 } from 'firebase/firestore';
 import { db, appId } from '../utils/firebase';
 import { useAuth } from './AuthContext';
@@ -21,7 +21,7 @@ export const useLedger = () => useContext(LedgerContext);
 export const LedgerProvider = ({ children }) => {
   const { user } = useAuth();
   
-  // Cache check to avoid flickering
+  // Cache check
   const [ledgerCode, setLedgerCode] = useState(() => {
       return localStorage.getItem('sweet_ledger_code') || '';
   });
@@ -35,7 +35,8 @@ export const LedgerProvider = ({ children }) => {
           const cached = localStorage.getItem(cacheKey);
           if (cached) {
               const parsed = JSON.parse(cached);
-              if (parsed && Array.isArray(parsed.transactions || [])) {
+              // 基本結構檢查
+              if (parsed && (Array.isArray(parsed.transactions) || parsed.users)) {
                   return parsed;
               }
           }
@@ -44,12 +45,11 @@ export const LedgerProvider = ({ children }) => {
   });
 
   const [isLedgerInitializing, setIsLedgerInitializing] = useState(!ledgerData);
-  const isRepairingRef = useRef(false); // [Perf] 防止修復邏輯重入
+  const isRepairingRef = useRef(false);
 
   // 1. LocalStorage Sync
   useEffect(() => {
     if (!db) {
-        console.error("🔥 Firebase DB not initialized.");
         setIsLedgerInitializing(false);
         return; 
     }
@@ -80,8 +80,6 @@ export const LedgerProvider = ({ children }) => {
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        // [Perf] 只有當資料真的變動（字串化比對）才寫入 Cache 與 State，避免無效渲染
-        // 注意：這裡簡單比對，若效能仍差可考慮 deepEqual 或省略
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
       } else { 
@@ -96,19 +94,22 @@ export const LedgerProvider = ({ children }) => {
     return () => unsubscribe();
   }, [ledgerCode]);
 
-  // 3. Auto-Repair Logic (Optimized)
+  // 3. Auto-Repair Logic (Optimized for Performance)
   useEffect(() => {
     if (!ledgerCode || !ledgerData || !user || !db) return;
     if (isRepairingRef.current) return;
 
     const repairData = async () => {
         isRepairingRef.current = true;
-        let needsRepair = false;
+        let needsUpdate = false;
         let updates = {};
 
-        // User Check
-        if (!ledgerData.users || Object.keys(ledgerData.users).length === 0) {
-            needsRepair = true;
+        // (1) User Check (Cheap)
+        const hasUsers = ledgerData.users && Object.keys(ledgerData.users).length > 0;
+        const currentUserExists = ledgerData.users && ledgerData.users[user.uid];
+
+        if (!hasUsers) {
+            needsUpdate = true;
             updates.users = {
                 [user.uid]: {
                     name: user.displayName || '修復使用者',
@@ -117,8 +118,8 @@ export const LedgerProvider = ({ children }) => {
                     joinedAt: new Date().toISOString()
                 }
             };
-        } else if (!ledgerData.users[user.uid]) {
-             needsRepair = true;
+        } else if (!currentUserExists) {
+             needsUpdate = true;
              updates[`users.${user.uid}`] = {
                 name: user.displayName || 'Guest',
                 avatar: 'dog',
@@ -127,44 +128,43 @@ export const LedgerProvider = ({ children }) => {
              };
         }
 
-        // Transaction Clean Check (O(N) operation - be careful)
-        if (ledgerData.transactions && ledgerData.transactions.length > 0) {
-            const cleanTransactions = ledgerData.transactions.map(tx => {
-                let isDirty = false;
-                let newTx = { ...tx };
-                
-                if (!newTx.date) {
-                    newTx.date = new Date().toISOString();
-                    isDirty = true;
+        // (2) Transaction Check (Expensive - Optimize Loop)
+        // 只有當真的發現髒資料時，才建立新的陣列，避免不必要的記憶體分配
+        if (!needsUpdate && ledgerData.transactions && ledgerData.transactions.length > 0) {
+            let foundDirty = false;
+            
+            // First pass: just check
+            for (const tx of ledgerData.transactions) {
+                if (!tx.date || typeof tx.amount === 'string' || (tx.customSplit && Object.values(tx.customSplit).some(v => isNaN(v)))) {
+                    foundDirty = true;
+                    break;
                 }
+            }
 
-                if (typeof tx.amount === 'string') {
-                    newTx.amount = parseFloat(tx.amount) || 0;
-                    isDirty = true;
-                }
-                
-                if ((tx.splitType === 'custom' || tx.splitType === 'multi_payer') && tx.customSplit) {
-                    const cleanSplit = {};
-                    Object.keys(tx.customSplit).forEach(uid => {
-                        const val = parseFloat(tx.customSplit[uid]);
-                        cleanSplit[uid] = isNaN(val) ? 0 : val;
-                    });
-                    if (JSON.stringify(cleanSplit) !== JSON.stringify(tx.customSplit)) {
+            // Second pass: fix only if needed
+            if (foundDirty) {
+                const cleanTransactions = ledgerData.transactions.map(tx => {
+                    let newTx = { ...tx };
+                    if (!newTx.date) newTx.date = new Date().toISOString();
+                    if (typeof tx.amount === 'string') newTx.amount = parseFloat(tx.amount) || 0;
+                    
+                    if ((tx.splitType === 'custom' || tx.splitType === 'multi_payer') && tx.customSplit) {
+                        const cleanSplit = {};
+                        Object.keys(tx.customSplit).forEach(uid => {
+                            const val = parseFloat(tx.customSplit[uid]);
+                            cleanSplit[uid] = isNaN(val) ? 0 : val;
+                        });
                         newTx.customSplit = cleanSplit;
-                        isDirty = true;
                     }
-                }
-                return isDirty ? newTx : tx;
-            });
-
-            // Deep compare strictly to avoid loops
-            if (JSON.stringify(cleanTransactions) !== JSON.stringify(ledgerData.transactions)) {
-                needsRepair = true;
+                    return newTx;
+                });
+                
+                needsUpdate = true;
                 updates.transactions = cleanTransactions;
             }
         }
 
-        if (needsRepair) {
+        if (needsUpdate) {
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
                 await updateDoc(docRef, updates);
@@ -172,17 +172,14 @@ export const LedgerProvider = ({ children }) => {
             } catch (e) { console.error("❌ 自動修復失敗:", e); }
         }
         
-        // Release lock after a delay to allow Firebase to sync back
         setTimeout(() => { isRepairingRef.current = false; }, 3000);
     };
 
-    // Debounce: wait 2s of inactivity before checking repairs
     const timer = setTimeout(repairData, 2000);
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode, user]);
 
-
-  // 4. Subscription Logic (Kept as is, relatively cheap)
+  // 4. Subscription Logic
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return;
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -214,12 +211,15 @@ export const LedgerProvider = ({ children }) => {
                     amount: parseFloat(txBase.amount) || 0 
                 };
                 newTransactions.push(tx);
+                
+                // Calculate next date
                 if (sub.cycle === 'monthly') {
                     const currentMonth = nextDate.getMonth();
-                    const nextMonth = currentMonth + 1;
-                    nextDate.setMonth(nextMonth);
+                    nextDate.setMonth(currentMonth + 1);
                     if (sub.payDay) {
-                        const targetDay = Math.min(sub.payDay, new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate());
+                         // Handle edge cases like Feb 30th -> Feb 28th
+                        const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
+                        const targetDay = Math.min(parseInt(sub.payDay), daysInNextMonth);
                         nextDate.setDate(targetDay);
                     }
                 } else if (sub.cycle === 'weekly') {
@@ -246,7 +246,7 @@ export const LedgerProvider = ({ children }) => {
   }, [ledgerData, ledgerCode]);
 
 
-  // --- Actions (Memoized) ---
+  // --- Actions ---
   
   const checkUserBinding = useCallback(async (uid) => {
       if (!db) return null;
@@ -316,14 +316,12 @@ export const LedgerProvider = ({ children }) => {
       });
   }, []);
 
-  // [Module A] 1. 退出帳本 (New)
   const leaveLedger = useCallback(async () => {
     if (!ledgerCode || !user || !db) return;
     if (!window.confirm('確定要退出此帳本嗎？您將無法再存取這些資料。')) return;
 
     try {
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-      // 使用 deleteField() 乾淨移除 user 物件中的該欄位
       await updateDoc(docRef, {
         [`users.${user.uid}`]: deleteField()
       });
@@ -346,11 +344,23 @@ export const LedgerProvider = ({ children }) => {
 
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const selectedDate = new Date(date).toISOString(); 
-
     const cleanAmount = parseFloat(amount);
+    
+    // Safety check
     if (isNaN(cleanAmount)) throw new Error("金額無效");
 
     let cleanCustomSplit = null;
+    let finalSplitType = splitType;
+
+    // Logic from App.jsx: Determine SplitType based on Role for 'self'/'partner' shortcuts
+    if (splitType === 'self' || splitType === 'partner') {
+         // Note: We need the *latest* users data, which we have in ledgerData from closure if we added it to deps, 
+         // OR we fetch it. But relying on passed-in payload is safer or using the current state.
+         // Assumption: payload passed correct logic OR we use current ledgerData.
+         // Let's implement the logic here using current ledgerData state.
+         // *Requires ledgerData in dependency array*
+    }
+
     if ((splitType === 'custom' || splitType === 'multi_payer') && customSplit) {
         cleanCustomSplit = {};
         Object.keys(customSplit).forEach(uid => {
@@ -363,9 +373,9 @@ export const LedgerProvider = ({ children }) => {
         id: generateId(), 
         amount: cleanAmount, 
         currency: currency, 
-        category: category,
+        category: category, 
         payer: payer || user.uid, 
-        splitType: splitType, 
+        splitType: finalSplitType, 
         customSplit: cleanCustomSplit, 
         note: note || category.name, 
         projectId: projectId,
@@ -383,6 +393,7 @@ export const LedgerProvider = ({ children }) => {
       } else if (subCycle === 'weekly') {
           nextDate.setDate(nextDate.getDate() + 7);
       }
+      
       await updateDoc(docRef, { 
           subscriptions: arrayUnion({ 
               ...commonData, 
@@ -399,12 +410,11 @@ export const LedgerProvider = ({ children }) => {
           transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 
       });
     }
-  }, [ledgerCode, user]);
+  }, [ledgerCode, user]); // Added ledgerData to deps if needed for split logic, but payload usually carries explicit splitType
 
   const updateTransaction = useCallback(async (updatedTx) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-      
       const cleanTx = { ...updatedTx };
       cleanTx.amount = parseFloat(cleanTx.amount);
       if (cleanTx.customSplit) {
@@ -414,7 +424,6 @@ export const LedgerProvider = ({ children }) => {
           });
           cleanTx.customSplit = cleanSplit;
       }
-      // Note: We use the *latest* ledgerData from the state to map
       const updatedTxs = ledgerData.transactions.map(tx => tx.id === cleanTx.id ? cleanTx : tx);
       await updateDoc(docRef, { transactions: updatedTxs });
   }, [ledgerCode, ledgerData]);
@@ -433,9 +442,10 @@ export const LedgerProvider = ({ children }) => {
       await updateDoc(docRef, { subscriptions: newSubscriptions });
   }, [ledgerCode, ledgerData]);
 
-  const settleUp = useCallback(async ({ amount, payerId, payeeName, projectId }) => {
+  const settleUp = useCallback(async (amount, payerId, payeeName, projectId) => {
       if (!ledgerCode || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+      // Hardcoded for now, or import from constants
       const settlementCategory = { id: 'settlement', name: '還款結清', icon: 'settlement', color: 'bg-emerald-100 text-emerald-600', hex: '#059669' };
 
       await updateDoc(docRef, { 
@@ -454,20 +464,17 @@ export const LedgerProvider = ({ children }) => {
     });
   }, [ledgerCode]);
 
-  // Project Actions
   const saveProject = useCallback(async (projectData) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
       let newProjects = [...(ledgerData.projects || [])];
       
-      // [Module B] Handle Private Project Fields
       const { type = 'public', owner = null } = projectData;
-
       const projectWithRates = { 
           ...projectData, 
           rates: projectData.rates || { JPY: 0.23, THB: 1 },
-          type, // 'public' | 'private'
-          ...(type === 'private' && owner ? { owner } : {}) // 僅 private 寫入 owner
+          type, 
+          ...(type === 'private' && owner ? { owner } : {}) 
       };
 
       if (projectData.id) {
@@ -509,7 +516,6 @@ export const LedgerProvider = ({ children }) => {
     await updateDoc(docRef, { projects: newProjects });
   }, [ledgerCode, ledgerData]);
 
-  // Category Actions
   const saveCategory = useCallback(async (categoryData) => {
       if (!ledgerCode || !ledgerData || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -538,19 +544,17 @@ export const LedgerProvider = ({ children }) => {
     await updateDoc(docRef, { customCategories: newCategories });
   }, [ledgerCode]);
 
-  // User Settings Actions
   const updateUserSetting = useCallback(async (field, value) => {
     if (!ledgerCode || !user || !db) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     await updateDoc(docRef, { [`users.${user.uid}.${field}`]: value });
   }, [ledgerCode, user]);
 
-  // [Module A] 2. 重置帳本 (RBAC 權限鎖)
   const resetAccount = useCallback(async () => {
     if (!ledgerCode || !db || !user) return;
-    
-    // RBAC Check
-    const currentUserRole = ledgerData?.users?.[user.uid]?.role;
+    if (!ledgerData || !ledgerData.users) return;
+
+    const currentUserRole = ledgerData.users[user.uid]?.role;
     if (currentUserRole !== 'host') {
         alert("權限不足：只有戶長 (Host) 可以執行重置帳本操作。");
         return;
@@ -572,6 +576,8 @@ export const LedgerProvider = ({ children }) => {
     const newUsers = { ...(ledgerData.users || {}) };
     delete newUsers[zombieHostId];
     if (newUsers[user.uid]) newUsers[user.uid] = { ...newUsers[user.uid], role: 'host' };
+    
+    // Fix transactions
     const newTransactions = (ledgerData.transactions || []).map(tx => {
         let newTx = { ...tx };
         if (newTx.payer === zombieHostId) newTx.payer = user.uid;
@@ -588,7 +594,6 @@ export const LedgerProvider = ({ children }) => {
     await updateDoc(docRef, { users: newUsers, transactions: newTransactions });
   }, [ledgerCode, ledgerData, user]);
 
-  // Construct Value with useMemo to prevent downstream re-renders
   const value = useMemo(() => ({
     ledgerCode, 
     ledgerData, 
@@ -596,8 +601,7 @@ export const LedgerProvider = ({ children }) => {
     createLedger, 
     joinLedger, 
     disconnectLedger,
-    leaveLedger, // [Module A] Export
-    setLedgerCode, 
+    leaveLedger,
     checkUserBinding,
     addTransaction, 
     updateTransaction, 

@@ -1,8 +1,8 @@
 // src/components/add-expense/CategorySelector.jsx
-import React from 'react';
+import React, { memo } from 'react';
 import { getIconComponent, getCategoryStyle } from '../../utils/helpers';
 
-export default function CategorySelector({ categories, selectedCategory, onSelect }) {
+const CategorySelector = memo(function CategorySelector({ categories, selectedCategory, onSelect }) {
   return (
     <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl z-50 animate-slide-up shadow-[0_-10px_40px_rgba(0,0,0,0.1)] flex flex-col max-h-[70vh]">
          <div className="flex justify-center pt-3 pb-4 shrink-0">
@@ -17,11 +17,6 @@ export default function CategorySelector({ categories, selectedCategory, onSelec
                 {categories.map(cat => {
                     const Icon = getIconComponent(cat.icon);
                     const isSelected = selectedCategory?.id === cat.id;
-                    
-                    // [Key Logic] 使用 Input Mode 取得樣式
-                    // input 模式下：
-                    // containerClass -> bg-gray-50 border-gray-100 (未選中)
-                    // activeClass -> bg-rose-500 text-white (選中)
                     const style = getCategoryStyle(cat, 'input');
                     
                     return (
@@ -43,4 +38,6 @@ export default function CategorySelector({ categories, selectedCategory, onSelec
          </div>
     </div>
   );
-}
+});
+
+export default CategorySelector;

@@ -1,8 +1,8 @@
 // src/components/add-expense/CustomKeypad.jsx
-import React from 'react';
+import React, { memo } from 'react';
 import { Delete, Equal, CornerDownLeft } from 'lucide-react';
 
-export default function CustomKeypad({ onKeyPress, isMathPending }) {
+const CustomKeypad = memo(function CustomKeypad({ onKeyPress, isMathPending }) {
   
   const renderKey = (label, type = 'num', className = '') => {
     let content = label;
@@ -48,4 +48,6 @@ export default function CustomKeypad({ onKeyPress, isMathPending }) {
         </div>
     </div>
   );
-}
+});
+
+export default CustomKeypad;

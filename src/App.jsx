@@ -1,22 +1,16 @@
 // src/App.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  doc, 
-  updateDoc, 
-  arrayUnion
-} from 'firebase/firestore';
-import { 
   Home, PieChart, Settings, Plus, Briefcase
 } from 'lucide-react';
 
 // Contexts
 import { useAuth } from './contexts/AuthContext';
 import { useLedger } from './contexts/LedgerContext';
-import { db, appId } from './utils/firebase';
 
 // Utils
 import { DEFAULT_CATEGORIES, CATEGORIES, COLORS } from './utils/constants';
-import { formatCurrency, generateId, callGemini } from './utils/helpers';
+import { formatCurrency, callGemini } from './utils/helpers';
 
 // Components
 import DashboardView from './components/DashboardView';
@@ -40,7 +34,22 @@ export default function SweetLedger() {
     joinLedger, 
     disconnectLedger, 
     setLedgerCode, 
-    checkUserBinding 
+    checkUserBinding,
+    addTransaction,
+    updateTransaction,
+    deleteTransaction,
+    deleteSubscription,
+    settleUp,
+    saveProject,
+    deleteProject,
+    reorderProjects,
+    updateProjectRates,
+    saveCategory,
+    deleteCategory,
+    reorderCategories,
+    updateUserSetting,
+    resetAccount,
+    fixIdentity
   } = useLedger();
 
   // --- UI State ---
@@ -200,26 +209,13 @@ export default function SweetLedger() {
   const confirmAvatarUpdate = async () => {
     if (!ledgerCode || !tempAvatar) return;
     setIsAvatarModalOpen(false);
-    const prevAvatar = tempAvatar; 
+    await updateUserSetting('avatar', tempAvatar);
     setTempAvatar('');
-    
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    await updateDoc(docRef, { [`users.${user.uid}.avatar`]: prevAvatar });
   };
 
-  const updateLedgerCurrency = async (currencyKey, val) => {
-    if (!ledgerCode || !currentProjectId || !ledgerData) return;
-    const numVal = parseFloat(val);
-    if (numVal && numVal > 0) {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const newProjects = ledgerData.projects.map(p => {
-            if (p.id === currentProjectId) {
-                return { ...p, rates: { ...(p.rates || { JPY: 0.23, THB: 1 }), [currencyKey]: numVal } };
-            }
-            return p;
-        });
-        await updateDoc(docRef, { projects: newProjects });
-    }
+  const handleUpdateLedgerCurrency = async (currencyKey, val) => {
+    if (!ledgerCode || !currentProjectId) return;
+    await updateProjectRates(currentProjectId, currencyKey, val);
   };
 
   const handleOpenAddExpense = (mode) => {
@@ -229,22 +225,19 @@ export default function SweetLedger() {
       else setIsAiModalOpen(false);
   };
   
-  const updateNickname = async () => {
+  const handleUpdateNickname = async () => {
     if (!ledgerCode || !myNickname) return;
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    await updateDoc(docRef, { [`users.${user.uid}.name`]: myNickname });
+    await updateUserSetting('name', myNickname);
   };
   
   const handleResetAccount = async () => {
       const confirmStr = prompt("警告：此操作將刪除所有交易紀錄且無法復原！\n請輸入 RESET 確認重置：");
       if (confirmStr === "RESET") {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        await updateDoc(docRef, { transactions: [], subscriptions: [] });
-        alert("帳本已重置。");
+        await resetAccount();
       }
   };
 
-  const handleFixIdentity = async () => {
+  const handleFixIdentityFn = async () => {
     if (!ledgerData || !user) return;
     const zombieHostId = Object.keys(ledgerData.users).find(uid => 
         ledgerData.users[uid].role === 'host' && uid !== user.uid
@@ -252,128 +245,55 @@ export default function SweetLedger() {
     if (!zombieHostId) { alert("目前帳本狀態正常，無需修復。"); return; }
     
     if (confirm("是否要繼承舊 Host 帳號並修復權限？")) {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const newUsers = { ...ledgerData.users };
-        delete newUsers[zombieHostId];
-        if (newUsers[user.uid]) newUsers[user.uid] = { ...newUsers[user.uid], role: 'host' };
-        
-        const newTransactions = ledgerData.transactions.map(tx => {
-            let newTx = { ...tx };
-            if (newTx.payer === zombieHostId) newTx.payer = user.uid;
-            if (newTx.customSplit) {
-                const newSplit = {};
-                Object.keys(newTx.customSplit).forEach(key => {
-                    const newKey = key === zombieHostId ? user.uid : key;
-                    newSplit[newKey] = newTx.customSplit[key];
-                });
-                newTx.customSplit = newSplit;
-            }
-            return newTx;
-        });
-        await updateDoc(docRef, { users: newUsers, transactions: newTransactions });
+        await fixIdentity();
         alert("修復成功！");
     }
   };
 
-  const handleSaveProject = async () => {
+  const handleSaveProjectFn = async () => {
     if (!editingProjectData.name) return;
     setIsEditingProject(false);
     
-    // [Updated] Handle Private Project Fields
+    // UI logic specific: clear form
     const projectToSave = { ...editingProjectData };
-    if (projectToSave.type === 'private' && !projectToSave.owner) {
-        projectToSave.owner = user.uid; // Assign current user as owner
-    }
-    
     setEditingProjectData({ id: '', name: '', icon: 'project_daily' });
 
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    let newProjects = [...(ledgerData?.projects || [])];
-    const projectWithRates = { ...projectToSave, rates: projectToSave.rates || { JPY: 0.23, THB: 1 } };
-
-    if (projectToSave.id) {
-        newProjects = newProjects.map(p => p.id === projectToSave.id ? projectWithRates : p);
-    } else {
-        newProjects.push({ ...projectWithRates, id: generateId() });
-    }
-    await updateDoc(docRef, { projects: newProjects });
+    await saveProject(projectToSave);
   };
 
-  const handleDeleteProject = async (projectId) => {
+  const handleDeleteProjectFn = async (projectId) => {
     if (confirm('確定要刪除這個專案嗎？（警告：該專案下的所有帳務紀錄將一併刪除且無法復原）')) {
         if (currentProjectId === projectId) setCurrentProjectId('daily');
-        
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const newProjects = ledgerData.projects.filter(p => p.id !== projectId);
-        const newTransactions = ledgerData.transactions.filter(t => t.projectId !== projectId);
-        const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.projectId !== projectId);
-
-        await updateDoc(docRef, { 
-            projects: newProjects,
-            transactions: newTransactions,
-            subscriptions: newSubscriptions
-        });
+        await deleteProject(projectId);
     }
   };
 
-  const handleDeleteSubscription = async (subToDelete) => {
+  const handleDeleteSubscriptionFn = async (subToDelete) => {
     if (!ledgerCode || !subToDelete) return;
     if (confirm(`確定要取消「${subToDelete.name}」的固定扣款嗎？`)) {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const newSubscriptions = (ledgerData.subscriptions || []).filter(s => s.id !== subToDelete.id);
-        await updateDoc(docRef, { subscriptions: newSubscriptions });
+        await deleteSubscription(subToDelete.id);
     }
   };
 
-  const handleSaveCategory = async () => {
+  const handleSaveCategoryFn = async () => {
     if (!editingCategoryData.name) return;
     setIsEditingCategory(false);
     const categoryToSave = { ...editingCategoryData };
-    
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    let newCategories = [...(ledgerData?.customCategories || DEFAULT_CATEGORIES)];
-    if (categoryToSave.id) {
-        newCategories = newCategories.map(c => c.id === categoryToSave.id ? categoryToSave : c);
-    } else {
-        const newId = generateId();
-        newCategories.push({ ...categoryToSave, id: newId });
-        await updateDoc(docRef, { 
-           customCategories: newCategories,
-           'settings.selectedCategories': arrayUnion(newId)
-        });
-        return;
-    }
-    await updateDoc(docRef, { customCategories: newCategories });
+    await saveCategory(categoryToSave);
   };
 
-  const handleDeleteCategory = async (catId) => {
+  const handleDeleteCategoryFn = async (catId) => {
      if (confirm('確定要刪除這個分類嗎？')) {
         setIsEditingCategory(false);
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const newCategories = (ledgerData?.customCategories || DEFAULT_CATEGORIES).filter(c => c.id !== catId);
-        await updateDoc(docRef, { customCategories: newCategories });
+        await deleteCategory(catId);
      }
   };
   
-  const handleSettleUp = async (amountToSettle, payeeName, payerId) => {
+  const handleSettleUpFn = async (amountToSettle, payeeName, payerId) => {
     if (!amountToSettle || amountToSettle <= 0) return;
     if (confirm(`確定要結清 ${formatCurrency(amountToSettle, 'TWD')} 給 ${payeeName} 嗎？`)) {
         try {
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-            await updateDoc(docRef, { 
-                transactions: arrayUnion({ 
-                    id: generateId(), 
-                    amount: amountToSettle, 
-                    currency: 'TWD', 
-                    category: CATEGORIES.find(c => c.id === 'settlement'),
-                    payer: payerId, 
-                    splitType: 'settlement',
-                    note: `還款給 ${payeeName}`, 
-                    projectId: currentProjectId,
-                    date: new Date().toISOString(),
-                    isSettlement: true
-                }) 
-            });
+            await settleUp(amountToSettle, payerId, payeeName, currentProjectId);
         } catch (e) {
             console.error("Settle Up Error:", e);
             alert("結清失敗");
@@ -395,14 +315,14 @@ export default function SweetLedger() {
     }
   };
 
-  const addTransaction = async () => {
+  const handleAddTransactionFn = async () => {
     if (!amount || !ledgerData || !ledgerCode) return;
     if (isSubmittingTransaction) return;
 
     setIsSubmittingTransaction(true);
     const amountFloat = parseFloat(amount);
-    let customSplitData = null;
     let finalSplitType = splitType;
+    let customSplitData = null;
 
     if (splitType === 'custom' || splitType === 'multi_payer') {
         const hostAmt = parseFloat(customSplitHost) || 0;
@@ -413,7 +333,8 @@ export default function SweetLedger() {
             setIsSubmittingTransaction(false);
             return;
         }
-
+        
+        // Prepare data map for Context
         const hostUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host');
         const guestUid = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'guest');
         customSplitData = {};
@@ -429,8 +350,10 @@ export default function SweetLedger() {
         finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
     }
 
+    // Optimistic UI Switch
     setView('dashboard');
     
+    // Reset Form
     setTimeout(() => {
         setAmount(''); setNote(''); setAiInput(''); 
         setIsSubscription(false); setSubCycle('monthly'); setSubPayDay(''); 
@@ -440,70 +363,38 @@ export default function SweetLedger() {
     }, 500);
 
     try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const selectedDate = new Date(date).toISOString(); 
-        const commonData = {
-            id: generateId(), 
-            amount: amountFloat, 
-            currency: currency, 
-            category: selectedCategory, 
-            payer: payer || user.uid, 
-            splitType: finalSplitType, 
-            customSplit: customSplitData, 
-            note: note || selectedCategory.name, 
+        await addTransaction({
+            amount: amountFloat,
+            currency,
+            category: selectedCategory,
+            payer: payer || user.uid,
+            splitType: finalSplitType,
+            customSplit: customSplitData,
+            note: note || selectedCategory.name,
             projectId: currentProjectId,
-        };
-
-        if (isSubscription) {
-          let nextDate = new Date(selectedDate);
-          if (subCycle === 'monthly') {
-              nextDate.setMonth(nextDate.getMonth() + 1);
-              if (subPayDay) {
-                  const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
-                  const targetDay = Math.min(parseInt(subPayDay), daysInNextMonth);
-                  nextDate.setDate(targetDay);
-              }
-          } else if (subCycle === 'weekly') {
-              nextDate.setDate(nextDate.getDate() + 7);
-          }
-          
-          await updateDoc(docRef, { 
-              subscriptions: arrayUnion({ 
-                  ...commonData, 
-                  name: note || selectedCategory.name, 
-                  cycle: subCycle, 
-                  payDay: parseInt(subPayDay) || 1, 
-                  mode: 'infinite', 
-                  nextPaymentDate: nextDate.toISOString(),
-              }),
-              transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }) 
-          });
-        } else {
-          await updateDoc(docRef, { 
-              transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 
-          });
-        }
+            date,
+            isSubscription,
+            subCycle,
+            subPayDay
+        });
     } catch (e) {
-        console.error("Background Write Error:", e);
+        console.error("Add Tx Error:", e);
+        alert(`記帳失敗: ${e.message}`);
     }
   };
 
-  const handleUpdateTransaction = async (updatedTx) => {
+  const handleUpdateTransactionFn = async (updatedTx) => {
     if (!editingTx || !ledgerData || !ledgerCode) return;
     setIsEditTxModalOpen(false);
     setEditingTx(null);
-    const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    const updatedTxs = ledgerData.transactions.map(tx => tx.id === editingTx.id ? updatedTx : tx);
-    await updateDoc(docRef, { transactions: updatedTxs });
+    await updateTransaction(updatedTx);
   };
 
-  const handleDeleteTransaction = async (txId) => {
+  const handleDeleteTransactionFn = async (txId) => {
      if (!editingTx || !ledgerData || !ledgerCode) return;
      setIsEditTxModalOpen(false);
      setEditingTx(null);
-     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-     const updatedTxs = ledgerData.transactions.filter(tx => tx.id !== txId); 
-     await updateDoc(docRef, { transactions: updatedTxs });
+     await deleteTransaction(txId);
   };
 
   const handleAiModalSubmit = async () => {
@@ -568,7 +459,6 @@ export default function SweetLedger() {
     }
   };
 
-  // [Updated] Export Guard: Filter out others' private transactions
   const handleExport = () => {
     if (!ledgerData) return;
     let csvContent = "data:text/csv;charset=utf-8,";
@@ -576,17 +466,15 @@ export default function SweetLedger() {
     
     ledgerData.transactions.forEach(tx => {
         const project = ledgerData.projects.find(p => p.id === tx.projectId);
-        
-        // Privacy Check
         if (project?.type === 'private' && project.owner !== user.uid) {
-            return; // Skip this transaction
+            return; 
         }
 
         const row = [
             new Date(tx.date).toLocaleDateString(), 
             project?.name || 'Unknown', 
             tx.category.name, 
-            `"${tx.note || ''}"`, // Quote note to handle commas
+            `"${tx.note || ''}"`, 
             tx.amount, 
             tx.currency || 'TWD', 
             ledgerData.users[tx.payer]?.name || 'Unknown', 
@@ -603,26 +491,16 @@ export default function SweetLedger() {
     link.click();
   };
 
-  const handleReorderProjects = async (newProjects) => {
+  const handleReorderProjectsFn = async (newProjects) => {
     if (!ledgerCode || !newProjects) return;
-    try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        await updateDoc(docRef, { projects: newProjects });
-    } catch (e) {
-        console.error("Reorder Projects Error:", e);
-        alert("排序儲存失敗，請檢查網路");
-    }
+    try { await reorderProjects(newProjects); } 
+    catch (e) { console.error("Reorder Error:", e); alert("排序儲存失敗"); }
   };
 
-  const handleReorderCategories = async (newCategories) => {
+  const handleReorderCategoriesFn = async (newCategories) => {
     if (!ledgerCode || !newCategories) return;
-    try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        await updateDoc(docRef, { customCategories: newCategories });
-    } catch (e) {
-        console.error("Reorder Categories Error:", e);
-        alert("排序儲存失敗");
-    }
+    try { await reorderCategories(newCategories); } 
+    catch (e) { console.error("Reorder Error:", e); alert("排序儲存失敗"); }
   };
 
   const hasCachedData = ledgerCode && ledgerData && user;
@@ -688,7 +566,7 @@ export default function SweetLedger() {
                         setSubCycle={setSubCycle}
                         subPayDay={subPayDay}
                         setSubPayDay={setSubPayDay}
-                        addTransaction={addTransaction}
+                        addTransaction={handleAddTransactionFn}
                         isSubmittingTransaction={isSubmittingTransaction}
                      />
                 </div>
@@ -697,7 +575,7 @@ export default function SweetLedger() {
                         ledgerData={ledgerData}
                         user={user}
                         setView={setView}
-                        handleDeleteSubscription={handleDeleteSubscription}
+                        handleDeleteSubscription={handleDeleteSubscriptionFn}
                     />
                 </div>
 
@@ -712,9 +590,9 @@ export default function SweetLedger() {
                             setIsEditTxModalOpen={setIsEditTxModalOpen}
                             setEditingTx={setEditingTx}
                             user={user}
-                            handleSettleUp={handleSettleUp}
+                            handleSettleUp={handleSettleUpFn}
                             handleOpenAddExpense={handleOpenAddExpense} 
-                            setView={setView} // [Added] 傳遞導航函式
+                            setView={setView}
                         />
                     </div>
                     <div className={view === 'stats' ? 'block' : 'hidden'}>
@@ -731,14 +609,14 @@ export default function SweetLedger() {
                     <div className={view === 'projects' ? 'block' : 'hidden'}>
                         <ProjectsView 
                             ledgerData={ledgerData}
-                            user={user} // [New] Pass user for private project filtering
+                            user={user}
                             isEditingProject={isEditingProject}
                             setIsEditingProject={setIsEditingProject}
                             editingProjectData={editingProjectData}
                             setEditingProjectData={setEditingProjectData}
-                            handleSaveProject={handleSaveProject}
-                            handleDeleteProject={handleDeleteProject}
-                            handleReorderProjects={handleReorderProjects}
+                            handleSaveProject={handleSaveProjectFn}
+                            handleDeleteProject={handleDeleteProjectFn}
+                            handleReorderProjects={handleReorderProjectsFn}
                         />
                     </div>
                     <div className={view === 'settings' ? 'block' : 'hidden'}>
@@ -750,8 +628,8 @@ export default function SweetLedger() {
                             setIsEditingCategory={setIsEditingCategory}
                             editingCategoryData={editingCategoryData}
                             setEditingCategoryData={setEditingCategoryData}
-                            handleSaveCategory={handleSaveCategory}
-                            handleDeleteCategory={handleDeleteCategory}
+                            handleSaveCategory={handleSaveCategoryFn}
+                            handleDeleteCategory={handleDeleteCategoryFn}
                             handleExport={handleExport}
                             handleResetAccount={handleResetAccount}
                             handleLogout={handleLogout}
@@ -759,15 +637,15 @@ export default function SweetLedger() {
                             setIsAvatarModalOpen={setIsAvatarModalOpen}
                             myNickname={myNickname}
                             setMyNickname={setMyNickname}
-                            updateNickname={updateNickname}
+                            updateNickname={handleUpdateNickname}
                             tempAvatar={tempAvatar}
                             handleAvatarSelect={handleAvatarSelect}
                             confirmAvatarUpdate={confirmAvatarUpdate}
-                            handleFixIdentity={handleFixIdentity}
+                            handleFixIdentity={handleFixIdentityFn}
                             ledgerCode={ledgerCode}
-                            updateLedgerCurrency={updateLedgerCurrency}
+                            updateLedgerCurrency={handleUpdateLedgerCurrency}
                             currentProjectId={currentProjectId}
-                            handleReorderCategories={handleReorderCategories}
+                            handleReorderCategories={handleReorderCategoriesFn}
                         />
                     </div>
 
@@ -797,8 +675,8 @@ export default function SweetLedger() {
                     transaction={editingTx} 
                     ledgerData={ledgerData}
                     user={user}
-                    onUpdate={handleUpdateTransaction}
-                    onDelete={handleDeleteTransaction}
+                    onUpdate={handleUpdateTransactionFn}
+                    onDelete={handleDeleteTransactionFn}
                 />
             </>
         )}
