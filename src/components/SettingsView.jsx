@@ -126,8 +126,8 @@ export default function SettingsView({
       
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-          {/* [Fix 3] 調整標題字級為 text-2xl 以符合全站一致性 */}
-          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">設定</h2>
+          {/* [Updated] 標題樣式統一 */}
+          <h2 className="text-2xl font-bold text-gray-800">設定</h2>
       </div>
 
       <div className="space-y-6">
@@ -281,23 +281,24 @@ export default function SettingsView({
         </section>
 
         {/* --- Island D: Danger Zone --- */}
-        {/* [Fix 1] 視覺降噪：移除紅色背景，改為白色並統一邊框樣式 */}
+        {/* [Updated] 視覺降噪：白色背景，灰色按鈕，保留紅色小標題 */}
         <section className="space-y-3 pt-2">
           <h3 className="text-xs font-bold text-rose-500 ml-2 flex items-center gap-1">
               <AlertTriangle size={12}/> 危險區域
           </h3>
           <div className="bg-white rounded-2xl overflow-hidden border border-gray-100 divide-y divide-gray-50">
             
-            {/* RBAC Protected Reset */}
+            {/* Reset Account */}
             <div 
                 className={`p-4 flex justify-between items-center transition-colors cursor-pointer ${!isHost ? 'opacity-50 grayscale cursor-not-allowed' : 'active:bg-gray-50 hover:bg-gray-50'}`}
                 onClick={resetAccount} 
             >
                 <div className="flex items-center gap-3">
-                    {/* Icon 保持紅色以示警 */}
-                    <div className="p-2 bg-rose-50 text-rose-500 rounded-lg shadow-sm"><RotateCcw size={18}/></div>
+                    {/* [Updated] 灰色 Icon */}
+                    <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><RotateCcw size={18}/></div>
                     <div className="flex flex-col text-left">
-                        <span className="font-bold text-rose-700 text-sm">重置帳本</span>
+                        {/* [Updated] 灰色文字 */}
+                        <span className="font-bold text-gray-500 text-sm">重置帳本</span>
                         <span className="text-[10px] text-gray-400">{isHost ? '清空所有資料 (僅戶長)' : '僅戶長可執行此操作'}</span>
                     </div>
                 </div>
@@ -310,9 +311,11 @@ export default function SettingsView({
                 onClick={leaveLedger}
             >
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-rose-50 text-rose-500 rounded-lg shadow-sm"><UserX size={18}/></div>
+                    {/* [Updated] 灰色 Icon */}
+                    <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><UserX size={18}/></div>
                     <div className="flex flex-col text-left">
-                        <span className="font-bold text-rose-700 text-sm">退出此帳本</span>
+                        {/* [Updated] 灰色文字 */}
+                        <span className="font-bold text-gray-500 text-sm">退出此帳本</span>
                         <span className="text-[10px] text-gray-400">移除權限並離開</span>
                     </div>
                 </div>
@@ -330,7 +333,7 @@ export default function SettingsView({
         </div>
       </div>
 
-      {/* --- Modals --- */}
+      {/* --- Modals (Keep unchanged) --- */}
       {/* Avatar Modal */}
       {isAvatarModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsAvatarModalOpen(false)}>
@@ -402,7 +405,6 @@ export default function SettingsView({
                     {/* Color Picker */}
                     <div>
                         <label className="block text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-2"><Palette size={12}/> 顏色</label>
-                        {/* [Fix 2] 增加 padding (p-3) 避免選中時圓圈放大被裁切 */}
                         <div className="flex gap-3 overflow-x-auto pb-2 p-3 no-scrollbar">
                             {COLORS.map(c => (
                                 <button 
@@ -457,7 +459,6 @@ export default function SettingsView({
         </div>
       )}
 
-      {/* Wiggle Animation */}
       <style>{`
         @keyframes wiggle {
           0% { transform: rotate(0deg); }
