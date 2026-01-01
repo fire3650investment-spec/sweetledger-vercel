@@ -1,7 +1,6 @@
 // src/components/DashboardView.jsx
 import React, { useMemo } from 'react';
-import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins, Lock, Wallet } from 'lucide-react';
-// [Updated] 引入 getCategoryStyle
+import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins, Lock, Wallet, History, CalendarClock } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
@@ -15,7 +14,8 @@ export default function DashboardView({
   setEditingTx,
   user,
   handleSettleUp,
-  handleOpenAddExpense 
+  handleOpenAddExpense,
+  setView // [Modified] 接收 setView 以支援跳轉
 }) {
     if (!ledgerData || !user) return null;
 
@@ -24,13 +24,24 @@ export default function DashboardView({
     const currentProjectObj = ledgerData.projects?.find(p => p.id === currentProjectId) || { name: '日常', type: 'public' };
     const isPrivateProject = currentProjectObj.type === 'private';
 
-    const { projectTxs, groupedTransactions, monthlyTotal, settlement, currentProjectName, partnerName, otherUserId, dailyAverage } = useMemo(() => {
-        if (!user) return { projectTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0, dailyAverage: 0 };
+    const { 
+        displayTxs,          // [New] 僅顯示最近 7 天的交易
+        projectAllTxs,       // [New] 該專案所有交易 (用於判斷是否還有舊資料)
+        groupedTransactions, 
+        monthlyTotal, 
+        settlement, 
+        currentProjectName, 
+        partnerName, 
+        otherUserId, 
+        dailyAverage 
+    } = useMemo(() => {
+        if (!user) return { displayTxs: [], projectAllTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0, dailyAverage: 0 };
         
         const rawTxs = ledgerData.transactions || [];
         const safeUsers = ledgerData.users || {};
         const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
 
+        // 1. 預處理所有交易
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined) 
             .map(t => {
@@ -47,13 +58,22 @@ export default function DashboardView({
                 return { ...t, amount: parseFloat(t.amount) || 0, type: safeType, category: displayCategory, date: safeDate };
             });
 
-        const pTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
+        // 2. 篩選當前專案的所有資料 (用於統計)
+        const projectAllTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
+        
+        // 3. 篩選最近 7 天的資料 (用於列表顯示) [Performance Optimization]
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+        
+        const displayTxs = projectAllTxs.filter(t => new Date(t.date) >= sevenDaysAgo);
+
         const currentMonthStr = new Date().toISOString().slice(0, 7);
+        const thisMonthTxs = projectAllTxs.filter(t => t.date.startsWith(currentMonthStr));
         
-        const thisMonthTxs = pTxs.filter(t => t.date.startsWith(currentMonthStr));
-        
+        // 4. 分組 (僅針對顯示的資料)
         const grouped = {};
-        const sorted = [...pTxs].sort((a, b) => new Date(b.date) - new Date(a.date)); 
+        const sorted = [...displayTxs].sort((a, b) => new Date(b.date) - new Date(a.date)); 
         sorted.forEach(tx => { 
             try { 
                 const dateObj = new Date(tx.date);
@@ -68,6 +88,7 @@ export default function DashboardView({
         const rates = currentProjectObj.rates || { JPY: 0.23, THB: 1 };
         const currProjectName = currentProjectObj.name || '日常開銷';
 
+        // 5. 計算統計 (使用本月完整資料)
         const mTotal = thisMonthTxs.reduce((acc, curr) => {
             const val = calculateTwdValue(curr.amount || 0, curr.currency || 'TWD', rates);
             return acc + (isNaN(val) ? 0 : val);
@@ -78,11 +99,11 @@ export default function DashboardView({
         const daysPassed = today.getDate();
         const dailyAvg = daysPassed > 0 ? mTotal / daysPassed : mTotal;
 
-        // Settlement Logic (Only relevant for public projects)
+        // 6. 計算結算 (使用專案完整歷史資料，確保債務正確)
         let myPaid = 0;
         let myLiability = 0;
 
-        pTxs.forEach(tx => {
+        projectAllTxs.forEach(tx => {
             if(tx.isSettlement) return; 
             const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', rates);
             if (isNaN(amountTwd)) return;
@@ -110,7 +131,7 @@ export default function DashboardView({
                 } else if (tx.splitType === 'host_all') liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
                 else if (tx.splitType === 'guest_all') liability = safeUsers[user.uid]?.role === 'guest' ? amountTwd : 0;
                 
-                // For Private Projects, liability is 100% self if I paid (handled implicitly by filter usually, but here we calculate it)
+                // For Private Projects, liability is 100% self if I paid
                 if (isPrivateProject) liability = amountTwd; 
 
                 if (!isNaN(liability)) myLiability += liability;
@@ -128,7 +149,17 @@ export default function DashboardView({
         const oUserId = Object.keys(safeUsers).find(uid => uid !== user.uid);
         const pName = oUserId && safeUsers[oUserId] ? (safeUsers[oUserId].name || '對方') : '對方';
 
-        return { projectTxs: pTxs, groupedTransactions: grouped, monthlyTotal: isNaN(mTotal) ? 0 : mTotal, settlement: isNaN(finalSettlement) ? 0 : finalSettlement, currentProjectName: currProjectName, partnerName: pName, otherUserId: oUserId, dailyAverage: dailyAvg };
+        return { 
+            displayTxs, 
+            projectAllTxs,
+            groupedTransactions: grouped, 
+            monthlyTotal: isNaN(mTotal) ? 0 : mTotal, 
+            settlement: isNaN(finalSettlement) ? 0 : finalSettlement, 
+            currentProjectName: currProjectName, 
+            partnerName: pName, 
+            otherUserId: oUserId, 
+            dailyAverage: dailyAvg 
+        };
 
     }, [ledgerData, currentProjectId, user, currentProjectObj, isPrivateProject]); 
 
@@ -267,9 +298,37 @@ export default function DashboardView({
                     </div>
                 </div>
             ))}
-            {projectTxs.length === 0 && (
-                <div className="text-center py-10 text-gray-400"><p>這個專案還沒有記帳紀錄喔 🍃</p><p className="text-sm mt-2">點擊下方「+」開始第一筆吧！</p></div>
-            )}
+
+            {/* Empty State / View More Logic */}
+            {projectAllTxs.length === 0 ? (
+                // 整個專案完全沒資料
+                <div className="text-center py-10 text-gray-400">
+                    <p>這個專案還沒有記帳紀錄喔 🍃</p>
+                    <p className="text-sm mt-2">點擊下方「+」開始第一筆吧！</p>
+                </div>
+            ) : displayTxs.length === 0 ? (
+                // 有舊資料，但最近 7 天沒資料
+                <div className="text-center py-8">
+                     <p className="text-gray-400 text-sm mb-4">最近 7 天沒有支出 🎉</p>
+                     <button 
+                        onClick={() => setView('stats')} 
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-600 rounded-full text-xs font-bold hover:bg-gray-200 transition-colors"
+                    >
+                        <History size={14}/> 查看歷史紀錄
+                     </button>
+                </div>
+            ) : projectAllTxs.length > displayTxs.length ? (
+                // 有顯示資料，且還有更多舊資料
+                <div className="text-center py-4 pb-8">
+                     <button 
+                        onClick={() => setView('stats')} 
+                        className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-50 text-gray-500 rounded-full text-sm font-bold border border-gray-100 hover:bg-white hover:border-gray-200 hover:text-rose-500 hover:shadow-sm transition-all"
+                    >
+                        <History size={16}/> 查看更多歷史紀錄
+                     </button>
+                     <p className="text-[10px] text-gray-300 mt-2">首頁僅顯示最近 7 天的交易</p>
+                </div>
+            ) : null}
         </div>
       </div>
     );

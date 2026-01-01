@@ -37,10 +37,10 @@ export default function SweetLedger() {
     ledgerData, 
     isLedgerInitializing, 
     createLedger, 
-    joinLedger,
-    disconnectLedger,
-    setLedgerCode,
-    checkUserBinding
+    joinLedger, 
+    disconnectLedger, 
+    setLedgerCode, 
+    checkUserBinding 
   } = useLedger();
 
   // --- UI State ---
@@ -714,6 +714,7 @@ export default function SweetLedger() {
                             user={user}
                             handleSettleUp={handleSettleUp}
                             handleOpenAddExpense={handleOpenAddExpense} 
+                            setView={setView} // [Added] 傳遞導航函式
                         />
                     </div>
                     <div className={view === 'stats' ? 'block' : 'hidden'}>
