@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useState, useEffect } from 'react';
 import { 
-  Home, PieChart, Settings, Plus, Briefcase
+  Home, PieChart, Settings, Plus, Briefcase, RefreshCcw
 } from 'lucide-react';
 
 // Contexts
@@ -131,8 +131,6 @@ export default function SweetLedger() {
   const handleOpenAddExpense = (mode) => {
       setAddExpenseKey(prev => prev + 1);
       setView('add');
-      // Note: AI mode trigger is now internal to AddExpenseView or can be passed as prop if needed, 
-      // but for simplicity, we just open the view. The user can click AI button inside.
   };
 
   const confirmAvatarUpdate = async () => {
@@ -189,7 +187,7 @@ export default function SweetLedger() {
       }
   };
 
-  const handleExport = () => { /* Export logic remains ... */ 
+  const handleExport = () => {
       if (!ledgerData) return;
       let csvContent = "data:text/csv;charset=utf-8,Date,Project,Category,Note,Amount,Currency,Payer,SplitType\n";
       ledgerData.transactions.forEach(tx => {
@@ -214,6 +212,9 @@ export default function SweetLedger() {
   const shouldShowLoading = !hasCachedData && authLoading; 
   const isWaitingForFirstData = user && ledgerCode && !ledgerData && isLedgerInitializing;
 
+  // FIX: White Screen Guard (Broken State Detection)
+  const isBrokenState = user && ledgerCode && !ledgerData && !isLedgerInitializing;
+
   if (shouldShowLoading || isWaitingForFirstData || (loading && !ledgerData)) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white text-gray-900 z-[200] relative">
@@ -221,6 +222,27 @@ export default function SweetLedger() {
          <p style={{ marginTop: '1rem', color: '#db2777', fontWeight: 'bold', fontSize: '0.875rem', animation: 'sweet-fade 1.5s infinite alternate' }}>{loading ? '正在同步資料...' : 'SweetLedger Loading...'}</p>
       </div>
     );
+  }
+
+  // FIX: Fallback UI for Broken State
+  if (isBrokenState) {
+      return (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-white p-6 text-center animate-in fade-in duration-300">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <RefreshCcw className="text-gray-400" size={32} />
+              </div>
+              <h2 className="text-lg font-bold text-gray-900 mb-2">無法讀取帳本</h2>
+              <p className="text-gray-500 text-sm mb-6 max-w-xs">
+                  我們找不到您的帳本資料，可能是網路連線不穩或帳本已被刪除。
+              </p>
+              <button 
+                  onClick={() => disconnectLedger()}
+                  className="px-6 py-3 bg-gray-900 text-white font-bold rounded-xl active:scale-95 transition-transform"
+              >
+                  重回首頁 (Reset)
+              </button>
+          </div>
+      );
   }
 
   return (

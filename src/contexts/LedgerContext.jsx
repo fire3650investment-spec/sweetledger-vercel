@@ -62,7 +62,7 @@ export const LedgerProvider = ({ children }) => {
     }
   }, [ledgerCode]);
 
-  // 2. Firebase Listener
+  // 2. Firebase Listener (Fixed: Ghost Ledger Handling)
   useEffect(() => {
     if (!db) {
         setIsLedgerInitializing(false);
@@ -79,22 +79,39 @@ export const LedgerProvider = ({ children }) => {
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+    const unsubscribe = onSnapshot(docRef, async (docSnap) => { // async for cleanup
       if (docSnap.exists()) {
         const data = docSnap.data();
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
       } else { 
-          console.warn("Ledger not found (remote)"); 
+          console.warn("Ledger not found (remote) - Detected Ghost Ledger");
+          // FIX: 自動修復幽靈帳本狀態
+          // 若遠端帳本已被刪除，必須切斷使用者的連結，否則會陷入白屏或無限重試迴圈
+          if (user) {
+              try {
+                  const userRef = doc(db, 'users', user.uid);
+                  await updateDoc(userRef, { ledgerCode: deleteField() });
+              } catch (e) {
+                  console.error("Failed to unlink ghost ledger:", e);
+              }
+          }
+          // 清除本地狀態
+          setLedgerCode('');
+          setLedgerData(null);
+          localStorage.removeItem('sweet_ledger_code');
+          localStorage.removeItem(cacheKey);
+          alert("此帳本已不存在（可能已被刪除），已為您重置狀態。");
       }
       setIsLedgerInitializing(false);
     }, (error) => { 
         console.error("Snapshot error:", error); 
+        // 注意：權限錯誤或網路錯誤不應觸發 disconnect，僅停止 loading
         setIsLedgerInitializing(false); 
     });
 
     return () => unsubscribe();
-  }, [ledgerCode]);
+  }, [ledgerCode, user]); // Added user to dependencies for unlink logic
 
   // 3. Auto-Repair Logic (Optimized for Performance)
   useEffect(() => {
@@ -272,12 +289,15 @@ export const LedgerProvider = ({ children }) => {
         users: { [currentUser.uid]: { name: userName, avatar: 'cat', role: 'host' } }
     };
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
+    
+    // FIX: 加入 merge: true，避免覆蓋舊使用者資料 (如 avatar, name)
     await setDoc(doc(db, 'users', currentUser.uid), {
         email: currentUser.email,
         ledgerCode: code,
         role: 'host',
         updatedAt: new Date().toISOString()
-    });
+    }, { merge: true });
+
     localStorage.setItem('sweet_ledger_code', code);
     setLedgerCode(code);
     return code;

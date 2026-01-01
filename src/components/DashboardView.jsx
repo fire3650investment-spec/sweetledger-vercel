@@ -157,6 +157,9 @@ export default function DashboardView({
 
     // [Feature] Smart Tags Logic
     const getSmartTags = (tx) => {
+        // [Batch 1 Optimization] 私人帳本模式下，隱藏所有社交與分帳標籤，還給使用者乾淨版面
+        if (isPrivateProject) return [];
+
         const tags = [];
         
         if (tx.isSettlement) {
