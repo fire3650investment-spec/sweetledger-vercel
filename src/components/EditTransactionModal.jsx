@@ -1,222 +1,270 @@
 // src/components/EditTransactionModal.jsx
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, DollarSign, Tag, AlertCircle, Trash2, Info } from 'lucide-react'; 
+import { X, Calendar, Trash2, Check, User, Users, AlertCircle, Lock, Tag, DollarSign } from 'lucide-react';
+import { getCategoryStyle, getIconComponent, getLocalISODate } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
-// [FIX] 引入 getLocalISODate
-import { formatCurrency, getLocalISODate } from '../utils/helpers';
 
 export default function EditTransactionModal({ 
-  isOpen, 
-  onClose, 
-  transaction, 
-  ledgerData, 
-  user,
-  onUpdate, 
-  onDelete 
+    isOpen, 
+    onClose, 
+    editingTx: transaction, // Rename for internal consistency
+    ledgerData, 
+    user, 
+    updateTransaction, // Expecting wrapper function from parent
+    deleteTransaction, // Expecting wrapper function from parent
+    currentProjectId
 }) {
-  if (!isOpen) return null;
-  if (!ledgerData) return null;
+    if (!isOpen || !transaction || !ledgerData) return null;
 
-  const safeUsers = ledgerData.users || {};
-  const hostId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'host');
-  const guestId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'guest');
+    const [amount, setAmount] = useState('');
+    const [note, setNote] = useState('');
+    const [date, setDate] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState(null);
+    const [payer, setPayer] = useState('');
+    const [splitType, setSplitType] = useState('even');
+    const [customSplitHost, setCustomSplitHost] = useState('');
+    const [customSplitGuest, setCustomSplitGuest] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [currency, setCurrency] = useState('TWD');
 
-  const hostName = hostId ? (safeUsers[hostId]?.name || '戶長') : '戶長';
-  const guestName = guestId ? (safeUsers[guestId]?.name || '成員') : '成員';
+    // Context Logic
+    // [Optimization] Determine if current mode is Private based on Project ID
+    const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
+    const isPrivateProject = currentProject?.type === 'private';
+    
+    const users = ledgerData.users || {};
+    const hostId = Object.keys(users).find(uid => users[uid].role === 'host');
+    const guestId = Object.keys(users).find(uid => users[uid].role === 'guest');
+    const hostName = hostId ? (users[hostId]?.name || '戶長') : '戶長';
+    const guestName = guestId ? (users[guestId]?.name || '成員') : '成員';
 
-  const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState('TWD');
-  const [categoryId, setCategoryId] = useState('');
-  const [note, setNote] = useState('');
-  const [date, setDate] = useState('');
-  const [payer, setPayer] = useState('');
-  const [splitType, setSplitType] = useState('even');
-  
-  const [hostAmount, setHostAmount] = useState('');
-  const [guestAmount, setGuestAmount] = useState('');
+    // Init Data
+    useEffect(() => {
+        if (transaction) {
+            setAmount(transaction.amount.toString());
+            setNote(transaction.note || '');
+            setCurrency(transaction.currency || 'TWD');
+            
+            try {
+                setDate(getLocalISODate(transaction.date));
+            } catch (e) {
+                setDate(getLocalISODate());
+            }
 
-  useEffect(() => {
-    if (transaction) {
-      setAmount(transaction.amount);
-      setCurrency(transaction.currency || 'TWD');
-      setCategoryId(transaction.category?.id || 'other');
-      setNote(transaction.note || '');
-      
-      // [FIX] 使用本地時間處理，防止時區問題導致日期回朔
-      try { 
-          setDate(getLocalISODate(transaction.date)); 
-      } catch (e) { 
-          setDate(getLocalISODate()); 
-      }
-      
-      setPayer(transaction.payer);
-      setSplitType(transaction.splitType);
+            setPayer(transaction.payer);
+            setSplitType(transaction.splitType || 'even');
+            setSelectedCategory(transaction.category || DEFAULT_CATEGORIES[0]);
 
-      if ((transaction.splitType === 'custom' || transaction.splitType === 'multi_payer') && transaction.customSplit) {
-        const hVal = parseFloat(transaction.customSplit[hostId]);
-        const gVal = parseFloat(transaction.customSplit[guestId]);
-        setHostAmount(isNaN(hVal) ? '' : hVal);
-        setGuestAmount(isNaN(gVal) ? '' : gVal);
-      } else { setHostAmount(''); setGuestAmount(''); }
-    }
-  }, [transaction, hostId, guestId]);
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (!amount || parseFloat(amount) <= 0) return;
-    const allCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
-    const selectedCat = allCats.find(c => c.id === categoryId) || { id: 'uncategorized', name: '未分類', icon: 'help-circle', color: 'bg-gray-100 text-gray-600', hex: '#9ca3af' };
-
-    const updatedTx = {
-      ...transaction,
-      amount: parseFloat(amount),
-      currency,
-      category: selectedCat,
-      note: note || selectedCat.name,
-      // 這裡維持 new Date(date).toISOString()，因為存入 DB 通常還是用 ISO
-      date: new Date(date).toISOString(),
-      payer,
-      splitType,
-      customSplit: (splitType === 'custom' || splitType === 'multi_payer') ? {
-        [hostId]: parseFloat(hostAmount) || 0,
-        [guestId]: parseFloat(guestAmount) || 0
-      } : null
-    };
-    onUpdate(updatedTx);
-    onClose();
-  };
-
-  const handleDelete = () => {
-    if (window.confirm('確定要刪除這筆記帳嗎？')) { onDelete(transaction.id); onClose(); }
-  };
-
-  const handleSplitChange = (field, value) => {
-    const total = parseFloat(amount) || 0;
-    const val = parseFloat(value) || 0;
-    if (splitType === 'multi_payer') {
-        if (field === 'host') {
-            setHostAmount(value);
-            const guestCalc = total - val;
-            setGuestAmount(guestCalc >= 0 ? guestCalc.toString() : '0');
-        } else {
-            setGuestAmount(value);
-            const hostCalc = total - val;
-            setHostAmount(hostCalc >= 0 ? hostCalc.toString() : '0');
+            if (transaction.customSplit) {
+                if (hostId && transaction.customSplit[hostId]) setCustomSplitHost(transaction.customSplit[hostId].toString());
+                if (guestId && transaction.customSplit[guestId]) setCustomSplitGuest(transaction.customSplit[guestId].toString());
+            } else {
+                setCustomSplitHost('');
+                setCustomSplitGuest('');
+            }
         }
-    } else {
-        if (field === 'host') setHostAmount(value); else setGuestAmount(value);
-    }
-  };
+    }, [transaction, hostId, guestId]);
 
-  const getLabelForRole = (targetRole) => {
-    const payerRole = safeUsers[payer]?.role;
-    if (targetRole === 'host') {
-        if (payerRole === 'host') return `私人 (${hostName})`;
-        if (payerRole === 'guest') return `代墊 (幫${hostName})`;
-        return `${hostName} 全額`;
-    } else {
-        if (payerRole === 'guest') return `私人 (${guestName})`;
-        if (payerRole === 'host') return `代墊 (幫${guestName})`;
-        return `${guestName} 全額`;
-    }
-  };
+    // Force Private Logic (Lock Payer & SplitType)
+    useEffect(() => {
+        if (isPrivateProject && user) {
+            setSplitType('self');
+            setPayer(user.uid);
+        }
+    }, [isPrivateProject, user]);
 
-  const getUserName = (uid) => safeUsers[uid]?.name || '使用者';
+    const handleSave = async () => {
+        if (!amount || parseFloat(amount) <= 0 || isSubmitting) return;
+        setIsSubmitting(true);
+        
+        try {
+            const amountFloat = parseFloat(amount);
+            let customSplitData = null;
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center px-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
-      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden relative z-10 flex flex-col max-h-[90vh]">
-        <div className="bg-gray-50 px-6 py-4 flex justify-between items-center border-b border-gray-100">
-          <h3 className="font-bold text-gray-800 text-lg">編輯記帳</h3>
-          <button onClick={onClose} className="p-2 bg-white rounded-full text-gray-400 hover:text-gray-600 shadow-sm transition-colors"><X size={20} /></button>
-        </div>
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
-          <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">金額</label>
-            <div className="flex gap-3">
-              <div className="relative flex-1">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"><DollarSign size={20}/></div>
-                <input type="number" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full bg-gray-50 text-gray-800 text-2xl font-bold py-3 pl-12 pr-4 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 transition-all" placeholder="0.00"/>
-              </div>
-              <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="bg-gray-50 font-bold text-gray-600 px-4 rounded-xl outline-none focus:ring-2 focus:ring-rose-500"><option value="TWD">TWD</option><option value="JPY">JPY</option><option value="THB">THB</option></select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-             <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">日期</label>
-                <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"><Calendar size={16}/></div>
-                    <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full bg-gray-50 text-gray-700 font-medium py-3 pl-10 pr-3 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 text-sm"/>
+            if (!isPrivateProject && (splitType === 'custom' || splitType === 'multi_payer')) {
+                const hostAmt = parseFloat(customSplitHost) || 0;
+                const guestAmt = parseFloat(customSplitGuest) || 0;
+                if (Math.abs((hostAmt + guestAmt) - amountFloat) > 0.1) {
+                    alert(`金額不符：分攤總和 (${hostAmt+guestAmt}) 必須等於總金額 (${amountFloat})`);
+                    setIsSubmitting(false);
+                    return;
+                }
+                customSplitData = {};
+                if(hostId) customSplitData[hostId] = hostAmt;
+                if(guestId) customSplitData[guestId] = guestAmt;
+            }
+
+            await updateTransaction({
+                ...transaction,
+                amount: amountFloat,
+                currency,
+                category: selectedCategory,
+                note: note || selectedCategory.name,
+                date: new Date(date).toISOString(),
+                payer: isPrivateProject ? user.uid : payer,
+                splitType: isPrivateProject ? 'self' : splitType,
+                customSplit: isPrivateProject ? null : customSplitData
+            });
+            onClose();
+        } catch (e) {
+            console.error("Update failed", e);
+            alert("更新失敗");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if(!window.confirm("確定要刪除這筆紀錄嗎？")) return;
+        try {
+            await deleteTransaction(transaction.id);
+            onClose();
+        } catch(e) { console.error(e); }
+    };
+
+    const handleSplitChange = (field, value) => {
+        const total = parseFloat(amount) || 0;
+        const val = parseFloat(value) || 0;
+        if (splitType === 'multi_payer') {
+            if (field === 'host') {
+                setCustomSplitHost(value);
+                const guestCalc = total - val;
+                setCustomSplitGuest(guestCalc >= 0 ? guestCalc.toString() : '0');
+            } else {
+                setCustomSplitGuest(value);
+                const hostCalc = total - val;
+                setCustomSplitHost(hostCalc >= 0 ? hostCalc.toString() : '0');
+            }
+        } else {
+            if (field === 'host') setCustomSplitHost(value); 
+            else setCustomSplitGuest(value);
+        }
+    };
+
+    const getLabelForRole = (targetRole) => {
+        const payerRole = users[payer]?.role;
+        if (targetRole === 'host') return payerRole === 'host' ? `私人 (${hostName})` : (payerRole === 'guest' ? `代墊 (幫${hostName}付)` : `${hostName} 全額`);
+        else return payerRole === 'guest' ? `私人 (${guestName})` : (payerRole === 'host' ? `代墊 (幫${guestName}付)` : `${guestName} 全額`);
+    };
+
+    const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
+    const CatIcon = getIconComponent(selectedCategory?.icon || 'food');
+    const catStyle = getCategoryStyle(selectedCategory, 'input');
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white w-full sm:w-[400px] sm:rounded-2xl rounded-t-3xl p-5 pb-8 max-h-[90vh] overflow-y-auto">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-bold text-gray-800">編輯紀錄</h3>
+                    <button onClick={onClose} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200"><X size={20}/></button>
                 </div>
-             </div>
-             <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">分類</label>
-                <div className="relative">
-                    <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-full bg-gray-50 text-gray-700 font-medium py-3 px-4 rounded-xl outline-none focus:ring-2 focus:ring-rose-500 appearance-none text-sm">
-                        {(ledgerData.customCategories || DEFAULT_CATEGORIES).map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
-                    </select>
-                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"><Tag size={16}/></div>
+
+                {/* Amount */}
+                <div className="flex justify-center mb-6">
+                    <div className="text-4xl font-bold text-gray-900 flex items-center gap-2">
+                        <span className="text-2xl text-gray-300">$</span>
+                        <input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="w-32 text-center outline-none bg-transparent placeholder-gray-200" placeholder="0" />
+                        <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="text-sm font-bold bg-gray-100 rounded-lg px-2 py-1 outline-none text-gray-600"><option value="TWD">TWD</option><option value="JPY">JPY</option><option value="THB">THB</option></select>
+                    </div>
                 </div>
-             </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">備註</label>
-            <input type="text" value={note} onChange={(e) => setNote(e.target.value)} className="w-full bg-gray-50 text-gray-700 py-3 px-4 rounded-xl outline-none focus:ring-2 focus:ring-rose-500" placeholder="輸入備註..."/>
-          </div>
-          
-          <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">分攤模式</label>
-            <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => setSplitType('even')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'even' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>平均分攤</button>
-                {splitType === 'custom' ? (
-                   <button type="button" className="py-2 rounded-lg text-xs font-bold bg-gray-800 text-white cursor-default">自訂分攤 (舊制)</button>
-                ) : (
-                   <button type="button" onClick={() => setSplitType('multi_payer')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'multi_payer' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>混合出資</button>
-                )}
-                <button type="button" onClick={() => setSplitType('host_all')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'host_all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>{getLabelForRole('host')}</button>
-                <button type="button" onClick={() => setSplitType('guest_all')} className={`py-2 rounded-lg text-xs font-bold transition-colors ${splitType === 'guest_all' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-400'}`}>{getLabelForRole('guest')}</button>
+
+                {/* Inputs */}
+                <div className="space-y-4">
+                    {/* Category & Note */}
+                    <div className="flex gap-3">
+                        <div className="relative">
+                             <select 
+                                value={selectedCategory?.id} 
+                                onChange={(e) => {
+                                    const cat = currentCats.find(c => c.id === e.target.value);
+                                    if(cat) setSelectedCategory(cat);
+                                }}
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                             >
+                                {currentCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                             </select>
+                             <div className={`flex items-center gap-2 px-3 py-3 rounded-xl border ${catStyle.activeClass} border-transparent flex-none min-w-[100px]`}>
+                                <CatIcon size={20}/>
+                                <span className="font-bold text-sm truncate max-w-[60px]">{selectedCategory?.name}</span>
+                            </div>
+                        </div>
+                        
+                        <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="備註..." className="flex-1 bg-gray-50 px-4 rounded-xl border border-gray-100 outline-none text-sm font-medium focus:border-rose-200"/>
+                    </div>
+
+                    {/* Date */}
+                    <div className="flex items-center bg-gray-50 px-4 py-3 rounded-xl border border-gray-100">
+                        <Calendar size={18} className="text-gray-400 mr-3"/>
+                        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-transparent font-bold text-gray-700 outline-none w-full text-sm"/>
+                    </div>
+
+                    {/* Split & Payer (Visual Noise Removal: HIDDEN in Private Mode) */}
+                    {!isPrivateProject && (
+                        <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 space-y-3">
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2 text-gray-500">
+                                    <Users size={16}/>
+                                    <span className="text-xs font-bold">分攤模式</span>
+                                </div>
+                                <select value={splitType} onChange={e => setSplitType(e.target.value)} className="bg-white border border-gray-200 text-xs font-bold py-1 px-2 rounded-lg outline-none">
+                                    <option value="even">平均分攤</option>
+                                    <option value="multi_payer">混合出資</option>
+                                    <option value="self">{getLabelForRole('host')}</option>
+                                    <option value="partner">{getLabelForRole('guest')}</option>
+                                </select>
+                            </div>
+                            
+                            {(splitType === 'multi_payer' || splitType === 'custom') && (
+                                <div className="flex gap-2 animate-fade-in">
+                                    <div className="relative flex-1">
+                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">{hostName}</span>
+                                        <input type="number" value={customSplitHost} onChange={e => handleSplitChange('host', e.target.value)} className="w-full pl-10 pr-2 py-2 text-xs rounded border border-gray-200 text-right outline-none"/>
+                                    </div>
+                                    <div className="relative flex-1">
+                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">{guestName}</span>
+                                        <input type="number" value={customSplitGuest} onChange={e => handleSplitChange('guest', e.target.value)} className="w-full pl-10 pr-2 py-2 text-xs rounded border border-gray-200 text-right outline-none"/>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="h-[1px] bg-gray-200 w-full"></div>
+                            
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2 text-gray-500">
+                                    <User size={16}/>
+                                    <span className="text-xs font-bold">付款人</span>
+                                </div>
+                                <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-[200px]">
+                                    {Object.keys(users).map(uid => (
+                                        <button key={uid} onClick={() => setPayer(uid)} className={`text-[10px] font-bold px-3 py-1 rounded-full border transition-colors whitespace-nowrap ${payer === uid ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-500 border-gray-200'}`}>
+                                            {users[uid].name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    
+                    {isPrivateProject && (
+                        <div className="flex items-center justify-center gap-2 p-3 bg-slate-50 rounded-xl text-slate-400 border border-slate-100">
+                             <Lock size={12}/>
+                             <span className="text-xs font-bold">私人帳本模式 (不進行分攤)</span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-3 mt-8">
+                    <button onClick={handleDelete} className="p-4 rounded-2xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+                        <Trash2 size={24}/>
+                    </button>
+                    <button onClick={handleSave} disabled={isSubmitting} className="flex-1 bg-gray-900 text-white font-bold rounded-2xl py-4 flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-50">
+                        {isSubmitting ? <RefreshCw className="animate-spin"/> : <Check size={24}/>}
+                        儲存變更
+                    </button>
+                </div>
             </div>
-          </div>
-
-          {(splitType === 'multi_payer' || splitType === 'custom') && (
-              <div className={`p-4 rounded-xl border animate-fade-in ${splitType === 'multi_payer' ? 'bg-rose-50 border-rose-100' : 'bg-gray-50 border-gray-200'}`}>
-                  {splitType === 'multi_payer' ? (
-                      <div className="flex items-center gap-2 mb-3 text-rose-600 text-xs font-bold"><AlertCircle size={14}/> <span>輸入各自「實際支付」金額</span></div>
-                  ) : (
-                      <div className="flex items-center gap-2 mb-3 text-gray-500 text-xs font-bold"><Info size={14}/> <span>輸入各自「應付」金額 (舊制)</span></div>
-                  )}
-                  <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700 w-24 truncate">{hostName}</span>
-                          <input type="number" value={hostAmount} onChange={(e) => handleSplitChange('host', e.target.value)} placeholder="0" className="w-32 bg-white text-right py-2 px-3 rounded-lg text-sm font-bold outline-none border border-rose-200 focus:border-rose-500"/>
-                      </div>
-                      <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700 w-24 truncate">{guestName}</span>
-                          <input type="number" value={guestAmount} onChange={(e) => handleSplitChange('guest', e.target.value)} placeholder="0" disabled={!guestId} className="w-32 bg-white text-right py-2 px-3 rounded-lg text-sm font-bold outline-none border border-rose-200 focus:border-rose-500 disabled:bg-gray-100"/>
-                      </div>
-                  </div>
-              </div>
-          )}
-
-           {splitType !== 'multi_payer' && splitType !== 'custom' && (
-              <div>
-                 <label className="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">誰付的錢？</label>
-                 <div className="grid grid-cols-2 gap-3">
-                    {Object.keys(safeUsers).length > 0 ? (
-                        Object.keys(safeUsers).map(uid => (
-                            <button key={uid} type="button" onClick={() => setPayer(uid)} className={`py-3 px-4 rounded-xl font-bold text-sm transition-all border-2 ${payer === uid ? 'border-rose-500 bg-rose-50 text-rose-600' : 'border-transparent bg-gray-50 text-gray-400 hover:bg-gray-100'}`}>{safeUsers[uid].name}</button>
-                        ))
-                    ) : ( <div className="col-span-2 text-center text-sm text-gray-400 bg-gray-50 py-3 rounded-xl">讀取資料...</div> )}
-                 </div>
-              </div>
-          )}
         </div>
-        <div className="p-4 border-t border-gray-100 flex gap-3 bg-white">
-            <button type="button" onClick={handleDelete} className="p-4 bg-gray-100 text-gray-500 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-colors"><Trash2 size={20} /></button>
-            <button onClick={handleSubmit} className="flex-1 bg-gray-900 text-white font-bold py-4 rounded-2xl shadow-lg shadow-gray-200 active:scale-95 transition-transform">儲存修改</button>
-        </div>
-      </div>
-    </div>
-  );
+    );
 }

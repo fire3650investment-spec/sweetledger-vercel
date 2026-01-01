@@ -13,7 +13,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         setStatsMonth(date.toISOString().slice(0, 7)); 
     };
 
-    // [Batch 2 Logic Optimization] Extract project info for conditional rendering
+    // [Private Mode Fix] Extract project context
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
     const isPrivateProject = currentProject?.type === 'private';
 
@@ -35,7 +35,6 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
 
         const txs = allTxs.filter(t => t.date.startsWith(statsMonth) && (t.projectId || 'daily') === currentProjectId);
         const sorted = [...txs].sort((a, b) => new Date(b.date) - new Date(a.date));
-        
         const currentRates = currentProject?.rates || { JPY: 0.23, THB: 1 };
         const hId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'host');
         const gId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'guest');
@@ -96,10 +95,10 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         }
 
         return { filteredTxs: txs, sortedHistory: sorted, rates: currentRates, hostId: hId, guestId: gId, hostTotal: isNaN(hTotal) ? 0 : hTotal, guestTotal: isNaN(gTotal) ? 0 : gTotal, hostRatio: isNaN(hRatio) ? 50 : hRatio, guestRatio: isNaN(gRatio) ? 50 : gRatio, totalExpense: isNaN(totalExp) ? 0 : totalExp, categoryStats: catStats, pieChartGradient: gradientStr };
-    }, [ledgerData, statsMonth, currentProjectId, currentProject]); // Added currentProject to deps
+    }, [ledgerData, statsMonth, currentProjectId, currentProject]);
 
     const getSmartTags = (tx) => {
-        // [Batch 2 Optimization] Consistent with Dashboard: Hide tags in private mode
+        // [Private Mode Fix] Hide tags in private mode
         if (isPrivateProject) return [];
 
         const tags = [];
@@ -136,7 +135,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
             </div>
          </div>
          
-         {/* [Batch 2 Logic Optimization] Hide Contribution Chart in Private Mode */}
+         {/* Contribution Chart (Hidden in Private Mode) */}
          {!isPrivateProject && (
              <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
                 <h3 className="text-gray-600 font-bold mb-4">消費貢獻度 (支付金額 - TWD)</h3>
@@ -191,6 +190,8 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                                 <div className="flex-1 min-w-0">
                                     <p className="font-medium text-gray-800 text-sm truncate">{tx.note || tx.category?.name || '未分類'}</p>
                                     <div className="flex items-center flex-wrap gap-1 mt-0.5">
+                                        {/* [Private Mode Fix] Always show category name in sub-line */}
+                                        <p className="text-xs text-gray-400 mr-1 shrink-0">{tx.category?.name}</p>
                                         {tags.map((tag, i) => (
                                             <span key={i} className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${tag.color === 'blue' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-gray-100 text-gray-500 border-gray-100'}`}>{tag.label}</span>
                                         ))}
