@@ -4,11 +4,11 @@ import {
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, 
   Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock 
 } from 'lucide-react';
-import { getIconComponent, parseReceiptWithGemini, getCategoryStyle, callGemini } from '../utils/helpers';
+// [FIX] 引入 getLocalISODate
+import { getIconComponent, parseReceiptWithGemini, getCategoryStyle, callGemini, getLocalISODate } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
 import ScanReceiptModal from './ScanReceiptModal';
 
-// Sub-components
 import CustomKeypad from './add-expense/CustomKeypad';
 import CategorySelector from './add-expense/CategorySelector';
 import SmartTagBar from './add-expense/SmartTagBar';
@@ -18,50 +18,46 @@ export default function AddExpenseView({
   user,
   currentProjectId,
   setView,
-  addTransaction, // 從 Context 傳入的 API
-  isSubmittingTransaction // Global loading state (optional, can also be local)
+  addTransaction, 
+  isSubmittingTransaction 
 }) {
     if (!ledgerData) return null; 
 
-    // --- 1. Local Form State (Moved from App.jsx) ---
     const [amount, setAmount] = useState('');
-    const [localAmount, setLocalAmount] = useState(''); // Keypad buffer
+    const [localAmount, setLocalAmount] = useState(''); 
     const [note, setNote] = useState('');
-    const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+    // [FIX] 使用本地時間初始化日期
+    const [date, setDate] = useState(getLocalISODate());
     const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
     const [currency, setCurrency] = useState(() => localStorage.getItem('sweet_last_currency') || 'TWD');
     const [payer, setPayer] = useState(user?.uid || '');
     
+    // ... (其餘程式碼保持完全不變) ...
     // Split Logic
     const [splitType, setSplitType] = useState('even');
     const [customSplitHost, setCustomSplitHost] = useState('');
     const [customSplitGuest, setCustomSplitGuest] = useState('');
     
-    // Subscription Logic
     const [isSubscription, setIsSubscription] = useState(false);
     const [subCycle, setSubCycle] = useState('monthly');
     const [subPayDay, setSubPayDay] = useState('');
 
-    // --- 2. AI & Modal State (Moved from App.jsx) ---
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const [aiModalInput, setAiModalInput] = useState('');
     const [isAiProcessing, setIsAiProcessing] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     
-    // --- 3. UI Internal State ---
     const [activeOverlay, setActiveOverlay] = useState('amount');
     const [isScanning, setIsScanning] = useState(false);
     const [isScanModalOpen, setIsScanModalOpen] = useState(false);
     const [scannedItems, setScannedItems] = useState([]);
     const [localSubmitting, setLocalSubmitting] = useState(false);
 
-    // Refs
     const noteInputRef = useRef(null);
     const cameraInputRef = useRef(null);
     const fileInputRef = useRef(null);
     const recognitionRef = useRef(null);
 
-    // --- Data Preparation ---
     const currentCats = useMemo(() => ledgerData.customCategories || DEFAULT_CATEGORIES, [ledgerData.customCategories]);
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
     const isPrivateProject = currentProject?.type === 'private';
@@ -86,7 +82,6 @@ export default function AddExpenseView({
         return [...new Set(notes)].slice(0, 5);
     }, [ledgerData.transactions, selectedCategory]);
 
-    // --- Effects ---
     useEffect(() => {
         localStorage.setItem('sweet_last_currency', currency);
     }, [currency]);
@@ -95,7 +90,6 @@ export default function AddExpenseView({
         if (!payer && user) setPayer(user.uid);
     }, [user, payer]);
 
-    // Private Project Logic
     useEffect(() => {
         if (isPrivateProject) {
             setSplitType('self');
@@ -106,9 +100,8 @@ export default function AddExpenseView({
     }, [isPrivateProject, user]);
 
     useEffect(() => { setAmount(localAmount); }, [localAmount]);
-
-    // --- Logic Handlers ---
     
+    // ... (Logic Handlers same as before) ...
     const handleKeypadSubmit = () => {
         const isPendingMath = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
         if (isPendingMath) {
@@ -153,15 +146,15 @@ export default function AddExpenseView({
             }
             return prev + key;
         });
-    }, [localAmount]); // Deps needed for closure state
+    }, [localAmount]);
 
-    // --- AI Handlers (Moved from App.jsx) ---
     const handleAiModalSubmit = async () => {
         if (!aiModalInput) return;
         setIsAiModalOpen(false);
         setIsAiProcessing(true);
+        // [FIX] AI Prompt Date
         let prompt = `你是一個記帳助手。請分析使用者的輸入，並回傳一個 JSON 物件。
-       目前的日期是：${new Date().toISOString()}。
+       目前的日期是：${new Date().toLocaleString('zh-TW')}。
        可用的分類 ID: ${currentCats.map(c=>c.id).join(', ')}
        請解析：1. 金額 (amount) 2. 類別 ID (categoryId) 3. 備註 (note) 4. 幣別 (currency, 預設 TWD)
        只回傳 JSON。`;
@@ -219,14 +212,12 @@ export default function AddExpenseView({
         }
     };
 
-    // --- Submission Handler ---
     const handleSubmit = async () => {
         if (!amount || parseFloat(amount) <= 0) return;
-        if (localSubmitting || isSubmittingTransaction) return; // Prevent double click
+        if (localSubmitting || isSubmittingTransaction) return; 
 
         setLocalSubmitting(true);
         
-        // Prepare Data
         const amountFloat = parseFloat(amount);
         let finalSplitType = splitType;
         let customSplitData = null;
@@ -253,7 +244,6 @@ export default function AddExpenseView({
             finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
         }
 
-        // Call Context
         try {
             await addTransaction({
                 amount: amountFloat,
@@ -269,7 +259,6 @@ export default function AddExpenseView({
                 subCycle,
                 subPayDay
             });
-            // Success & Close
             setView('dashboard');
         } catch (e) {
             console.error("Add Tx Error:", e);
@@ -279,7 +268,6 @@ export default function AddExpenseView({
         }
     };
     
-    // --- Helpers for UI ---
     const handleAmountClick = () => { setActiveOverlay('amount'); noteInputRef.current?.blur(); };
     const handleCategoryTriggerClick = () => { setActiveOverlay('category'); noteInputRef.current?.blur(); };
     const handleNoteFocus = () => { setActiveOverlay('none'); };
@@ -298,7 +286,7 @@ export default function AddExpenseView({
         }
     };
 
-    const handleImageUpload = async (e) => { /* Same as before ... */ 
+    const handleImageUpload = async (e) => { 
         const file = e.target.files?.[0];
         if (!file) return;
         e.target.value = ''; 
@@ -318,7 +306,7 @@ export default function AddExpenseView({
 
     const handleCameraClick = () => { cameraInputRef.current?.click(); };
     const handleAlbumClick = () => { fileInputRef.current?.click(); };
-    const handleScanConfirm = (result) => { /* ... */ 
+    const handleScanConfirm = (result) => {
         const { amount: rAmount, note: rNote, splitType: rSplit, customSplit: rCustom } = result;
         setLocalAmount(rAmount.toString());
         setAmount(rAmount.toString());
@@ -335,7 +323,7 @@ export default function AddExpenseView({
     const selectedCatStyle = getCategoryStyle(selectedCategory, 'input');
     const CatIcon = getIconComponent(selectedCategory?.icon || 'food');
     
-    const getLabelForRole = (targetRole) => { /* Same as before */ 
+    const getLabelForRole = (targetRole) => { 
         const payerRole = users[payer]?.role;
         if (targetRole === 'host') return payerRole === 'host' ? `私人 (${hostName})` : (payerRole === 'guest' ? `代墊 (幫${hostName}付)` : `${hostName} 全額`);
         else return payerRole === 'guest' ? `私人 (${guestName})` : (payerRole === 'host' ? `代墊 (幫${guestName}付)` : `${guestName} 全額`);
@@ -424,7 +412,6 @@ export default function AddExpenseView({
             {/* Logic Module */}
             <div className="px-4">
                 <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-5">
-                    {/* ... (UI Logic same as before, simplified for brevity) ... */}
                      {isPrivateProject ? (
                         <div className="flex items-center justify-between p-2 bg-gray-50 rounded-xl">
                             <div className="flex items-center gap-3 text-gray-500">

@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, DollarSign, Tag, AlertCircle, Trash2, Info } from 'lucide-react'; 
 import { DEFAULT_CATEGORIES } from '../utils/constants';
+// [FIX] 引入 getLocalISODate
+import { formatCurrency, getLocalISODate } from '../utils/helpers';
 
 export default function EditTransactionModal({ 
   isOpen, 
@@ -39,8 +41,14 @@ export default function EditTransactionModal({
       setCurrency(transaction.currency || 'TWD');
       setCategoryId(transaction.category?.id || 'other');
       setNote(transaction.note || '');
-      try { setDate(new Date(transaction.date).toISOString().slice(0, 10)); } 
-      catch (e) { setDate(new Date().toISOString().slice(0, 10)); }
+      
+      // [FIX] 使用本地時間處理，防止時區問題導致日期回朔
+      try { 
+          setDate(getLocalISODate(transaction.date)); 
+      } catch (e) { 
+          setDate(getLocalISODate()); 
+      }
+      
       setPayer(transaction.payer);
       setSplitType(transaction.splitType);
 
@@ -65,6 +73,7 @@ export default function EditTransactionModal({
       currency,
       category: selectedCat,
       note: note || selectedCat.name,
+      // 這裡維持 new Date(date).toISOString()，因為存入 DB 通常還是用 ISO
       date: new Date(date).toISOString(),
       payer,
       splitType,
@@ -99,7 +108,6 @@ export default function EditTransactionModal({
     }
   };
 
-  // Dynamic Label Logic
   const getLabelForRole = (targetRole) => {
     const payerRole = safeUsers[payer]?.role;
     if (targetRole === 'host') {
