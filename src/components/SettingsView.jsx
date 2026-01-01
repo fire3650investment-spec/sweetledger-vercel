@@ -126,7 +126,7 @@ export default function SettingsView({
       
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-          {/* [Updated] 標題樣式統一 */}
+          {/* [Updated] 標題字級與顏色統一 */}
           <h2 className="text-2xl font-bold text-gray-800">設定</h2>
       </div>
 
@@ -281,8 +281,8 @@ export default function SettingsView({
         </section>
 
         {/* --- Island D: Danger Zone --- */}
-        {/* [Updated] 視覺降噪：白色背景，灰色按鈕，保留紅色小標題 */}
         <section className="space-y-3 pt-2">
+          {/* [Kept] 紅色小標題保留 */}
           <h3 className="text-xs font-bold text-rose-500 ml-2 flex items-center gap-1">
               <AlertTriangle size={12}/> 危險區域
           </h3>
