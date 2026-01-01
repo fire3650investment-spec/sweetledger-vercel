@@ -7,8 +7,10 @@ import {
   setDoc, 
   getDoc,
   arrayUnion,
-  deleteField
+  deleteField,
+  deleteDoc // [NEW] 新增：用於刪除文件
 } from 'firebase/firestore';
+import { deleteUser } from 'firebase/auth'; // [NEW] 新增：用於刪除 Auth 帳號
 import { db, appId } from '../utils/firebase';
 import { useAuth } from './AuthContext';
 import { INITIAL_LEDGER_STATE, DEFAULT_CATEGORIES } from '../utils/constants';
@@ -333,6 +335,53 @@ export const LedgerProvider = ({ children }) => {
     }
   }, [ledgerCode, user, disconnectLedger]);
 
+  // [NEW] 刪除帳號功能 (Delete Account)
+  const deleteAccount = useCallback(async () => {
+    if (!user || !db) return;
+    
+    // 1. 先嘗試清理資料 (Clean Data)
+    try {
+        // A. 如果有帳本，先處理帳本關聯
+        if (ledgerCode) {
+             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+             const snap = await getDoc(docRef);
+             
+             if (snap.exists()) {
+                 const data = snap.data();
+                 const currentUsers = data.users || {};
+                 const remainingUserIds = Object.keys(currentUsers).filter(uid => uid !== user.uid);
+                 
+                 // 如果這個人是最後一個使用者，則刪除整個帳本 (避免留垃圾)
+                 if (remainingUserIds.length === 0) {
+                     await deleteDoc(docRef);
+                 } else {
+                     // 否則只移除他自己
+                     await updateDoc(docRef, {
+                        [`users.${user.uid}`]: deleteField()
+                     });
+                 }
+             }
+        }
+
+        // B. 刪除使用者的 Profile 文件
+        await deleteDoc(doc(db, 'users', user.uid));
+
+        // C. 最後刪除 Auth 帳號 (最敏感的操作)
+        await deleteUser(user);
+        
+        // D. 清除本地狀態
+        disconnectLedger();
+        
+    } catch (error) {
+        // 捕捉 "需要重新登入" 的特定錯誤
+        if (error.code === 'auth/requires-recent-login') {
+            throw new Error('REQ_RELOGIN');
+        }
+        console.error("Delete Account Error:", error);
+        throw error;
+    }
+  }, [user, ledgerCode, disconnectLedger]);
+
   const addTransaction = useCallback(async (payload) => {
     if (!ledgerCode || !user || !db) throw new Error("無效的帳本狀態");
     
@@ -617,7 +666,8 @@ export const LedgerProvider = ({ children }) => {
     reorderCategories, 
     updateUserSetting, 
     resetAccount, 
-    fixIdentity
+    fixIdentity,
+    deleteAccount // [NEW] Export new function
   }), [
     ledgerCode, 
     ledgerData, 
@@ -641,7 +691,8 @@ export const LedgerProvider = ({ children }) => {
     reorderCategories, 
     updateUserSetting, 
     resetAccount, 
-    fixIdentity
+    fixIdentity,
+    deleteAccount
   ]);
 
   return (

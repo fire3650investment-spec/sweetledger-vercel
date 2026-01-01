@@ -34,7 +34,8 @@ export default function SettingsView({
   currentProjectId,
   handleReorderCategories 
 }) {
-  const { leaveLedger, resetAccount } = useLedger();
+  // [MODIFIED] 從 Context 取得 deleteAccount
+  const { leaveLedger, resetAccount, deleteAccount } = useLedger();
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -111,6 +112,24 @@ export default function SettingsView({
       }
   };
 
+  // [NEW] 刪除帳號邏輯
+  const handleDeleteAccount = async () => {
+      if (!window.confirm("警告：此操作將「永久刪除」您的帳號與所有個人資料，且無法復原！")) return;
+      if (!window.confirm("再次確認：您確定要刪除帳號嗎？")) return;
+
+      try {
+          await deleteAccount();
+          // 成功後，AuthContext 會自動偵測到 user null 並導向 onboarding
+      } catch (e) {
+          if (e.message === 'REQ_RELOGIN') {
+              alert("為了確保您的帳號安全，執行刪除操作前請先「重新登入」。\n\n系統將為您登出，請登入後再次執行刪除操作。");
+              await handleLogout(); 
+          } else {
+              alert("刪除失敗：" + e.message);
+          }
+      }
+  };
+
   const openNewCategoryModal = () => {
       setEditingCategoryData({ id: '', name: '', icon: 'food', colorId: 'slate' });
       setIsEditingCategory(true);
@@ -126,7 +145,6 @@ export default function SettingsView({
       
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-          {/* [Updated] 標題字級與顏色統一 */}
           <h2 className="text-2xl font-bold text-gray-800">設定</h2>
       </div>
 
@@ -294,10 +312,8 @@ export default function SettingsView({
                 onClick={resetAccount} 
             >
                 <div className="flex items-center gap-3">
-                    {/* [Updated] 灰色 Icon */}
                     <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><RotateCcw size={18}/></div>
                     <div className="flex flex-col text-left">
-                        {/* [Updated] 灰色文字 */}
                         <span className="font-bold text-gray-500 text-sm">重置帳本</span>
                         <span className="text-[10px] text-gray-400">{isHost ? '清空所有資料 (僅戶長)' : '僅戶長可執行此操作'}</span>
                     </div>
@@ -311,15 +327,28 @@ export default function SettingsView({
                 onClick={leaveLedger}
             >
                 <div className="flex items-center gap-3">
-                    {/* [Updated] 灰色 Icon */}
                     <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><UserX size={18}/></div>
                     <div className="flex flex-col text-left">
-                        {/* [Updated] 灰色文字 */}
                         <span className="font-bold text-gray-500 text-sm">退出此帳本</span>
                         <span className="text-[10px] text-gray-400">移除權限並離開</span>
                     </div>
                 </div>
                 <ChevronRight size={16} className="text-gray-300"/>
+            </div>
+
+            {/* [NEW] Delete Account (第三順位) */}
+            <div 
+                className="p-4 flex justify-between items-center hover:bg-rose-600 hover:text-white transition-colors cursor-pointer group"
+                onClick={handleDeleteAccount}
+            >
+                <div className="flex items-center gap-3">
+                     <div className="p-2 bg-rose-50 text-rose-500 rounded-lg group-hover:bg-white/20 group-hover:text-white transition-all"><AlertTriangle size={18}/></div>
+                     <div className="flex flex-col text-left">
+                        <span className="font-bold text-rose-600 text-sm group-hover:text-white">刪除帳號</span>
+                        <span className="text-[10px] text-rose-300 group-hover:text-white/80">永久刪除 User</span>
+                     </div>
+                </div>
+                <ChevronRight size={16} className="text-rose-200 group-hover:text-white/60"/>
             </div>
 
           </div>
@@ -333,7 +362,7 @@ export default function SettingsView({
         </div>
       </div>
 
-      {/* --- Modals (Keep unchanged) --- */}
+      {/* --- Modals --- */}
       {/* Avatar Modal */}
       {isAvatarModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsAvatarModalOpen(false)}>
