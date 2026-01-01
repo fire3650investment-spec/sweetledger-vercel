@@ -1,7 +1,6 @@
 // src/components/StatsView.jsx
 import React, { useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Coins } from 'lucide-react';
-// [Updated] 引入 getCategoryStyle
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES } from '../utils/constants';
 
@@ -13,6 +12,10 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         date.setMonth(date.getMonth() + direction); 
         setStatsMonth(date.toISOString().slice(0, 7)); 
     };
+
+    // [Batch 2 Logic Optimization] Extract project info for conditional rendering
+    const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
+    const isPrivateProject = currentProject?.type === 'private';
 
     const { filteredTxs, sortedHistory, rates, hostId, guestId, hostTotal, guestTotal, hostRatio, guestRatio, totalExpense, categoryStats, pieChartGradient } = useMemo(() => {
         const rawTxs = ledgerData.transactions || [];
@@ -32,12 +35,11 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
 
         const txs = allTxs.filter(t => t.date.startsWith(statsMonth) && (t.projectId || 'daily') === currentProjectId);
         const sorted = [...txs].sort((a, b) => new Date(b.date) - new Date(a.date));
-        const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
+        
         const currentRates = currentProject?.rates || { JPY: 0.23, THB: 1 };
         const hId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'host');
         const gId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'guest');
 
-        // ... (User Paid Calculation Logic Omitted for brevity, kept same) ...
         const calculateTotalPaid = (uid) => {
             return txs.reduce((sum, tx) => {
                 if (tx.isSettlement) return sum; 
@@ -58,7 +60,6 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const combinedTotal = hTotal + gTotal;
         const hRatio = combinedTotal > 0 ? (hTotal / combinedTotal) * 100 : 50;
         const gRatio = combinedTotal > 0 ? (gTotal / combinedTotal) * 100 : 50;
-        // ...
 
         const statsMap = {};
         let totalExp = 0;
@@ -79,7 +80,6 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
             } else { 
                 const cat = currentCategories.find(c => c.id === id); 
                 if(cat) {
-                    // [Critical Update] Resolve Hex for Charts
                     const style = getCategoryStyle(cat, 'display');
                     catStats.push({ ...cat, total: amt, hex: style.hex }); 
                 }
@@ -96,9 +96,12 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         }
 
         return { filteredTxs: txs, sortedHistory: sorted, rates: currentRates, hostId: hId, guestId: gId, hostTotal: isNaN(hTotal) ? 0 : hTotal, guestTotal: isNaN(gTotal) ? 0 : gTotal, hostRatio: isNaN(hRatio) ? 50 : hRatio, guestRatio: isNaN(gRatio) ? 50 : gRatio, totalExpense: isNaN(totalExp) ? 0 : totalExp, categoryStats: catStats, pieChartGradient: gradientStr };
-    }, [ledgerData, statsMonth, currentProjectId]);
+    }, [ledgerData, statsMonth, currentProjectId, currentProject]); // Added currentProject to deps
 
     const getSmartTags = (tx) => {
+        // [Batch 2 Optimization] Consistent with Dashboard: Hide tags in private mode
+        if (isPrivateProject) return [];
+
         const tags = [];
         const safeUsers = ledgerData.users || {};
         if (tx.isSettlement) { const payerName = safeUsers[tx.payer]?.name || '未知'; tags.push({ label: `${payerName} 轉帳`, color: 'gray' }); return tags; }
@@ -132,25 +135,28 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                 <button onClick={() => handleMonthChange(1)} className="p-1"><ChevronRight size={16}/></button>
             </div>
          </div>
-         {/* ... Contribution Chart Omitted for brevity ... */}
-         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
-            <h3 className="text-gray-600 font-bold mb-4">消費貢獻度 (支付金額 - TWD)</h3>
-            <div className="flex justify-between items-center mb-2 text-sm">
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                    <span className="text-gray-600">{(ledgerData.users || {})[hostId]?.name || 'Host'}</span>
+         
+         {/* [Batch 2 Logic Optimization] Hide Contribution Chart in Private Mode */}
+         {!isPrivateProject && (
+             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
+                <h3 className="text-gray-600 font-bold mb-4">消費貢獻度 (支付金額 - TWD)</h3>
+                <div className="flex justify-between items-center mb-2 text-sm">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                        <span className="text-gray-600">{(ledgerData.users || {})[hostId]?.name || 'Host'}</span>
+                    </div>
+                    <div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(hostTotal, 'TWD')}</span><span className="text-xs text-gray-400">({Math.round(hostRatio)}%)</span></div>
                 </div>
-                <div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(hostTotal, 'TWD')}</span><span className="text-xs text-gray-400">({Math.round(hostRatio)}%)</span></div>
-            </div>
-            <div className="flex justify-between items-center mb-3 text-sm">
-                <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-pink-500"></div>
-                    <span className="text-gray-600">{(ledgerData.users || {})[guestId]?.name || 'Guest'}</span>
+                <div className="flex justify-between items-center mb-3 text-sm">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-pink-500"></div>
+                        <span className="text-gray-600">{(ledgerData.users || {})[guestId]?.name || 'Guest'}</span>
+                    </div>
+                    <div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(guestTotal, 'TWD')}</span><span className="text-xs text-gray-400">({Math.round(guestRatio)}%)</span></div>
                 </div>
-                <div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(guestTotal, 'TWD')}</span><span className="text-xs text-gray-400">({Math.round(guestRatio)}%)</span></div>
-            </div>
-            <div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden"><div style={{ width: `${hostRatio}%` }} className="bg-blue-500 transition-all duration-1000"></div><div style={{ width: `${guestRatio}%` }} className="bg-pink-500 transition-all duration-1000"></div></div>
-         </div>
+                <div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden"><div style={{ width: `${hostRatio}%` }} className="bg-blue-500 transition-all duration-1000"></div><div style={{ width: `${guestRatio}%` }} className="bg-pink-500 transition-all duration-1000"></div></div>
+             </div>
+         )}
 
          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center">
             <h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比 (TWD)</h3>
@@ -159,7 +165,6 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                 {categoryStats.map(stat => (
                     <div key={stat.id} className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            {/* [Updated] Use hex from stat (which is now authoritative) */}
                             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.hex }}></div>
                             <span className="text-sm text-gray-600 font-medium">{stat.name}</span>
                         </div>
@@ -174,14 +179,12 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                 {sortedHistory.map((tx) => {
                     const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                     const tags = getSmartTags(tx);
-                    // [Updated] Apply Display Mode Style
                     const style = getCategoryStyle(tx.category, 'display');
 
                     return (
                         <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-3 active:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 last:pb-0`}>
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                                 <div className="text-gray-400 text-xs w-8 text-center shrink-0">{new Date(tx.date).getDate()}日</div>
-                                {/* [Updated] Container Style */}
                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${style.containerClass}`}>
                                     <CatIcon size={16} className={style.iconClass} />
                                 </div>

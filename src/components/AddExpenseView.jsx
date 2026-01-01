@@ -153,6 +153,12 @@ export default function AddExpenseView({
        可用的分類 ID: ${currentCats.map(c=>c.id).join(', ')}
        請解析：1. 金額 (amount) 2. 類別 ID (categoryId) 3. 備註 (note) 4. 幣別 (currency, 預設 TWD)
        只回傳 JSON。`;
+
+        // [Batch 2 Logic Optimization] 注入私人帳本上下文
+        if (isPrivateProject) {
+            prompt += `\n[重要指令] 此為「私人帳本」模式。請將所有交易視為使用者個人支出，不需要考慮分帳、代墊或AA制邏輯。`;
+        }
+
         if (aiModalInput) prompt += `\n使用者文字: "${aiModalInput}"`;
    
         const result = await callGemini(prompt, null); 
@@ -446,7 +452,6 @@ export default function AddExpenseView({
                         </div>
                     )}
                     
-                    {/* [Batch 1 Optimization] 私人模式隱藏付款人選擇器 */}
                     {splitType !== 'multi_payer' && !isPrivateProject && (
                         <>
                             <div className="h-[1px] bg-gray-50 w-full"></div>
