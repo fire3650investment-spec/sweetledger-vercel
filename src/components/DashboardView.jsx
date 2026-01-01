@@ -157,7 +157,7 @@ export default function DashboardView({
 
     // [Feature] Smart Tags Logic
     const getSmartTags = (tx) => {
-        // [Batch 1 Optimization] 私人帳本模式下，隱藏所有社交與分帳標籤，還給使用者乾淨版面
+        // [Batch 2 Opt] Private Mode: Hide ALL tags (Payer, Private, etc.) for visual noise reduction
         if (isPrivateProject) return [];
 
         const tags = [];
