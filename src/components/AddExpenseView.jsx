@@ -446,9 +446,10 @@ export default function AddExpenseView({
                         </div>
                     )}
                     
-                    {splitType !== 'multi_payer' && (
+                    {/* [Batch 1 Optimization] 私人模式隱藏付款人選擇器 */}
+                    {splitType !== 'multi_payer' && !isPrivateProject && (
                         <>
-                            {!isPrivateProject && <div className="h-[1px] bg-gray-50 w-full"></div>}
+                            <div className="h-[1px] bg-gray-50 w-full"></div>
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2 text-gray-500 flex-1 min-w-0">
                                     <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 shrink-0"><User size={16} /></div>
