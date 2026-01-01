@@ -5,15 +5,21 @@ import {
   Home, Gamepad2, Gift, Wrench, 
   Heart, Plane, GraduationCap, CircleDollarSign, 
   HelpCircle, MoreHorizontal, Briefcase, Zap, 
-  Tv, Music, Smartphone, Baby, AlertCircle
+  Tv, Music, Smartphone, Baby, AlertCircle,
+  User, Coins
 } from 'lucide-react';
+// 引入剛安裝的 SDK
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { ICON_MAP, CHARACTERS, PALETTE } from './constants';
 
-// [NEW] 取得本地時間的 YYYY-MM-DD 字串
+// --- Formatters & Helpers ---
+
+// [Fix] 補回遺失的 generateId
+export const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
+
+// [New] 本地時區日期 (修復早晨時差 Bug)
 export const getLocalISODate = (dateInput = new Date()) => {
   const date = new Date(dateInput);
-  // getTimezoneOffset 回傳的是「UTC 減去本地時間」的分鐘數 (例如台灣是 -480)
-  // 我們要「減去」這個負值 (等於加上 480 分鐘) 來把 UTC 時間「推」到本地時間
   const offset = date.getTimezoneOffset() * 60000; 
   const localDate = new Date(date.getTime() - offset);
   return localDate.toISOString().slice(0, 10);
@@ -21,19 +27,28 @@ export const getLocalISODate = (dateInput = new Date()) => {
 
 export const formatCurrency = (amount, currency = 'TWD', privacyMode = false) => {
   if (privacyMode) return '****';
-  const formatter = new Intl.NumberFormat('zh-TW', {
-    style: 'currency',
-    currency: currency,
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
-  return formatter.format(amount);
+  
+  return new Intl.NumberFormat('zh-TW', {
+      style: 'currency',
+      currency: currency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+  }).format(amount);
 };
 
-// ... (以下保持原有的 getIconComponent, calculateTwdValue, getCategoryStyle, callGemini, parseReceiptWithGemini 不變)
+export const calculateTwdValue = (amount, currency, rates) => {
+    if (!amount) return 0;
+    if (currency === 'TWD') return parseFloat(amount);
+    
+    const rate = rates?.[currency] || 1;
+    return parseFloat(amount) * rate;
+};
+
+// --- Icon & UI System ---
 
 export const getIconComponent = (iconName) => {
-  const icons = {
+  // 如果 helper 裡沒有 map，嘗試從 constants 讀取或使用本地 fallback
+  const localMap = {
     'food': Utensils,
     'drink': Coffee,
     'transport': Bus,
@@ -54,98 +69,120 @@ export const getIconComponent = (iconName) => {
     'baby': Baby,
     'other': MoreHorizontal,
     'help-circle': HelpCircle,
-    'settlement': CircleDollarSign // Default fallback
+    'settlement': Coins 
   };
-  return icons[iconName] || icons['help-circle'];
-};
-
-export const calculateTwdValue = (amount, currency, rates) => {
-    if (!amount) return 0;
-    if (currency === 'TWD') return amount;
-    const rate = rates ? rates[currency] : null;
-    if (!rate) return amount; 
-    return amount * rate;
+  
+  // 優先使用 ICON_MAP (如果 constants 有定義)，否則用本地 map
+  const TargetIcon = (ICON_MAP && ICON_MAP[iconName]) || localMap[iconName] || HelpCircle;
+  return TargetIcon;
 };
 
 export const getCategoryStyle = (category, mode = 'display') => {
-    const defaultColor = 'bg-gray-100 text-gray-600';
-    const defaultHex = '#9ca3af';
-    
-    // 如果 category 物件本身帶有 hex (新版設計)，優先使用
-    if (category?.hex) {
-        return {
-            containerClass: '', // 用 style 控制背景
-            iconClass: 'text-white', // 自訂顏色的 icon 通常反白
-            activeClass: '', // 用 style 控制
-            hex: category.hex
-        };
-    }
-    
-    // 舊版相容 (Tailwind Classes)
-    const colorClass = category?.color || defaultColor;
-    
+    // 防呆
+    if (!category) return { containerClass: 'bg-gray-100', iconClass: 'text-gray-500', hex: '#94a3b8' };
+
+    // Input Mode (極簡/輸入模式)
     if (mode === 'input') {
         return {
-            containerClass: colorClass.replace('bg-', 'bg-opacity-20 bg-').replace('text-', 'text-'), 
-            activeClass: colorClass, // 選中時用深色
-            iconClass: 'currentColor'
+            containerClass: 'bg-gray-50 border border-gray-100',
+            iconClass: 'text-gray-400',
+            activeClass: 'bg-rose-500 text-white shadow-md shadow-rose-200 border-transparent',
+            hex: '#64748b' 
         };
     }
 
+    // Display Mode
+    if (category.colorId && PALETTE && PALETTE[category.colorId]) {
+        const token = PALETTE[category.colorId];
+        return {
+            containerClass: `${token.bg} ${token.text}`,
+            iconClass: token.text, 
+            hex: token.hex
+        };
+    }
+    
+    // Legacy / Default
     return {
-        containerClass: colorClass,
-        iconClass: colorClass.includes('text-white') ? 'text-white' : 'currentColor',
-        hex: defaultHex // 舊版沒 Hex 就給預設灰
+        containerClass: category.color || 'bg-slate-100 text-slate-600',
+        iconClass: '', 
+        hex: category.hex || '#475569'
     };
 };
 
-// ... Gemini API 相關函式 (保持不變)
-export const callGemini = async (prompt, imageBase64) => {
+export const renderAvatar = (avatarKeyOrUrl, className = "w-10 h-10") => {
+  if (avatarKeyOrUrl && typeof avatarKeyOrUrl === 'string' && avatarKeyOrUrl.includes('http')) {
+      return <img src={avatarKeyOrUrl} className={`${className} rounded-full object-cover border border-gray-200`} alt="avatar" />;
+  }
+
+  let Icon = User;
+  if (CHARACTERS && CHARACTERS[avatarKeyOrUrl]) {
+      const iconName = CHARACTERS[avatarKeyOrUrl].icon;
+      Icon = getIconComponent(iconName);
+  } else if (ICON_MAP && ICON_MAP[avatarKeyOrUrl]) {
+      Icon = ICON_MAP[avatarKeyOrUrl];
+  }
+
+  return (
+    <div className={`${className} flex items-center justify-center bg-gray-100 rounded-full text-gray-600 border border-gray-200`}>
+      <Icon className="w-[60%] h-[60%]" strokeWidth={2} />
+    </div>
+  );
+};
+
+// --- AI / Gemini Functions (Using SDK) ---
+
+export const callGemini = async (prompt, imageBase64 = null) => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   if (!apiKey) {
-      console.error("Gemini API Key missing");
+      console.warn("系統錯誤：缺少 AI 金鑰 (VITE_GEMINI_API_KEY)");
       return null;
   }
+
   try {
       const genAI = new GoogleGenerativeAI(apiKey);
+      // 使用最新的 Flash 模型，速度快且便宜
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       let result;
       if (imageBase64) {
-          const imagePart = { inlineData: { data: imageBase64, mimeType: "image/jpeg" } };
+          const imagePart = {
+              inlineData: {
+                  data: imageBase64,
+                  mimeType: "image/jpeg"
+              }
+          };
           result = await model.generateContent([prompt, imagePart]);
       } else {
           result = await model.generateContent(prompt);
       }
       return result.response.text();
   } catch (e) {
-      console.error("Gemini API Error:", e);
+      console.error("Gemini SDK Error:", e);
       return null;
   }
 };
 
 export const parseReceiptWithGemini = async (base64Image) => {
-    const prompt = `
-    你是一個記帳助手。請分析這張收據/發票的圖片，並回傳一個 JSON 陣列。
-    請識別所有消費品項，包含：
-    1. 品項名稱 (name)
-    2. 單價或總價 (price) - 請轉為數字
-    3. 數量 (quantity) - 預設 1
+    const prompt = `你是一個專業的收據識別助手。請分析這張發票或收據圖片，並提取所有「收費項目」。
+  
+  重要規則：
+  1. 請列出所有菜色、商品或服務項目。
+  2. 如果看到「服務費」、「清潔費」、「Service Charge」、「SVC」或「10%」等額外費用，請務必將其視為一個獨立的品項列出。
+  3. 忽略日期、地址、統編等資訊。
+  4. 數量 (quantity) 若無法辨識預設為 1。
+  5. 價格 (price) 請轉換為純數字。
+  
+  請直接回傳一個 JSON 陣列，不要包含 Markdown 格式。
+  範例：[{"name": "牛肉麵", "price": 180, "quantity": 1}]`;
+  
+    const rawResult = await callGemini(prompt, base64Image);
+    if (!rawResult) return null;
 
-    範例輸出:
-    [
-      {"name": "拿鐵", "price": 120, "quantity": 1},
-      {"name": "起司蛋糕", "price": 150, "quantity": 1}
-    ]
-    只回傳 JSON，不要 markdown 標記。
-    `;
-    const result = await callGemini(prompt, base64Image);
-    if (!result) return null;
     try {
-        const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim();
+        const cleanJson = rawResult.replace(/```json/g, '').replace(/```/g, '').trim();
         return JSON.parse(cleanJson);
     } catch (e) {
-        console.error("Receipt Parse Error", e);
+        console.error("Receipt Parse JSON Error:", e);
         return null;
     }
 };
