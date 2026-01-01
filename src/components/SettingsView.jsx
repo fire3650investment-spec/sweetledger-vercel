@@ -344,8 +344,8 @@ export default function SettingsView({
                 <div className="flex items-center gap-3">
                      <div className="p-2 bg-rose-50 text-rose-500 rounded-lg group-hover:bg-white/20 group-hover:text-white transition-all"><AlertTriangle size={18}/></div>
                      <div className="flex flex-col text-left">
-                        <span className="font-bold text-rose-600 text-sm group-hover:text-white">刪除帳號</span>
-                        <span className="text-[10px] text-rose-300 group-hover:text-white/80">永久刪除 User</span>
+                        <span className="font-bold text-gray-500 text-sm">刪除帳號</span>
+                        <span className="text-[10px] text-gray-400">永久刪除 User</span>
                      </div>
                 </div>
                 <ChevronRight size={16} className="text-rose-200 group-hover:text-white/60"/>
