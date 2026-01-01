@@ -1,9 +1,9 @@
 // src/utils/constants.js
 import { 
-  Utensils, Train, ShoppingBag, Home, BedDouble, Ticket, Smartphone, Shield, Sun, 
+  Utensils, Train, ShoppingBag, House, BedDouble, Ticket, Smartphone, ShieldCheck, Sun, 
   MessageCircle, Cat, Dog, Rabbit, Bird, Sparkles, Calendar, Plane, Wallet, Coffee, 
   Music, Gamepad, Heart, Gift, Zap, BookOpen, Coins,
-  Fish, Turtle // [Preserved] 保留新動物
+  Fish, Turtle 
 } from 'lucide-react';
 
 // --- 1. 全域色票系統 (Design Tokens - Based on User's Existing Colors) ---
@@ -24,17 +24,17 @@ export const PALETTE = {
   rose:    { id: 'rose',    bg: 'bg-rose-100',    text: 'text-rose-600',    hex: '#e11d48', name: 'Rose' },
 };
 
-// --- 2. Icon 映射 (Preserved) ---
+// --- 2. Icon 映射 (Updated for Lucide v0.4+) ---
 export const ICON_MAP = {
   // Categories
   food: Utensils,
   transport: Train,
   shopping: ShoppingBag,
-  housing: Home, 
+  housing: House,        // [Fix] Replaced Home with House
   hotel: BedDouble,
   ticket: Ticket,
   telecom: Smartphone,
-  insurance: Shield,
+  insurance: ShieldCheck, // [Fix] Replaced Shield with ShieldCheck
   life: Sun,
   other: MessageCircle,
   // Characters
@@ -48,7 +48,7 @@ export const ICON_MAP = {
   default: Sparkles,
   project_daily: Calendar,
   project_travel: Plane,
-  project_house: Home, 
+  project_house: House,   // [Fix] Replaced Home with House
   project_private: Wallet,
   // Other
   coffee: Coffee,
