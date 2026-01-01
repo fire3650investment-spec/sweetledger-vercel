@@ -3,12 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   User, LogOut, RotateCcw, Download, X, Check, Trash2, 
   Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe,
-  ShieldAlert, FileText, UserX, AlertTriangle // [Added] New Icons
+  ShieldAlert, FileText, UserX, AlertTriangle 
 } from 'lucide-react';
-// [Updated] 引入 getCategoryStyle
 import { getIconComponent, renderAvatar, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS } from '../utils/constants';
-import { useLedger } from '../contexts/LedgerContext'; // [Added] Import Context
+import { useLedger } from '../contexts/LedgerContext';
 
 export default function SettingsView({ 
   user, 
@@ -20,7 +19,6 @@ export default function SettingsView({
   handleSaveCategory, 
   handleDeleteCategory, 
   handleExport, 
-  // handleResetAccount, // [Modified] We use context version for RBAC
   handleLogout,
   isAvatarModalOpen,
   setIsAvatarModalOpen,
@@ -36,7 +34,7 @@ export default function SettingsView({
   currentProjectId,
   handleReorderCategories 
 }) {
-  const { leaveLedger, resetAccount } = useLedger(); // [Added] Use Context Actions
+  const { leaveLedger, resetAccount } = useLedger();
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -52,7 +50,7 @@ export default function SettingsView({
   const serverRates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
   const [localRates, setLocalRates] = useState(serverRates);
 
-  // [Added] Role Check
+  // Role Check
   const currentUserRole = ledgerData?.users?.[user?.uid]?.role;
   const isHost = currentUserRole === 'host';
 
@@ -128,7 +126,8 @@ export default function SettingsView({
       
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-          <h2 className="text-3xl font-bold text-gray-900 tracking-tight">設定</h2>
+          {/* [Fix 3] 調整標題字級為 text-2xl 以符合全站一致性 */}
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">設定</h2>
       </div>
 
       <div className="space-y-6">
@@ -212,7 +211,7 @@ export default function SettingsView({
                 </div>
             </div>
 
-            {/* Category Grid (Input Mode: Minimalist) */}
+            {/* Category Grid */}
             <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2"><LayoutGrid size={16}/> 分類管理</h2>
@@ -281,41 +280,43 @@ export default function SettingsView({
              </div>
         </section>
 
-        {/* --- Island D: Danger Zone (New) --- */}
+        {/* --- Island D: Danger Zone --- */}
+        {/* [Fix 1] 視覺降噪：移除紅色背景，改為白色並統一邊框樣式 */}
         <section className="space-y-3 pt-2">
           <h3 className="text-xs font-bold text-rose-500 ml-2 flex items-center gap-1">
               <AlertTriangle size={12}/> 危險區域
           </h3>
-          <div className="bg-rose-50 rounded-2xl overflow-hidden border border-rose-100 divide-y divide-rose-100/50">
+          <div className="bg-white rounded-2xl overflow-hidden border border-gray-100 divide-y divide-gray-50">
             
             {/* RBAC Protected Reset */}
             <div 
-                className={`p-4 flex justify-between items-center transition-colors cursor-pointer ${!isHost ? 'opacity-50 grayscale cursor-not-allowed' : 'active:bg-rose-100 hover:bg-rose-100/50'}`}
-                onClick={resetAccount} // Use Context Action
+                className={`p-4 flex justify-between items-center transition-colors cursor-pointer ${!isHost ? 'opacity-50 grayscale cursor-not-allowed' : 'active:bg-gray-50 hover:bg-gray-50'}`}
+                onClick={resetAccount} 
             >
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white text-rose-500 rounded-lg shadow-sm"><RotateCcw size={18}/></div>
+                    {/* Icon 保持紅色以示警 */}
+                    <div className="p-2 bg-rose-50 text-rose-500 rounded-lg shadow-sm"><RotateCcw size={18}/></div>
                     <div className="flex flex-col text-left">
                         <span className="font-bold text-rose-700 text-sm">重置帳本</span>
-                        <span className="text-[10px] text-rose-400">{isHost ? '清空所有資料 (僅戶長)' : '僅戶長可執行此操作'}</span>
+                        <span className="text-[10px] text-gray-400">{isHost ? '清空所有資料 (僅戶長)' : '僅戶長可執行此操作'}</span>
                     </div>
                 </div>
-                {isHost && <ChevronRight size={16} className="text-rose-300"/>}
+                {isHost && <ChevronRight size={16} className="text-gray-300"/>}
             </div>
 
             {/* Leave Ledger */}
             <div 
-                className="p-4 flex justify-between items-center active:bg-rose-100 hover:bg-rose-100/50 transition-colors cursor-pointer"
-                onClick={leaveLedger} // Use Context Action
+                className="p-4 flex justify-between items-center active:bg-gray-50 hover:bg-gray-50 transition-colors cursor-pointer"
+                onClick={leaveLedger}
             >
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white text-rose-500 rounded-lg shadow-sm"><UserX size={18}/></div>
+                    <div className="p-2 bg-rose-50 text-rose-500 rounded-lg shadow-sm"><UserX size={18}/></div>
                     <div className="flex flex-col text-left">
                         <span className="font-bold text-rose-700 text-sm">退出此帳本</span>
-                        <span className="text-[10px] text-rose-400">移除權限並離開</span>
+                        <span className="text-[10px] text-gray-400">移除權限並離開</span>
                     </div>
                 </div>
-                <ChevronRight size={16} className="text-rose-300"/>
+                <ChevronRight size={16} className="text-gray-300"/>
             </div>
 
           </div>
@@ -329,7 +330,7 @@ export default function SettingsView({
         </div>
       </div>
 
-      {/* --- Modals (Unchanged) --- */}
+      {/* --- Modals --- */}
       {/* Avatar Modal */}
       {isAvatarModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsAvatarModalOpen(false)}>
@@ -401,7 +402,8 @@ export default function SettingsView({
                     {/* Color Picker */}
                     <div>
                         <label className="block text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-2"><Palette size={12}/> 顏色</label>
-                        <div className="flex gap-3 overflow-x-auto pb-2 p-1 no-scrollbar">
+                        {/* [Fix 2] 增加 padding (p-3) 避免選中時圓圈放大被裁切 */}
+                        <div className="flex gap-3 overflow-x-auto pb-2 p-3 no-scrollbar">
                             {COLORS.map(c => (
                                 <button 
                                     key={c.hex} 
