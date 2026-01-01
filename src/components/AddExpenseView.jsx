@@ -1,10 +1,10 @@
 // src/components/AddExpenseView.jsx
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, 
   Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock 
 } from 'lucide-react';
-import { getIconComponent, parseReceiptWithGemini, getCategoryStyle } from '../utils/helpers';
+import { getIconComponent, parseReceiptWithGemini, getCategoryStyle, callGemini } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
 import ScanReceiptModal from './ScanReceiptModal';
 
@@ -15,62 +15,54 @@ import SmartTagBar from './add-expense/SmartTagBar';
 
 export default function AddExpenseView({
   ledgerData,
-  currentProjectId,
   user,
-  isAiModalOpen,
-  setIsAiModalOpen,
-  aiModalInput,
-  setAiModalInput,
-  isRecording,
-  toggleVoiceRecording,
-  handleAiModalSubmit,
-  isAiProcessing,
+  currentProjectId,
   setView,
-  date,
-  setDate,
-  currency, 
-  setCurrency, 
-  setAmount,    
-  amount,
-  initialAmount, 
-  payer,
-  setPayer,
-  note,
-  setNote,
-  selectedCategory,
-  setSelectedCategory,
-  splitType,
-  setSplitType,
-  customSplitHost,
-  setCustomSplitHost,
-  customSplitGuest,
-  setCustomSplitGuest,
-  handleCustomSplitChange,
-  isSubscription,
-  setIsSubscription,
-  subCycle,
-  setSubCycle,
-  subPayDay,
-  setSubPayDay,
-  addTransaction,
-  isSubmittingTransaction
+  addTransaction, // 從 Context 傳入的 API
+  isSubmittingTransaction // Global loading state (optional, can also be local)
 }) {
     if (!ledgerData) return null; 
 
-    // --- Local State & Refs ---
-    const [activeOverlay, setActiveOverlay] = useState('amount'); 
-    const [localAmount, setLocalAmount] = useState(''); 
-    const noteInputRef = useRef(null);
-    const cameraInputRef = useRef(null);
-    const fileInputRef = useRef(null);
+    // --- 1. Local Form State (Moved from App.jsx) ---
+    const [amount, setAmount] = useState('');
+    const [localAmount, setLocalAmount] = useState(''); // Keypad buffer
+    const [note, setNote] = useState('');
+    const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+    const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
+    const [currency, setCurrency] = useState(() => localStorage.getItem('sweet_last_currency') || 'TWD');
+    const [payer, setPayer] = useState(user?.uid || '');
+    
+    // Split Logic
+    const [splitType, setSplitType] = useState('even');
+    const [customSplitHost, setCustomSplitHost] = useState('');
+    const [customSplitGuest, setCustomSplitGuest] = useState('');
+    
+    // Subscription Logic
+    const [isSubscription, setIsSubscription] = useState(false);
+    const [subCycle, setSubCycle] = useState('monthly');
+    const [subPayDay, setSubPayDay] = useState('');
+
+    // --- 2. AI & Modal State (Moved from App.jsx) ---
+    const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+    const [aiModalInput, setAiModalInput] = useState('');
+    const [isAiProcessing, setIsAiProcessing] = useState(false);
+    const [isRecording, setIsRecording] = useState(false);
+    
+    // --- 3. UI Internal State ---
+    const [activeOverlay, setActiveOverlay] = useState('amount');
     const [isScanning, setIsScanning] = useState(false);
     const [isScanModalOpen, setIsScanModalOpen] = useState(false);
     const [scannedItems, setScannedItems] = useState([]);
+    const [localSubmitting, setLocalSubmitting] = useState(false);
 
-    // --- Data Preparation (Memoized) ---
+    // Refs
+    const noteInputRef = useRef(null);
+    const cameraInputRef = useRef(null);
+    const fileInputRef = useRef(null);
+    const recognitionRef = useRef(null);
+
+    // --- Data Preparation ---
     const currentCats = useMemo(() => ledgerData.customCategories || DEFAULT_CATEGORIES, [ledgerData.customCategories]);
-    
-    // [New] Private Project Detection
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
     const isPrivateProject = currentProject?.type === 'private';
     
@@ -78,15 +70,13 @@ export default function AddExpenseView({
         const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
         return currentCats.filter(cat => selectedCategoryIds.includes(cat.id));
     }, [currentCats, ledgerData.settings?.selectedCategories]);
-    
-    // Names
+
     const users = ledgerData.users || {};
     const hostId = Object.keys(users).find(uid => users[uid].role === 'host');
     const guestId = Object.keys(users).find(uid => users[uid].role === 'guest');
     const hostName = hostId ? (users[hostId]?.name || '戶長') : '戶長';
     const guestName = guestId ? (users[guestId]?.name || '成員') : '成員';
 
-    // Smart Tags Logic
     const recentNotes = useMemo(() => {
         if (!ledgerData.transactions || !selectedCategory) return [];
         const recentTxs = ledgerData.transactions.slice(-50).reverse();
@@ -98,28 +88,14 @@ export default function AddExpenseView({
 
     // --- Effects ---
     useEffect(() => {
-        if (initialAmount) {
-            setLocalAmount(initialAmount.toString());
-        } else {
-            if (!amount) setLocalAmount('');
-        }
-        setActiveOverlay('amount');
+        localStorage.setItem('sweet_last_currency', currency);
+    }, [currency]);
+
+    useEffect(() => {
         if (!payer && user) setPayer(user.uid);
+    }, [user, payer]);
 
-        return () => {
-            setAmount(''); 
-            setNote(''); 
-            setSelectedCategory(null); 
-            setSplitType('even');
-            setCustomSplitHost(''); 
-            setCustomSplitGuest(''); 
-            setIsSubscription(false);
-            setSubCycle('monthly'); 
-            setSubPayDay('');
-        };
-    }, []); 
-
-    // [New] Force SplitType for Private Projects
+    // Private Project Logic
     useEffect(() => {
         if (isPrivateProject) {
             setSplitType('self');
@@ -129,21 +105,10 @@ export default function AddExpenseView({
         }
     }, [isPrivateProject, user]);
 
-    useEffect(() => { 
-        setAmount(localAmount); 
-    }, [localAmount, setAmount]);
+    useEffect(() => { setAmount(localAmount); }, [localAmount]);
 
-    useEffect(() => {
-        if (amount !== undefined && amount !== null && amount.toString() !== localAmount) {
-            setLocalAmount(amount.toString());
-        }
-    }, [amount]);
-
-    // --- Handlers ---
-    const handleAmountClick = () => { setActiveOverlay('amount'); noteInputRef.current?.blur(); };
-    const handleCategoryTriggerClick = () => { setActiveOverlay('category'); noteInputRef.current?.blur(); };
-    const handleNoteFocus = () => { setActiveOverlay('none'); };
-
+    // --- Logic Handlers ---
+    
     const handleKeypadSubmit = () => {
         const isPendingMath = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
         if (isPendingMath) {
@@ -165,7 +130,7 @@ export default function AddExpenseView({
         setTimeout(() => { noteInputRef.current?.focus(); }, 100);
     };
 
-    const handleKeyPress = (key) => {
+    const handleKeyPress = useCallback((key) => {
         if (navigator.vibrate) try { navigator.vibrate(10); } catch(e) {}
         const operators = ['+', '-', '×', '÷'];
         if (key === 'AC') { setLocalAmount(''); return; }
@@ -188,12 +153,152 @@ export default function AddExpenseView({
             }
             return prev + key;
         });
+    }, [localAmount]); // Deps needed for closure state
+
+    // --- AI Handlers (Moved from App.jsx) ---
+    const handleAiModalSubmit = async () => {
+        if (!aiModalInput) return;
+        setIsAiModalOpen(false);
+        setIsAiProcessing(true);
+        let prompt = `你是一個記帳助手。請分析使用者的輸入，並回傳一個 JSON 物件。
+       目前的日期是：${new Date().toISOString()}。
+       可用的分類 ID: ${currentCats.map(c=>c.id).join(', ')}
+       請解析：1. 金額 (amount) 2. 類別 ID (categoryId) 3. 備註 (note) 4. 幣別 (currency, 預設 TWD)
+       只回傳 JSON。`;
+        if (aiModalInput) prompt += `\n使用者文字: "${aiModalInput}"`;
+   
+        const result = await callGemini(prompt, null); 
+        setIsAiProcessing(false);
+        setAiModalInput('');
+   
+        if (!result) { alert("AI 無法解析"); return; }
+        try { 
+            const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim(); 
+            const parsed = JSON.parse(cleanJson); 
+            if (parsed.amount) {
+                setAmount(parsed.amount.toString()); 
+                setLocalAmount(parsed.amount.toString());
+            }
+            if (parsed.note) setNote(parsed.note); 
+            if (parsed.currency) setCurrency(parsed.currency); 
+            if (parsed.categoryId) { 
+                const cat = currentCats.find(c => c.id === parsed.categoryId); 
+                if (cat) setSelectedCategory(cat); 
+            } 
+        } catch (e) { 
+            console.error("AI Parse Error", e); 
+            alert("AI 解析失敗");
+        }
     };
 
-    const handleCameraClick = () => { cameraInputRef.current?.click(); };
-    const handleAlbumClick = () => { fileInputRef.current?.click(); };
+    const toggleVoiceRecording = () => {
+        if (isRecording) {
+            recognitionRef.current?.stop();
+            setIsRecording(false);
+        } else {
+            if (!window.webkitSpeechRecognition && !window.SpeechRecognition) {
+                alert("您的瀏覽器不支援語音辨識");
+                return;
+            }
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+            recognition.lang = 'zh-TW';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.onresult = (event) => {
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
+                }
+                if (finalTranscript) setAiModalInput(prev => prev + finalTranscript);
+            };
+            recognition.onerror = (event) => { console.error("Speech error", event.error); setIsRecording(false); };
+            recognitionRef.current = recognition;
+            recognition.start();
+            setIsRecording(true);
+        }
+    };
 
-    const handleImageUpload = async (e) => {
+    // --- Submission Handler ---
+    const handleSubmit = async () => {
+        if (!amount || parseFloat(amount) <= 0) return;
+        if (localSubmitting || isSubmittingTransaction) return; // Prevent double click
+
+        setLocalSubmitting(true);
+        
+        // Prepare Data
+        const amountFloat = parseFloat(amount);
+        let finalSplitType = splitType;
+        let customSplitData = null;
+
+        if (splitType === 'custom' || splitType === 'multi_payer') {
+            const hostAmt = parseFloat(customSplitHost) || 0;
+            const guestAmt = parseFloat(customSplitGuest) || 0;
+            
+            if (Math.round((hostAmt + guestAmt) * 100) / 100 !== Math.round(amountFloat * 100) / 100) {
+                alert("雙方金額總和必須等於支出總額！");
+                setLocalSubmitting(false);
+                return;
+            }
+            customSplitData = {};
+            if(hostId) customSplitData[hostId] = hostAmt;
+            if(guestId) customSplitData[guestId] = guestAmt;
+        } 
+        else if (splitType === 'self') {
+            const myRole = users[user.uid]?.role;
+            finalSplitType = myRole === 'host' ? 'host_all' : 'guest_all';
+        } 
+        else if (splitType === 'partner') {
+            const myRole = users[user.uid]?.role;
+            finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
+        }
+
+        // Call Context
+        try {
+            await addTransaction({
+                amount: amountFloat,
+                currency,
+                category: selectedCategory,
+                payer: payer || user.uid,
+                splitType: finalSplitType,
+                customSplit: customSplitData,
+                note: note || selectedCategory.name,
+                projectId: currentProjectId,
+                date,
+                isSubscription,
+                subCycle,
+                subPayDay
+            });
+            // Success & Close
+            setView('dashboard');
+        } catch (e) {
+            console.error("Add Tx Error:", e);
+            alert(`記帳失敗: ${e.message}`);
+        } finally {
+            setLocalSubmitting(false);
+        }
+    };
+    
+    // --- Helpers for UI ---
+    const handleAmountClick = () => { setActiveOverlay('amount'); noteInputRef.current?.blur(); };
+    const handleCategoryTriggerClick = () => { setActiveOverlay('category'); noteInputRef.current?.blur(); };
+    const handleNoteFocus = () => { setActiveOverlay('none'); };
+    
+    const handleCustomSplitChange = (field, value) => {
+        const total = parseFloat(amount) || 0;
+        const val = parseFloat(value) || 0;
+        if (field === 'host') {
+            setCustomSplitHost(value);
+            const guestCalc = total - val;
+            setCustomSplitGuest(guestCalc >= 0 ? guestCalc.toString() : '0');
+        } else {
+            setCustomSplitGuest(value);
+            const hostCalc = total - val;
+            setCustomSplitHost(hostCalc >= 0 ? hostCalc.toString() : '0');
+        }
+    };
+
+    const handleImageUpload = async (e) => { /* Same as before ... */ 
         const file = e.target.files?.[0];
         if (!file) return;
         e.target.value = ''; 
@@ -211,42 +316,44 @@ export default function AddExpenseView({
         reader.readAsDataURL(file);
     };
 
-    const handleScanConfirm = (result) => {
-        const { amount, note, splitType, customSplit } = result;
-        setLocalAmount(amount.toString());
-        setAmount(amount.toString());
-        if (note) setNote(note);
-        setSplitType(splitType);
-        
-        if (customSplit) {
-            if (hostId && customSplit[hostId]) setCustomSplitHost(customSplit[hostId].toString());
-            if (guestId && customSplit[guestId]) setCustomSplitGuest(customSplit[guestId].toString());
+    const handleCameraClick = () => { cameraInputRef.current?.click(); };
+    const handleAlbumClick = () => { fileInputRef.current?.click(); };
+    const handleScanConfirm = (result) => { /* ... */ 
+        const { amount: rAmount, note: rNote, splitType: rSplit, customSplit: rCustom } = result;
+        setLocalAmount(rAmount.toString());
+        setAmount(rAmount.toString());
+        if (rNote) setNote(rNote);
+        setSplitType(rSplit);
+        if (rCustom) {
+            if (hostId && rCustom[hostId]) setCustomSplitHost(rCustom[hostId].toString());
+            if (guestId && rCustom[guestId]) setCustomSplitGuest(rCustom[guestId].toString());
         }
-        if (amount > 0) setActiveOverlay('category');
-    };
-
-    const getLabelForRole = (targetRole) => {
-        const payerRole = users[payer]?.role;
-        if (targetRole === 'host') {
-            if (payerRole === 'host') return `私人 (${hostName})`;
-            if (payerRole === 'guest') return `代墊 (幫${hostName}付)`;
-            return `${hostName} 全額`;
-        } else {
-            if (payerRole === 'guest') return `私人 (${guestName})`;
-            if (payerRole === 'host') return `代墊 (幫${guestName}付)`;
-            return `${guestName} 全額`;
-        }
+        if (rAmount > 0) setActiveOverlay('category');
     };
 
     const isMathPending = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
     const selectedCatStyle = getCategoryStyle(selectedCategory, 'input');
     const CatIcon = getIconComponent(selectedCategory?.icon || 'food');
+    
+    const getLabelForRole = (targetRole) => { /* Same as before */ 
+        const payerRole = users[payer]?.role;
+        if (targetRole === 'host') return payerRole === 'host' ? `私人 (${hostName})` : (payerRole === 'guest' ? `代墊 (幫${hostName}付)` : `${hostName} 全額`);
+        else return payerRole === 'guest' ? `私人 (${guestName})` : (payerRole === 'host' ? `代墊 (幫${guestName}付)` : `${guestName} 全額`);
+    };
 
     return (
       <div className="fixed inset-0 z-[50] flex flex-col h-[100dvh] bg-gray-50 overflow-hidden"> 
         <input type="file" ref={cameraInputRef} accept="image/*" capture="environment" className="hidden" onChange={handleImageUpload}/>
         <input type="file" ref={fileInputRef} accept="image/*" className="hidden" onChange={handleImageUpload}/>
-        <ScanReceiptModal isOpen={isScanModalOpen} onClose={() => setIsScanModalOpen(false)} onConfirm={handleScanConfirm} initialItems={scannedItems} currency={currency} users={ledgerData.users}/>
+        
+        <ScanReceiptModal 
+            isOpen={isScanModalOpen} 
+            onClose={() => setIsScanModalOpen(false)} 
+            onConfirm={handleScanConfirm} 
+            initialItems={scannedItems} 
+            currency={currency} 
+            users={users}
+        />
 
         {/* HUD */}
         <div className="bg-white px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.5rem)] z-20 shrink-0 shadow-sm border-b border-gray-100 relative">
@@ -317,9 +424,8 @@ export default function AddExpenseView({
             {/* Logic Module */}
             <div className="px-4">
                 <div className="bg-white rounded-3xl p-5 shadow-sm border border-gray-100 space-y-5">
-                    
-                    {/* [Updated] Private Mode UI */}
-                    {isPrivateProject ? (
+                    {/* ... (UI Logic same as before, simplified for brevity) ... */}
+                     {isPrivateProject ? (
                         <div className="flex items-center justify-between p-2 bg-gray-50 rounded-xl">
                             <div className="flex items-center gap-3 text-gray-500">
                                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-500"><Lock size={16} /></div>
@@ -382,7 +488,7 @@ export default function AddExpenseView({
                             </div>
                         </>
                     )}
-                    
+
                     <div>
                          <button onClick={() => setIsSubscription(!isSubscription)} className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${isSubscription ? 'bg-rose-50 border-rose-200' : 'bg-white border-gray-100'}`}>
                             <div className="flex items-center gap-2">
@@ -407,30 +513,18 @@ export default function AddExpenseView({
         {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+1rem)] z-30">
             <button 
-                onClick={addTransaction}
-                disabled={!localAmount || parseFloat(localAmount) <= 0 || isSubmittingTransaction}
+                onClick={handleSubmit}
+                disabled={!localAmount || parseFloat(localAmount) <= 0 || localSubmitting}
                 className="w-full bg-gray-900 text-white text-lg font-bold py-4 rounded-2xl shadow-lg shadow-gray-200 active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none"
             >
-                {isSubmittingTransaction ? <RefreshCw className="animate-spin"/> : <Check size={24} />}
+                {localSubmitting ? <RefreshCw className="animate-spin"/> : <Check size={24} />}
                 {activeOverlay === 'category' ? '完成記帳' : '下一步'}
             </button>
         </div>
 
         {/* Overlays */}
-        {activeOverlay === 'amount' && (
-            <CustomKeypad 
-                onKeyPress={handleKeyPress} 
-                isMathPending={isMathPending} 
-            />
-        )}
-
-        {activeOverlay === 'category' && (
-            <CategorySelector 
-                categories={filteredCategories} 
-                selectedCategory={selectedCategory} 
-                onSelect={handleCategorySelect} 
-            />
-        )}
+        {activeOverlay === 'amount' && <CustomKeypad onKeyPress={handleKeyPress} isMathPending={isMathPending} />}
+        {activeOverlay === 'category' && <CategorySelector categories={filteredCategories} selectedCategory={selectedCategory} onSelect={handleCategorySelect} />}
 
         {/* AI Modal */}
         {isAiModalOpen && (
