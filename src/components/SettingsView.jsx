@@ -34,7 +34,6 @@ export default function SettingsView({
   currentProjectId,
   handleReorderCategories 
 }) {
-  // [MODIFIED] 從 Context 取得 deleteAccount
   const { leaveLedger, resetAccount, deleteAccount } = useLedger();
 
   useEffect(() => {
@@ -112,14 +111,13 @@ export default function SettingsView({
       }
   };
 
-  // [NEW] 刪除帳號邏輯
+  // 刪除帳號邏輯
   const handleDeleteAccount = async () => {
       if (!window.confirm("警告：此操作將「永久刪除」您的帳號與所有個人資料，且無法復原！")) return;
       if (!window.confirm("再次確認：您確定要刪除帳號嗎？")) return;
 
       try {
           await deleteAccount();
-          // 成功後，AuthContext 會自動偵測到 user null 並導向 onboarding
       } catch (e) {
           if (e.message === 'REQ_RELOGIN') {
               alert("為了確保您的帳號安全，執行刪除操作前請先「重新登入」。\n\n系統將為您登出，請登入後再次執行刪除操作。");
@@ -300,7 +298,7 @@ export default function SettingsView({
 
         {/* --- Island D: Danger Zone --- */}
         <section className="space-y-3 pt-2">
-          {/* [Kept] 紅色小標題保留 */}
+          {/* 紅色小標題保留，作為區域提示 */}
           <h3 className="text-xs font-bold text-rose-500 ml-2 flex items-center gap-1">
               <AlertTriangle size={12}/> 危險區域
           </h3>
@@ -336,19 +334,19 @@ export default function SettingsView({
                 <ChevronRight size={16} className="text-gray-300"/>
             </div>
 
-            {/* [NEW] Delete Account (第三順位) */}
+            {/* [MODIFIED] Delete Account (Gray Style) */}
             <div 
-                className="p-4 flex justify-between items-center hover:bg-rose-600 hover:text-white transition-colors cursor-pointer group"
+                className="p-4 flex justify-between items-center active:bg-gray-50 hover:bg-gray-50 transition-colors cursor-pointer"
                 onClick={handleDeleteAccount}
             >
                 <div className="flex items-center gap-3">
-                     <div className="p-2 bg-rose-50 text-rose-500 rounded-lg group-hover:bg-white/20 group-hover:text-white transition-all"><AlertTriangle size={18}/></div>
+                     <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><AlertTriangle size={18}/></div>
                      <div className="flex flex-col text-left">
                         <span className="font-bold text-gray-500 text-sm">刪除帳號</span>
                         <span className="text-[10px] text-gray-400">永久刪除 User</span>
                      </div>
                 </div>
-                <ChevronRight size={16} className="text-rose-200 group-hover:text-white/60"/>
+                <ChevronRight size={16} className="text-gray-300"/>
             </div>
 
           </div>
