@@ -4,7 +4,6 @@ import {
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, 
   Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock 
 } from 'lucide-react';
-// [FIX] 引入 getLocalISODate
 import { getIconComponent, parseReceiptWithGemini, getCategoryStyle, callGemini, getLocalISODate } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
 import ScanReceiptModal from './ScanReceiptModal';
@@ -23,16 +22,14 @@ export default function AddExpenseView({
 }) {
     if (!ledgerData) return null; 
 
-    const [amount, setAmount] = useState('');
+    // [Optimization] 移除冗餘的 amount state，統一使用 localAmount 控制顯示與邏輯
     const [localAmount, setLocalAmount] = useState(''); 
     const [note, setNote] = useState('');
-    // [FIX] 使用本地時間初始化日期
     const [date, setDate] = useState(getLocalISODate());
     const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
     const [currency, setCurrency] = useState(() => localStorage.getItem('sweet_last_currency') || 'TWD');
     const [payer, setPayer] = useState(user?.uid || '');
     
-    // ... (其餘程式碼保持完全不變) ...
     // Split Logic
     const [splitType, setSplitType] = useState('even');
     const [customSplitHost, setCustomSplitHost] = useState('');
@@ -99,9 +96,8 @@ export default function AddExpenseView({
         }
     }, [isPrivateProject, user]);
 
-    useEffect(() => { setAmount(localAmount); }, [localAmount]);
-    
-    // ... (Logic Handlers same as before) ...
+    // [Optimization] Removed redundant useEffect syncing amount -> localAmount
+
     const handleKeypadSubmit = () => {
         const isPendingMath = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
         if (isPendingMath) {
@@ -152,7 +148,6 @@ export default function AddExpenseView({
         if (!aiModalInput) return;
         setIsAiModalOpen(false);
         setIsAiProcessing(true);
-        // [FIX] AI Prompt Date
         let prompt = `你是一個記帳助手。請分析使用者的輸入，並回傳一個 JSON 物件。
        目前的日期是：${new Date().toLocaleString('zh-TW')}。
        可用的分類 ID: ${currentCats.map(c=>c.id).join(', ')}
@@ -169,7 +164,6 @@ export default function AddExpenseView({
             const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim(); 
             const parsed = JSON.parse(cleanJson); 
             if (parsed.amount) {
-                setAmount(parsed.amount.toString()); 
                 setLocalAmount(parsed.amount.toString());
             }
             if (parsed.note) setNote(parsed.note); 
@@ -213,21 +207,24 @@ export default function AddExpenseView({
     };
 
     const handleSubmit = async () => {
-        if (!amount || parseFloat(amount) <= 0) return;
+        if (!localAmount || parseFloat(localAmount) <= 0) return;
         if (localSubmitting || isSubmittingTransaction) return; 
 
         setLocalSubmitting(true);
         
-        const amountFloat = parseFloat(amount);
-        let finalSplitType = splitType;
+        const amountFloat = parseFloat(localAmount);
         let customSplitData = null;
 
+        // [Architecture] Remove UI-side conversion of self/partner to host_all/guest_all.
+        // Let LedgerContext handle 'self'/'partner' -> 'custom' (atomic split).
+        
         if (splitType === 'custom' || splitType === 'multi_payer') {
             const hostAmt = parseFloat(customSplitHost) || 0;
             const guestAmt = parseFloat(customSplitGuest) || 0;
             
-            if (Math.round((hostAmt + guestAmt) * 100) / 100 !== Math.round(amountFloat * 100) / 100) {
-                alert("雙方金額總和必須等於支出總額！");
+            // Allow small precision errors (0.1)
+            if (Math.abs((hostAmt + guestAmt) - amountFloat) > 0.1) {
+                alert(`雙方金額總和 (${hostAmt+guestAmt}) 必須等於支出總額 (${amountFloat})！`);
                 setLocalSubmitting(false);
                 return;
             }
@@ -235,14 +232,6 @@ export default function AddExpenseView({
             if(hostId) customSplitData[hostId] = hostAmt;
             if(guestId) customSplitData[guestId] = guestAmt;
         } 
-        else if (splitType === 'self') {
-            const myRole = users[user.uid]?.role;
-            finalSplitType = myRole === 'host' ? 'host_all' : 'guest_all';
-        } 
-        else if (splitType === 'partner') {
-            const myRole = users[user.uid]?.role;
-            finalSplitType = myRole === 'host' ? 'guest_all' : 'host_all';
-        }
 
         try {
             await addTransaction({
@@ -250,7 +239,7 @@ export default function AddExpenseView({
                 currency,
                 category: selectedCategory,
                 payer: payer || user.uid,
-                splitType: finalSplitType,
+                splitType, // Pass raw type ('self', 'partner', 'even', etc.)
                 customSplit: customSplitData,
                 note: note || selectedCategory.name,
                 projectId: currentProjectId,
@@ -273,7 +262,7 @@ export default function AddExpenseView({
     const handleNoteFocus = () => { setActiveOverlay('none'); };
     
     const handleCustomSplitChange = (field, value) => {
-        const total = parseFloat(amount) || 0;
+        const total = parseFloat(localAmount) || 0;
         const val = parseFloat(value) || 0;
         if (field === 'host') {
             setCustomSplitHost(value);
@@ -309,7 +298,6 @@ export default function AddExpenseView({
     const handleScanConfirm = (result) => {
         const { amount: rAmount, note: rNote, splitType: rSplit, customSplit: rCustom } = result;
         setLocalAmount(rAmount.toString());
-        setAmount(rAmount.toString());
         if (rNote) setNote(rNote);
         setSplitType(rSplit);
         if (rCustom) {
@@ -325,6 +313,7 @@ export default function AddExpenseView({
     
     const getLabelForRole = (targetRole) => { 
         const payerRole = users[payer]?.role;
+        // Adjust labels for UI only; conversion happens in Context
         if (targetRole === 'host') return payerRole === 'host' ? `私人 (${hostName})` : (payerRole === 'guest' ? `代墊 (幫${hostName}付)` : `${hostName} 全額`);
         else return payerRole === 'guest' ? `私人 (${guestName})` : (payerRole === 'host' ? `代墊 (幫${guestName}付)` : `${guestName} 全額`);
     };
@@ -430,8 +419,8 @@ export default function AddExpenseView({
                                 <select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="w-full appearance-none bg-gray-50 text-xs font-bold text-gray-700 py-2 pl-3 pr-8 rounded-xl outline-none border border-gray-100 focus:border-blue-200 text-right">
                                     <option value="even">平均分攤</option>
                                     <option value="multi_payer">混合出資</option>
-                                    <option value="host_all">{getLabelForRole('host')}</option>
-                                    <option value="guest_all">{getLabelForRole('guest')}</option>
+                                    <option value="self">{getLabelForRole('host')}</option>
+                                    <option value="partner">{getLabelForRole('guest')}</option>
                                 </select>
                                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"><ChevronDown size={14}/></div>
                             </div>

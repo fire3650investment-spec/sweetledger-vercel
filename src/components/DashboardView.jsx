@@ -15,18 +15,39 @@ export default function DashboardView({
   user,
   handleSettleUp,
   handleOpenAddExpense,
-  setView // [Modified] 接收 setView 以支援跳轉
+  setView
 }) {
     if (!ledgerData || !user) return null;
 
-    // [New] Filter Projects (Exclude others' private projects)
     const visibleProjects = (ledgerData.projects || []).filter(p => p.type !== 'private' || p.owner === user.uid);
     const currentProjectObj = ledgerData.projects?.find(p => p.id === currentProjectId) || { name: '日常', type: 'public' };
     const isPrivateProject = currentProjectObj.type === 'private';
 
+    // [Optimization] Split huge useMemo: 1. Clean Data (Independent of project)
+    const { allTxs, safeUsers } = useMemo(() => {
+        const rawTxs = ledgerData.transactions || [];
+        const users = ledgerData.users || {};
+        const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
+        
+        const processed = rawTxs
+            .filter(t => t && t.id && t.amount !== undefined) 
+            .map(t => {
+                const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
+                let displayCategory = t.category || { name: '未分類', icon: 'help-circle' };
+                if (t.category?.id) {
+                    const latestCat = currentCategories.find(c => c.id === t.category.id);
+                    if (latestCat) displayCategory = latestCat;
+                }
+                const safeDate = t.date || new Date().toISOString();
+                return { ...t, amount: parseFloat(t.amount) || 0, type: safeType, category: displayCategory, date: safeDate };
+            });
+        return { allTxs: processed, safeUsers: users };
+    }, [ledgerData.transactions, ledgerData.users, ledgerData.customCategories]);
+
+    // [Optimization] Split useMemo: 2. Filter & Calculate (Dependent on project/user)
     const { 
-        displayTxs,          // [New] 僅顯示最近 7 天的交易
-        projectAllTxs,       // [New] 該專案所有交易 (用於判斷是否還有舊資料)
+        displayTxs,
+        projectAllTxs,
         groupedTransactions, 
         monthlyTotal, 
         settlement, 
@@ -35,71 +56,42 @@ export default function DashboardView({
         otherUserId, 
         dailyAverage 
     } = useMemo(() => {
-        if (!user) return { displayTxs: [], projectAllTxs: [], groupedTransactions: {}, monthlyTotal: 0, settlement: 0, dailyAverage: 0 };
-        
-        const rawTxs = ledgerData.transactions || [];
-        const safeUsers = ledgerData.users || {};
-        const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
-
-        // 1. 預處理所有交易
-        const allTxs = rawTxs
-            .filter(t => t && t.id && t.amount !== undefined) 
-            .map(t => {
-                const safeType = ['income', 'expense'].includes(t.type) ? t.type : 'expense';
-                let displayCategory = t.category || { name: '未分類', icon: 'help-circle' };
-                
-                if (t.category?.id) {
-                    const latestCat = currentCategories.find(c => c.id === t.category.id);
-                    if (latestCat) displayCategory = latestCat;
-                }
-
-                const safeDate = t.date || new Date().toISOString();
-
-                return { ...t, amount: parseFloat(t.amount) || 0, type: safeType, category: displayCategory, date: safeDate };
-            });
-
-        // 2. 篩選當前專案的所有資料 (用於統計)
+        // Filter by Project
         const projectAllTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
         
-        // 3. 篩選最近 7 天的資料 (用於列表顯示) [Performance Optimization]
+        // Filter Recent (7 days)
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         sevenDaysAgo.setHours(0, 0, 0, 0);
-        
         const displayTxs = projectAllTxs.filter(t => new Date(t.date) >= sevenDaysAgo);
 
         const currentMonthStr = new Date().toISOString().slice(0, 7);
         const thisMonthTxs = projectAllTxs.filter(t => t.date.startsWith(currentMonthStr));
         
-        // 4. 分組 (僅針對顯示的資料)
+        // Grouping
         const grouped = {};
         const sorted = [...displayTxs].sort((a, b) => new Date(b.date) - new Date(a.date)); 
         sorted.forEach(tx => { 
             try { 
-                const dateObj = new Date(tx.date);
-                if (isNaN(dateObj.getTime())) return;
-                const dateStr = dateObj.toLocaleDateString('zh-TW'); 
+                const dateStr = new Date(tx.date).toLocaleDateString('zh-TW'); 
                 if (!grouped[dateStr]) grouped[dateStr] = []; 
                 grouped[dateStr].push(tx); 
-            } 
-            catch (e) {}
+            } catch (e) {}
         });
 
         const rates = currentProjectObj.rates || { JPY: 0.23, THB: 1 };
-        const currProjectName = currentProjectObj.name || '日常開銷';
-
-        // 5. 計算統計 (使用本月完整資料)
+        
+        // Stats
         const mTotal = thisMonthTxs.reduce((acc, curr) => {
             const val = calculateTwdValue(curr.amount || 0, curr.currency || 'TWD', rates);
             return acc + (isNaN(val) ? 0 : val);
         }, 0);
 
-        // Calculate Daily Average
         const today = new Date();
         const daysPassed = today.getDate();
         const dailyAvg = daysPassed > 0 ? mTotal / daysPassed : mTotal;
 
-        // 6. 計算結算 (使用專案完整歷史資料，確保債務正確)
+        // Settlement Calculation
         let myPaid = 0;
         let myLiability = 0;
 
@@ -121,6 +113,8 @@ export default function DashboardView({
             } else {
                 if (tx.payer === user.uid) myPaid += amountTwd;
                 let liability = 0;
+                
+                // Logic for liability
                 if (tx.splitType === 'even') liability = amountTwd / 2; 
                 else if (tx.splitType === 'custom') {
                     if (tx.customSplit && typeof tx.customSplit === 'object') {
@@ -131,9 +125,7 @@ export default function DashboardView({
                 } else if (tx.splitType === 'host_all') liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
                 else if (tx.splitType === 'guest_all') liability = safeUsers[user.uid]?.role === 'guest' ? amountTwd : 0;
                 
-                // For Private Projects, liability is 100% self if I paid
                 if (isPrivateProject) liability = amountTwd; 
-
                 if (!isNaN(liability)) myLiability += liability;
             }
         });
@@ -155,17 +147,17 @@ export default function DashboardView({
             groupedTransactions: grouped, 
             monthlyTotal: isNaN(mTotal) ? 0 : mTotal, 
             settlement: isNaN(finalSettlement) ? 0 : finalSettlement, 
-            currentProjectName: currProjectName, 
+            currentProjectName: currentProjectObj.name || '日常開銷', 
             partnerName: pName, 
             otherUserId: oUserId, 
             dailyAverage: dailyAvg 
         };
 
-    }, [ledgerData, currentProjectId, user, currentProjectObj, isPrivateProject]); 
+    }, [allTxs, safeUsers, currentProjectId, user, currentProjectObj, isPrivateProject]); 
 
+    // [Feature] Smart Tags Logic
     const getSmartTags = (tx) => {
         const tags = [];
-        const safeUsers = ledgerData.users || {}; 
         
         if (tx.isSettlement) {
             const payerName = safeUsers[tx.payer]?.name || '未知';
@@ -182,11 +174,25 @@ export default function DashboardView({
         const payerName = payerUser?.name || '未知';
         tags.push({ label: payerName, color: 'gray' }); 
 
-        if (tx.splitType === 'custom') {
-            tags.push({ label: '自訂分攤', color: 'gray' });
-        } else if (tx.splitType === 'even') {
+        // [Logic] Identify "Private" or "Advance" from custom split (New Atomic Logic)
+        if (tx.splitType === 'custom' && tx.customSplit) {
+            const payerShare = parseFloat(tx.customSplit[tx.payer] || 0);
+            const total = parseFloat(tx.amount || 0);
+            // Allow small error margin
+            if (Math.abs(payerShare - total) < 0.1) {
+                // Payer owns 100% debt => Private
+                tags.push({ label: '私人', color: 'gray' });
+            } else if (payerShare < 0.1) {
+                // Payer owns 0% debt => Advance (Someone else owns 100%)
+                tags.push({ label: '代墊', color: 'gray' });
+            } else {
+                tags.push({ label: '自訂分攤', color: 'gray' });
+            }
+        } 
+        else if (tx.splitType === 'even') {
             tags.push({ label: '平均分攤', color: 'gray' });
         } else {
+            // Legacy Role-based Types
             const payerRole = payerUser?.role;
             if (payerRole === 'host') {
                 if (tx.splitType === 'host_all') tags.push({ label: '私人', color: 'gray' }); 
@@ -221,7 +227,6 @@ export default function DashboardView({
         
         {/* Card Switcher */}
         {isPrivateProject ? (
-            // [Private Mode] Personal Summary Card
             <div className="rounded-3xl p-6 text-white shadow-lg shadow-gray-200 mb-8 relative overflow-hidden bg-gradient-to-br from-slate-700 to-gray-900">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10"></div>
                 <p className="text-white/60 mb-1 font-bold text-xs flex items-center gap-2 uppercase tracking-wider"><Wallet size={12}/> 個人支出概況</p>
@@ -243,7 +248,6 @@ export default function DashboardView({
                 </div>
             </div>
         ) : (
-            // [Public Mode] Settlement Card
             <div className={`rounded-3xl p-6 text-white shadow-lg shadow-rose-200 mb-8 relative overflow-hidden transition-colors ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-rose-500 to-pink-600'}`}>
                 <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
                 <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14}/> 總結算狀態 ({currentProjectName})</p>
@@ -299,15 +303,12 @@ export default function DashboardView({
                 </div>
             ))}
 
-            {/* Empty State / View More Logic */}
             {projectAllTxs.length === 0 ? (
-                // 整個專案完全沒資料
                 <div className="text-center py-10 text-gray-400">
                     <p>這個專案還沒有記帳紀錄喔 🍃</p>
                     <p className="text-sm mt-2">點擊下方「+」開始第一筆吧！</p>
                 </div>
             ) : displayTxs.length === 0 ? (
-                // 有舊資料，但最近 7 天沒資料
                 <div className="text-center py-8">
                      <p className="text-gray-400 text-sm mb-4">最近 7 天沒有支出 🎉</p>
                      <button 
@@ -318,7 +319,6 @@ export default function DashboardView({
                      </button>
                 </div>
             ) : projectAllTxs.length > displayTxs.length ? (
-                // 有顯示資料，且還有更多舊資料
                 <div className="text-center py-4 pb-8">
                      <button 
                         onClick={() => setView('stats')} 
