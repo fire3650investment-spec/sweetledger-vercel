@@ -8,9 +8,9 @@ import {
   getDoc,
   arrayUnion,
   deleteField,
-  deleteDoc // [NEW] 新增：用於刪除文件
+  deleteDoc
 } from 'firebase/firestore';
-import { deleteUser } from 'firebase/auth'; // [NEW] 新增：用於刪除 Auth 帳號
+import { deleteUser } from 'firebase/auth';
 import { db, appId } from '../utils/firebase';
 import { useAuth } from './AuthContext';
 import { INITIAL_LEDGER_STATE, DEFAULT_CATEGORIES } from '../utils/constants';
@@ -131,7 +131,6 @@ export const LedgerProvider = ({ children }) => {
         }
 
         // (2) Transaction Check (Expensive - Optimize Loop)
-        // 只有當真的發現髒資料時，才建立新的陣列，避免不必要的記憶體分配
         if (!needsUpdate && ledgerData.transactions && ledgerData.transactions.length > 0) {
             let foundDirty = false;
             
@@ -181,7 +180,7 @@ export const LedgerProvider = ({ children }) => {
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode, user]);
 
-  // 4. Subscription Logic
+  // 4. Subscription Logic (Fixed: Use arrayUnion to prevent race conditions)
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return;
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -191,7 +190,7 @@ export const LedgerProvider = ({ children }) => {
 
     const timer = setTimeout(async () => {
         let updatesNeeded = false;
-        let newTransactions = [...(ledgerData.transactions || [])];
+        let generatedTxs = []; // 僅儲存新生成的交易，避免覆蓋舊交易
         let newSubscriptions = [...ledgerData.subscriptions];
         const now = new Date();
         now.setHours(0,0,0,0);
@@ -212,14 +211,13 @@ export const LedgerProvider = ({ children }) => {
                     isSettlement: false,
                     amount: parseFloat(txBase.amount) || 0 
                 };
-                newTransactions.push(tx);
+                generatedTxs.push(tx);
                 
                 // Calculate next date
                 if (sub.cycle === 'monthly') {
                     const currentMonth = nextDate.getMonth();
                     nextDate.setMonth(currentMonth + 1);
                     if (sub.payDay) {
-                         // Handle edge cases like Feb 30th -> Feb 28th
                         const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
                         const targetDay = Math.min(parseInt(sub.payDay), daysInNextMonth);
                         nextDate.setDate(targetDay);
@@ -237,8 +235,9 @@ export const LedgerProvider = ({ children }) => {
 
         if (updatesNeeded) {
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+            // 關鍵修正：使用 arrayUnion 加入新交易，並更新訂閱狀態
             await updateDoc(docRef, { 
-                transactions: newTransactions,
+                ...(generatedTxs.length > 0 ? { transactions: arrayUnion(...generatedTxs) } : {}),
                 subscriptions: newSubscriptions
             });
         }
@@ -335,13 +334,9 @@ export const LedgerProvider = ({ children }) => {
     }
   }, [ledgerCode, user, disconnectLedger]);
 
-  // [NEW] 刪除帳號功能 (Delete Account)
   const deleteAccount = useCallback(async () => {
     if (!user || !db) return;
-    
-    // 1. 先嘗試清理資料 (Clean Data)
     try {
-        // A. 如果有帳本，先處理帳本關聯
         if (ledgerCode) {
              const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
              const snap = await getDoc(docRef);
@@ -351,29 +346,19 @@ export const LedgerProvider = ({ children }) => {
                  const currentUsers = data.users || {};
                  const remainingUserIds = Object.keys(currentUsers).filter(uid => uid !== user.uid);
                  
-                 // 如果這個人是最後一個使用者，則刪除整個帳本 (避免留垃圾)
                  if (remainingUserIds.length === 0) {
                      await deleteDoc(docRef);
                  } else {
-                     // 否則只移除他自己
                      await updateDoc(docRef, {
                         [`users.${user.uid}`]: deleteField()
                      });
                  }
              }
         }
-
-        // B. 刪除使用者的 Profile 文件
         await deleteDoc(doc(db, 'users', user.uid));
-
-        // C. 最後刪除 Auth 帳號 (最敏感的操作)
         await deleteUser(user);
-        
-        // D. 清除本地狀態
         disconnectLedger();
-        
     } catch (error) {
-        // 捕捉 "需要重新登入" 的特定錯誤
         if (error.code === 'auth/requires-recent-login') {
             throw new Error('REQ_RELOGIN');
         }
@@ -395,22 +380,35 @@ export const LedgerProvider = ({ children }) => {
     const selectedDate = new Date(date).toISOString(); 
     const cleanAmount = parseFloat(amount);
     
-    // Safety check
     if (isNaN(cleanAmount)) throw new Error("金額無效");
 
     let cleanCustomSplit = null;
     let finalSplitType = splitType;
 
-    // Logic from App.jsx: Determine SplitType based on Role for 'self'/'partner' shortcuts
-    if (splitType === 'self' || splitType === 'partner') {
-         // Note: We need the *latest* users data, which we have in ledgerData from closure if we added it to deps, 
-         // OR we fetch it. But relying on passed-in payload is safer or using the current state.
-         // Assumption: payload passed correct logic OR we use current ledgerData.
-         // Let's implement the logic here using current ledgerData state.
-         // *Requires ledgerData in dependency array*
-    }
-
-    if ((splitType === 'custom' || splitType === 'multi_payer') && customSplit) {
+    // Fix: Implement Logic for 'self' and 'partner' shortcuts
+    // 'self' = Payer owns 100% (No debt generated)
+    // 'partner' = Partner owns 100% (Full amount is debt)
+    if (splitType === 'self') {
+         finalSplitType = 'custom';
+         cleanCustomSplit = { [payer]: cleanAmount };
+    } else if (splitType === 'partner') {
+         finalSplitType = 'custom';
+         const allUsers = Object.keys(ledgerData?.users || {});
+         const partners = allUsers.filter(u => u !== payer);
+         
+         if (partners.length === 1) {
+             // 標準兩人情境：全歸給對方
+             cleanCustomSplit = { [partners[0]]: cleanAmount };
+         } else if (partners.length > 1) {
+             // 多人情境：平分給所有非付款人
+             const share = cleanAmount / partners.length;
+             cleanCustomSplit = {};
+             partners.forEach(p => cleanCustomSplit[p] = share);
+         } else {
+             // 找不到伴侶 (例如自己一人時)，回退為自己
+             cleanCustomSplit = { [payer]: cleanAmount };
+         }
+    } else if ((splitType === 'custom' || splitType === 'multi_payer') && customSplit) {
         cleanCustomSplit = {};
         Object.keys(customSplit).forEach(uid => {
             const val = parseFloat(customSplit[uid]);
@@ -443,6 +441,7 @@ export const LedgerProvider = ({ children }) => {
           nextDate.setDate(nextDate.getDate() + 7);
       }
       
+      // 使用 arrayUnion 確保不會覆蓋他人交易
       await updateDoc(docRef, { 
           subscriptions: arrayUnion({ 
               ...commonData, 
@@ -459,7 +458,7 @@ export const LedgerProvider = ({ children }) => {
           transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 
       });
     }
-  }, [ledgerCode, user]); // Added ledgerData to deps if needed for split logic, but payload usually carries explicit splitType
+  }, [ledgerCode, user, ledgerData]); // Added ledgerData to deps
 
   const updateTransaction = useCallback(async (updatedTx) => {
       if (!ledgerCode || !ledgerData || !db) return;
@@ -494,7 +493,6 @@ export const LedgerProvider = ({ children }) => {
   const settleUp = useCallback(async (amount, payerId, payeeName, projectId) => {
       if (!ledgerCode || !db) return;
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-      // Hardcoded for now, or import from constants
       const settlementCategory = { id: 'settlement', name: '還款結清', icon: 'settlement', color: 'bg-emerald-100 text-emerald-600', hex: '#059669' };
 
       await updateDoc(docRef, { 
@@ -667,7 +665,7 @@ export const LedgerProvider = ({ children }) => {
     updateUserSetting, 
     resetAccount, 
     fixIdentity,
-    deleteAccount // [NEW] Export new function
+    deleteAccount
   }), [
     ledgerCode, 
     ledgerData, 
