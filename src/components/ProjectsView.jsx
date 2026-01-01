@@ -106,7 +106,7 @@ export default function ProjectsView({
                     <div>
                         <label className="block text-xs font-bold text-gray-400 uppercase mb-2">圖示</label>
                         <div className="grid grid-cols-4 gap-2">
-                            {['project_daily', 'project_travel', 'project_house', 'briefcase', 'gift', 'heart', 'coffee', 'car'].map(icon => { 
+                            {['project_daily', 'project_travel', 'project_house', 'heart'].map(icon => { 
                                 const IconCmp = getIconComponent(icon); 
                                 return (
                                     <button 
