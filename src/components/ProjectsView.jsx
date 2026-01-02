@@ -152,7 +152,7 @@ export default function ProjectsView({
                             ) : (
                                 <div className="text-center py-2">
                                     <p className="text-xs text-blue-400 mb-2">此專案尚未設定外幣</p>
-                                    <p className="text-[10px] text-blue-300">請至「設定 > 常用貨幣」新增貨幣後，即可在此調整匯率。</p>
+                                    <p className="text-[10px] text-blue-300">請至「設定 常用貨幣」新增貨幣後，即可在此調整匯率。</p>
                                 </div>
                             )}
                         </div>
