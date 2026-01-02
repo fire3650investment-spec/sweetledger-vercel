@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins, Lock, Wallet, History, CalendarClock } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
-import { DEFAULT_CATEGORIES } from '../utils/constants';
+import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS } from '../utils/constants'; // [Batch 3] 引入貨幣選項
 
 export default function DashboardView({
   ledgerData,
@@ -157,7 +157,7 @@ export default function DashboardView({
 
     // [Feature] Smart Tags Logic
     const getSmartTags = (tx) => {
-        // [Batch 2 Opt] Private Mode: Hide ALL tags (Payer, Private, etc.) for visual noise reduction
+        // Private Mode: Hide ALL tags for visual noise reduction
         if (isPrivateProject) return [];
 
         const tags = [];
@@ -177,16 +177,13 @@ export default function DashboardView({
         const payerName = payerUser?.name || '未知';
         tags.push({ label: payerName, color: 'gray' }); 
 
-        // [Logic] Identify "Private" or "Advance" from custom split (New Atomic Logic)
+        // Identify "Private" or "Advance" from custom split
         if (tx.splitType === 'custom' && tx.customSplit) {
             const payerShare = parseFloat(tx.customSplit[tx.payer] || 0);
             const total = parseFloat(tx.amount || 0);
-            // Allow small error margin
             if (Math.abs(payerShare - total) < 0.1) {
-                // Payer owns 100% debt => Private
                 tags.push({ label: '私人', color: 'gray' });
             } else if (payerShare < 0.1) {
-                // Payer owns 0% debt => Advance (Someone else owns 100%)
                 tags.push({ label: '代墊', color: 'gray' });
             } else {
                 tags.push({ label: '自訂分攤', color: 'gray' });
@@ -277,6 +274,11 @@ export default function DashboardView({
                             const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                             const tags = getSmartTags(tx);
                             const style = getCategoryStyle(tx.category, 'display');
+                            
+                            // [Batch 3 New] 幣別視覺強化
+                            const txCurrency = tx.currency || 'TWD';
+                            const isForeign = txCurrency !== 'TWD';
+                            const currencyInfo = CURRENCY_OPTIONS.find(c => c.code === txCurrency);
 
                             return (
                                 <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length -1 ? 'border-b border-gray-50' : ''}`}>
@@ -296,9 +298,19 @@ export default function DashboardView({
                                             </div>
                                         </div>
                                     </div>
-                                    <span className={`font-bold ml-4 whitespace-nowrap ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
-                                        {formatCurrency(tx.amount || 0, tx.currency || 'TWD', privacyMode)}
-                                    </span>
+                                    <div className="flex flex-col items-end ml-4">
+                                        <span className={`font-bold whitespace-nowrap flex items-center gap-1 ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
+                                            {/* [Batch 3 New] 若為外幣，顯示國旗與原幣金額 */}
+                                            {isForeign && <span className="text-[10px] grayscale opacity-80 mr-0.5">{currencyInfo?.flag || txCurrency}</span>}
+                                            {formatCurrency(tx.amount || 0, txCurrency, privacyMode)}
+                                        </span>
+                                        {/* [Batch 3 New] 若為外幣，顯示換算回台幣的估計值 */}
+                                        {isForeign && !privacyMode && !tx.isSettlement && (
+                                             <span className="text-[10px] text-gray-300 font-medium">
+                                                 ≈ {formatCurrency(calculateTwdValue(tx.amount, txCurrency, currentProjectObj.rates), 'TWD')}
+                                             </span>
+                                        )}
+                                    </div>
                                 </div>
                             ); 
                         })}
