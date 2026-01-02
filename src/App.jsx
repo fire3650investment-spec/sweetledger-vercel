@@ -260,6 +260,7 @@ export default function SweetLedger() {
                         currentProjectId={currentProjectId}
                         setView={setView}
                         addTransaction={addTransaction}
+                        updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
                      />
                 </div>
                 <div className={view === 'subscriptions' ? 'block h-full' : 'hidden'}>
@@ -303,6 +304,7 @@ export default function SweetLedger() {
                             tempAvatar={tempAvatar} handleAvatarSelect={setTempAvatar} confirmAvatarUpdate={confirmAvatarUpdate}
                             handleFixIdentity={handleFixIdentityFn} ledgerCode={ledgerCode} updateLedgerCurrency={handleUpdateLedgerCurrency}
                             currentProjectId={currentProjectId} handleReorderCategories={reorderCategories}
+                            updateUserSetting={updateUserSetting} // [Batch 2] 串接常用貨幣儲存
                         />
                     </div>
 
@@ -319,24 +321,24 @@ export default function SweetLedger() {
                     </div>
                 </div>
                 
-                {/* [Fix] Connected New Props for EditTransactionModal */}
                 <EditTransactionModal 
                     isOpen={isEditTxModalOpen} 
                     onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
-                    editingTx={editingTx} // Renamed prop
+                    editingTx={editingTx} 
                     ledgerData={ledgerData} 
                     user={user}
-                    currentProjectId={currentProjectId} // Added Missing Prop
-                    updateTransaction={async (tx) => { // Renamed callback
+                    currentProjectId={currentProjectId} 
+                    updateTransaction={async (tx) => { 
                         setIsEditTxModalOpen(false); 
                         setEditingTx(null); 
                         await updateTransaction(tx); 
                     }}
-                    deleteTransaction={async (id) => { // Renamed callback
+                    deleteTransaction={async (id) => { 
                         setIsEditTxModalOpen(false); 
                         setEditingTx(null); 
                         await deleteTransaction(id); 
                     }}
+                    updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
                 />
             </>
         )}
