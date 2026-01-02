@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Coins } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
-import { DEFAULT_CATEGORIES } from '../utils/constants';
+import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS } from '../utils/constants'; // [Batch 3] Import Currency Options
 
 export default function StatsView({ ledgerData, currentProjectId, statsMonth, setStatsMonth, privacyMode, setEditingTx, setIsEditTxModalOpen }) {
     if (!ledgerData) return null;
@@ -180,6 +180,11 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                     const tags = getSmartTags(tx);
                     const style = getCategoryStyle(tx.category, 'display');
 
+                    // [Batch 3 New] Currency Visuals
+                    const txCurrency = tx.currency || 'TWD';
+                    const isForeign = txCurrency !== 'TWD';
+                    const currencyInfo = CURRENCY_OPTIONS.find(c => c.code === txCurrency);
+
                     return (
                         <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-3 active:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 last:pb-0`}>
                             <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -198,7 +203,12 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                                     </div>
                                 </div>
                             </div>
-                            <span className={`font-bold ml-2 whitespace-nowrap text-sm ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>{formatCurrency(tx.amount || 0, tx.currency || 'TWD', privacyMode)}</span>
+                            <div className="flex flex-col items-end ml-4">
+                                <span className={`font-bold whitespace-nowrap text-sm flex items-center gap-1 ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
+                                    {isForeign && <span className="text-[10px] grayscale opacity-80 mr-0.5">{currencyInfo?.flag || txCurrency}</span>}
+                                    {formatCurrency(tx.amount || 0, txCurrency, privacyMode)}
+                                </span>
+                            </div>
                         </div>
                     );
                 })}
