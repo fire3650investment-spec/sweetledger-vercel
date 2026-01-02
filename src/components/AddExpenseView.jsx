@@ -2,10 +2,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, 
-  Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock 
+  Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock,
+  Globe, Search, CheckCircle // [New] Icons
 } from 'lucide-react';
 import { getIconComponent, parseReceiptWithGemini, getCategoryStyle, callGemini, getLocalISODate } from '../utils/helpers';
-import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE } from '../utils/constants';
+import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
 import ScanReceiptModal from './ScanReceiptModal';
 
 import CustomKeypad from './add-expense/CustomKeypad';
@@ -18,11 +19,12 @@ export default function AddExpenseView({
   currentProjectId,
   setView,
   addTransaction, 
-  isSubmittingTransaction 
+  isSubmittingTransaction,
+  updateProjectRates // [Batch 2] 接收更新匯率函式
 }) {
     if (!ledgerData) return null; 
 
-    // [Optimization] 移除冗餘的 amount state，統一使用 localAmount 控制顯示與邏輯
+    // State
     const [localAmount, setLocalAmount] = useState(''); 
     const [note, setNote] = useState('');
     const [date, setDate] = useState(getLocalISODate());
@@ -50,6 +52,10 @@ export default function AddExpenseView({
     const [scannedItems, setScannedItems] = useState([]);
     const [localSubmitting, setLocalSubmitting] = useState(false);
 
+    // [Batch 2] Currency Sheet State
+    const [isCurrencySheetOpen, setIsCurrencySheetOpen] = useState(false);
+    const [currencySearch, setCurrencySearch] = useState('');
+
     const noteInputRef = useRef(null);
     const cameraInputRef = useRef(null);
     const fileInputRef = useRef(null);
@@ -59,6 +65,10 @@ export default function AddExpenseView({
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
     const isPrivateProject = currentProject?.type === 'private';
     
+    // [Batch 2] User Favorites
+    const mySettings = ledgerData.users?.[user?.uid] || {};
+    const myFavorites = mySettings.favoriteCurrencies || DEFAULT_FAVORITE_CURRENCIES;
+
     const filteredCategories = useMemo(() => {
         const selectedCategoryIds = ledgerData.settings?.selectedCategories || INITIAL_LEDGER_STATE.settings.selectedCategories; 
         return currentCats.filter(cat => selectedCategoryIds.includes(cat.id));
@@ -95,8 +105,6 @@ export default function AddExpenseView({
             if (splitType === 'self') setSplitType('even');
         }
     }, [isPrivateProject, user]);
-
-    // [Optimization] Removed redundant useEffect syncing amount -> localAmount
 
     const handleKeypadSubmit = () => {
         const isPendingMath = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
@@ -154,7 +162,6 @@ export default function AddExpenseView({
        請解析：1. 金額 (amount) 2. 類別 ID (categoryId) 3. 備註 (note) 4. 幣別 (currency, 預設 TWD)
        只回傳 JSON。`;
 
-        // [Batch 2 Logic Optimization] 注入私人帳本上下文
         if (isPrivateProject) {
             prompt += `\n[重要指令] 此為「私人帳本」模式。請將所有交易視為使用者個人支出，不需要考慮分帳、代墊或AA制邏輯。`;
         }
@@ -220,15 +227,11 @@ export default function AddExpenseView({
         
         const amountFloat = parseFloat(localAmount);
         let customSplitData = null;
-
-        // [Architecture] Remove UI-side conversion of self/partner to host_all/guest_all.
-        // Let LedgerContext handle 'self'/'partner' -> 'custom' (atomic split).
         
         if (splitType === 'custom' || splitType === 'multi_payer') {
             const hostAmt = parseFloat(customSplitHost) || 0;
             const guestAmt = parseFloat(customSplitGuest) || 0;
             
-            // Allow small precision errors (0.1)
             if (Math.abs((hostAmt + guestAmt) - amountFloat) > 0.1) {
                 alert(`雙方金額總和 (${hostAmt+guestAmt}) 必須等於支出總額 (${amountFloat})！`);
                 setLocalSubmitting(false);
@@ -245,7 +248,7 @@ export default function AddExpenseView({
                 currency,
                 category: selectedCategory,
                 payer: payer || user.uid,
-                splitType, // Pass raw type ('self', 'partner', 'even', etc.)
+                splitType, 
                 customSplit: customSplitData,
                 note: note || selectedCategory.name,
                 projectId: currentProjectId,
@@ -319,9 +322,19 @@ export default function AddExpenseView({
     
     const getLabelForRole = (targetRole) => { 
         const payerRole = users[payer]?.role;
-        // Adjust labels for UI only; conversion happens in Context
         if (targetRole === 'host') return payerRole === 'host' ? `私人 (${hostName})` : (payerRole === 'guest' ? `代墊 (幫${hostName}付)` : `${hostName} 全額`);
         else return payerRole === 'guest' ? `私人 (${guestName})` : (payerRole === 'host' ? `代墊 (幫${guestName}付)` : `${guestName} 全額`);
+    };
+
+    // [Batch 2] Currency Filter Logic
+    const filteredCurrencies = currencySearch 
+        ? CURRENCY_OPTIONS.filter(c => c.code.includes(currencySearch.toUpperCase()) || c.name.includes(currencySearch))
+        : CURRENCY_OPTIONS;
+
+    const selectCurrency = (code) => {
+        setCurrency(code);
+        setIsCurrencySheetOpen(false);
+        setCurrencySearch('');
     };
 
     return (
@@ -360,11 +373,15 @@ export default function AddExpenseView({
             </div>
 
             <div className="flex items-center gap-3">
-                <div className="flex bg-gray-100 rounded-lg p-1 border border-gray-200">
-                    {['TWD', 'JPY', 'THB'].map(c => (
-                        <button key={c} onClick={() => setCurrency(c)} className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${currency === c ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400'}`}>{c}</button>
-                    ))}
-                </div>
+                {/* [Batch 2] Currency Selector Trigger */}
+                <button 
+                    onClick={() => setIsCurrencySheetOpen(true)}
+                    className="flex items-center gap-1.5 bg-gray-100 rounded-lg px-3 py-1.5 border border-gray-200 active:bg-gray-200 transition-colors"
+                >
+                    <span className="text-sm font-bold text-gray-800">{currency}</span>
+                    <ChevronDown size={14} className="text-gray-400"/>
+                </button>
+                
                 <div className="flex-1 bg-gray-100 border border-gray-200 rounded-lg flex items-center px-3 py-1.5 text-slate-600 relative">
                     <Calendar size={14} className="mr-2 opacity-50"/>
                     <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="bg-transparent text-xs font-bold w-full outline-none z-10 text-gray-700"/>
@@ -378,7 +395,7 @@ export default function AddExpenseView({
             <div className="px-4 py-6 bg-white mb-3 shadow-sm border-b border-gray-100">
                 <div className="flex justify-center mb-6">
                     <button onClick={handleAmountClick} className={`text-5xl font-bold tracking-tight flex items-center transition-all ${localAmount ? 'text-gray-900' : 'text-gray-300'} ${activeOverlay === 'amount' ? 'scale-105' : ''}`}>
-                        <span className="text-2xl mr-2 text-gray-300 font-medium">$</span>
+                        <span className="text-2xl mr-2 text-gray-300 font-medium">{CURRENCY_OPTIONS.find(c=>c.code===currency)?.symbol || '$'}</span>
                         {localAmount || '0'}
                         {activeOverlay === 'amount' && <div className="w-[3px] h-10 bg-rose-500 animate-cursor-blink ml-1 rounded-full"></div>}
                     </button>
@@ -516,6 +533,74 @@ export default function AddExpenseView({
                     <textarea value={aiModalInput} onChange={(e) => setAiModalInput(e.target.value)} placeholder="例如：午餐吃拉麵 250元..." className="w-full h-40 p-4 bg-gray-50 rounded-2xl text-lg outline-none resize-none border border-gray-200 focus:border-purple-500 transition-colors"/>
                     <div className="flex justify-center gap-4 mt-auto mb-8"><button onClick={toggleVoiceRecording} className={`p-6 rounded-full transition-all ${isRecording ? 'bg-red-50 text-red-500 scale-110 shadow-red-200' : 'bg-purple-50 text-purple-600 shadow-purple-200'} shadow-lg`}>{isRecording ? <StopCircle size={32} /> : <Mic size={32} />}</button></div>
                     <button onClick={handleAiModalSubmit} disabled={!aiModalInput} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-lg mb-4">開始分析</button>
+                </div>
+            </div>
+        )}
+
+        {/* [Batch 2] Currency Sheet */}
+        {isCurrencySheetOpen && (
+            <div className="absolute inset-0 z-[70] flex flex-col justify-end">
+                <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsCurrencySheetOpen(false)}/>
+                <div className="bg-white rounded-t-3xl p-6 relative z-10 max-h-[80vh] flex flex-col animate-slide-up">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-gray-800">選擇幣別</h3>
+                        <button onClick={() => setIsCurrencySheetOpen(false)} className="p-2 bg-gray-50 rounded-full"><X size={20}/></button>
+                    </div>
+
+                    <div className="relative mb-4">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                        <input 
+                            type="text" 
+                            placeholder="搜尋貨幣 (例如: USD)" 
+                            value={currencySearch}
+                            onChange={(e) => setCurrencySearch(e.target.value)}
+                            className="w-full bg-gray-50 pl-10 pr-4 py-3 rounded-xl font-bold text-sm outline-none border border-transparent focus:bg-white focus:border-rose-200 transition-all"
+                        />
+                    </div>
+
+                    <div className="overflow-y-auto space-y-6">
+                        {!currencySearch && (
+                            <div>
+                                <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">常用貨幣</h4>
+                                <div className="grid grid-cols-3 gap-3">
+                                    {['TWD', ...myFavorites.filter(c => c !== 'TWD')].map(code => {
+                                        const opt = CURRENCY_OPTIONS.find(o => o.code === code);
+                                        if (!opt) return null;
+                                        return (
+                                            <button 
+                                                key={code}
+                                                onClick={() => selectCurrency(code)}
+                                                className={`flex flex-col items-center justify-center gap-1 p-4 rounded-2xl border transition-all ${currency === code ? 'bg-rose-50 border-rose-500 text-rose-600 ring-1 ring-rose-500' : 'bg-white border-gray-100 hover:border-gray-300'}`}
+                                            >
+                                                <span className="text-2xl">{opt.flag}</span>
+                                                <span className="font-bold text-sm">{code}</span>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        <div>
+                            <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">所有貨幣</h4>
+                            <div className="space-y-2">
+                                {filteredCurrencies.map(opt => (
+                                    <button 
+                                        key={opt.code} 
+                                        onClick={() => selectCurrency(opt.code)}
+                                        className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 rounded-xl transition-colors text-left group"
+                                    >
+                                        <span className="text-2xl w-8 text-center">{opt.flag}</span>
+                                        <div className="flex-1">
+                                            <div className="font-bold text-gray-800">{opt.code}</div>
+                                            <div className="text-xs text-gray-400">{opt.name}</div>
+                                        </div>
+                                        {currency === opt.code && <CheckCircle size={18} className="text-rose-500"/>}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         )}
