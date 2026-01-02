@@ -1,21 +1,26 @@
 // src/components/EditTransactionModal.jsx
 import React, { useState, useEffect } from 'react';
-import { X, Calendar, Trash2, Check, User, Users, AlertCircle, Lock, Tag, DollarSign } from 'lucide-react';
+import { 
+  X, Calendar, Trash2, Check, User, Users, AlertCircle, Lock, Tag, DollarSign,
+  ChevronDown, RefreshCw, Search, CheckCircle // [Fix] 補回遺失的 Icon
+} from 'lucide-react';
 import { getCategoryStyle, getIconComponent, getLocalISODate } from '../utils/helpers';
-import { DEFAULT_CATEGORIES } from '../utils/constants';
+import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants'; // [Fix] 補回遺失的常數
 
 export default function EditTransactionModal({ 
     isOpen, 
     onClose, 
-    editingTx: transaction, // Rename for internal consistency
+    editingTx: transaction, 
     ledgerData, 
     user, 
-    updateTransaction, // Expecting wrapper function from parent
-    deleteTransaction, // Expecting wrapper function from parent
-    currentProjectId
+    updateTransaction, 
+    deleteTransaction, 
+    currentProjectId,
+    updateProjectRates // [Batch 2] 確保此接口存在
 }) {
     if (!isOpen || !transaction || !ledgerData) return null;
 
+    // --- State ---
     const [amount, setAmount] = useState('');
     const [note, setNote] = useState('');
     const [date, setDate] = useState('');
@@ -27,8 +32,11 @@ export default function EditTransactionModal({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [currency, setCurrency] = useState('TWD');
 
+    // [Batch 2] Currency Sheet State (補回)
+    const [isCurrencySheetOpen, setIsCurrencySheetOpen] = useState(false);
+    const [currencySearch, setCurrencySearch] = useState('');
+
     // Context Logic
-    // [Optimization] Determine if current mode is Private based on Project ID
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
     const isPrivateProject = currentProject?.type === 'private';
     
@@ -38,6 +46,10 @@ export default function EditTransactionModal({
     const hostName = hostId ? (users[hostId]?.name || '戶長') : '戶長';
     const guestName = guestId ? (users[guestId]?.name || '成員') : '成員';
 
+    // [Batch 2] User Favorites (補回)
+    const mySettings = ledgerData.users?.[user?.uid] || {};
+    const myFavorites = mySettings.favoriteCurrencies || DEFAULT_FAVORITE_CURRENCIES;
+
     // Init Data
     useEffect(() => {
         if (transaction) {
@@ -46,14 +58,20 @@ export default function EditTransactionModal({
             setCurrency(transaction.currency || 'TWD');
             
             try {
-                setDate(getLocalISODate(transaction.date));
+                // 確保日期格式正確
+                const d = transaction.date ? new Date(transaction.date) : new Date();
+                setDate(getLocalISODate(d));
             } catch (e) {
                 setDate(getLocalISODate());
             }
 
             setPayer(transaction.payer);
             setSplitType(transaction.splitType || 'even');
-            setSelectedCategory(transaction.category || DEFAULT_CATEGORIES[0]);
+            
+            // Category Fallback
+            const catId = transaction.category?.id;
+            const fullCat = (ledgerData.customCategories || DEFAULT_CATEGORIES).find(c => c.id === catId) || transaction.category || DEFAULT_CATEGORIES[0];
+            setSelectedCategory(fullCat);
 
             if (transaction.customSplit) {
                 if (hostId && transaction.customSplit[hostId]) setCustomSplitHost(transaction.customSplit[hostId].toString());
@@ -63,9 +81,9 @@ export default function EditTransactionModal({
                 setCustomSplitGuest('');
             }
         }
-    }, [transaction, hostId, guestId]);
+    }, [transaction, hostId, guestId, ledgerData.customCategories]);
 
-    // Force Private Logic (Lock Payer & SplitType)
+    // Force Private Logic
     useEffect(() => {
         if (isPrivateProject && user) {
             setSplitType('self');
@@ -147,25 +165,52 @@ export default function EditTransactionModal({
         else return payerRole === 'guest' ? `私人 (${guestName})` : (payerRole === 'host' ? `代墊 (幫${guestName}付)` : `${guestName} 全額`);
     };
 
+    // Currency Logic
+    const filteredCurrencies = currencySearch 
+        ? CURRENCY_OPTIONS.filter(c => c.code.includes(currencySearch.toUpperCase()) || c.name.includes(currencySearch))
+        : CURRENCY_OPTIONS;
+
+    const selectCurrency = (code) => {
+        setCurrency(code);
+        setIsCurrencySheetOpen(false);
+        setCurrencySearch('');
+    };
+
     const currentCats = ledgerData.customCategories || DEFAULT_CATEGORIES;
     const CatIcon = getIconComponent(selectedCategory?.icon || 'food');
     const catStyle = getCategoryStyle(selectedCategory, 'input');
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white w-full sm:w-[400px] sm:rounded-2xl rounded-t-3xl p-5 pb-8 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:px-4">
+            <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
+            <div className="bg-white w-full sm:w-[400px] sm:rounded-2xl rounded-t-3xl p-5 pb-8 max-h-[90vh] overflow-y-auto relative z-10 animate-slide-up">
+                
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-bold text-gray-800">編輯紀錄</h3>
                     <button onClick={onClose} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200"><X size={20}/></button>
                 </div>
 
-                {/* Amount */}
+                {/* Amount & Currency (修復：使用 Bottom Sheet Trigger) */}
                 <div className="flex justify-center mb-6">
                     <div className="text-4xl font-bold text-gray-900 flex items-center gap-2">
-                        <span className="text-2xl text-gray-300">$</span>
-                        <input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="w-32 text-center outline-none bg-transparent placeholder-gray-200" placeholder="0" />
-                        <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="text-sm font-bold bg-gray-100 rounded-lg px-2 py-1 outline-none text-gray-600"><option value="TWD">TWD</option><option value="JPY">JPY</option><option value="THB">THB</option></select>
+                        <span className="text-2xl text-gray-300">
+                            {CURRENCY_OPTIONS.find(c => c.code === currency)?.symbol || '$'}
+                        </span>
+                        <input 
+                            type="number" 
+                            value={amount} 
+                            onChange={e => setAmount(e.target.value)} 
+                            className="w-32 text-center outline-none bg-transparent placeholder-gray-200" 
+                            placeholder="0" 
+                        />
+                        {/* Currency Button */}
+                        <button 
+                            onClick={() => setIsCurrencySheetOpen(true)}
+                            className="flex items-center gap-1 text-sm font-bold bg-gray-100 rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200 transition-colors"
+                        >
+                            {currency} <ChevronDown size={14}/>
+                        </button>
                     </div>
                 </div>
 
@@ -180,7 +225,7 @@ export default function EditTransactionModal({
                                     const cat = currentCats.find(c => c.id === e.target.value);
                                     if(cat) setSelectedCategory(cat);
                                 }}
-                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                              >
                                 {currentCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                              </select>
@@ -199,7 +244,7 @@ export default function EditTransactionModal({
                         <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-transparent font-bold text-gray-700 outline-none w-full text-sm"/>
                     </div>
 
-                    {/* Split & Payer (Visual Noise Removal: HIDDEN in Private Mode) */}
+                    {/* Split & Payer */}
                     {!isPrivateProject && (
                         <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 space-y-3">
                             <div className="flex justify-between items-center">
@@ -264,6 +309,74 @@ export default function EditTransactionModal({
                         儲存變更
                     </button>
                 </div>
+
+                {/* --- Currency Bottom Sheet (Batch 2 Feature) --- */}
+                {isCurrencySheetOpen && (
+                    <div className="absolute inset-0 z-[70] flex flex-col justify-end">
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsCurrencySheetOpen(false)}/>
+                        <div className="bg-white rounded-t-3xl p-6 relative z-10 max-h-[80vh] flex flex-col animate-slide-up shadow-2xl">
+                            <div className="flex justify-between items-center mb-4">
+                                <h3 className="text-lg font-bold text-gray-800">選擇幣別</h3>
+                                <button onClick={() => setIsCurrencySheetOpen(false)} className="p-2 bg-gray-50 rounded-full"><X size={20}/></button>
+                            </div>
+
+                            <div className="relative mb-4">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                                <input 
+                                    type="text" 
+                                    placeholder="搜尋貨幣..." 
+                                    value={currencySearch}
+                                    onChange={(e) => setCurrencySearch(e.target.value)}
+                                    className="w-full bg-gray-50 pl-10 pr-4 py-3 rounded-xl font-bold text-sm outline-none border border-transparent focus:bg-white focus:border-rose-200 transition-all"
+                                />
+                            </div>
+
+                            <div className="overflow-y-auto space-y-6 flex-1">
+                                {!currencySearch && (
+                                    <div>
+                                        <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">常用貨幣</h4>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {['TWD', ...myFavorites.filter(c => c !== 'TWD')].map(code => {
+                                                const opt = CURRENCY_OPTIONS.find(o => o.code === code);
+                                                if (!opt) return null;
+                                                return (
+                                                    <button 
+                                                        key={code}
+                                                        onClick={() => selectCurrency(code)}
+                                                        className={`flex flex-col items-center justify-center gap-1 p-4 rounded-2xl border transition-all ${currency === code ? 'bg-rose-50 border-rose-500 text-rose-600 ring-1 ring-rose-500' : 'bg-white border-gray-100 hover:border-gray-300'}`}
+                                                    >
+                                                        <span className="text-2xl">{opt.flag}</span>
+                                                        <span className="font-bold text-sm">{code}</span>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div>
+                                    <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">所有貨幣</h4>
+                                    <div className="space-y-2">
+                                        {filteredCurrencies.map(opt => (
+                                            <button 
+                                                key={opt.code} 
+                                                onClick={() => selectCurrency(opt.code)}
+                                                className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 rounded-xl transition-colors text-left"
+                                            >
+                                                <span className="text-2xl w-8 text-center">{opt.flag}</span>
+                                                <div className="flex-1">
+                                                    <div className="font-bold text-gray-800">{opt.code}</div>
+                                                    <div className="text-xs text-gray-400">{opt.name}</div>
+                                                </div>
+                                                {currency === opt.code && <CheckCircle size={18} className="text-rose-500"/>}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
