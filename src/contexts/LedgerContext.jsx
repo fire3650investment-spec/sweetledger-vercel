@@ -14,7 +14,7 @@ import { deleteUser } from 'firebase/auth';
 import { db, appId } from '../utils/firebase';
 import { useAuth } from './AuthContext';
 import { INITIAL_LEDGER_STATE, DEFAULT_CATEGORIES } from '../utils/constants';
-import { generateId } from '../utils/helpers';
+import { generateId, getLocalISODate } from '../utils/helpers'; // [Fix] 引入時間工具
 
 const LedgerContext = createContext();
 
@@ -101,7 +101,7 @@ export const LedgerProvider = ({ children }) => {
           setLedgerData(null);
           localStorage.removeItem('sweet_ledger_code');
           localStorage.removeItem(cacheKey);
-          alert("此帳本已不存在（可能已被刪除），已為您重置狀態。");
+          // 這裡不使用 alert 避免無限彈窗，由 UI 層處理呈現
       }
       setIsLedgerInitializing(false);
     }, (error) => { 
@@ -111,7 +111,7 @@ export const LedgerProvider = ({ children }) => {
     });
 
     return () => unsubscribe();
-  }, [ledgerCode, user]); // Added user to dependencies for unlink logic
+  }, [ledgerCode, user]);
 
   // 3. Auto-Repair Logic (Optimized for Performance)
   useEffect(() => {
@@ -197,17 +197,27 @@ export const LedgerProvider = ({ children }) => {
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode, user]);
 
-  // 4. Subscription Logic (Fixed: Use arrayUnion to prevent race conditions)
+  // 4. Subscription Logic (CRITICAL FIX: Firestore-based Lock)
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return;
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const lastCheckKey = `last_subs_check_${ledgerCode}`;
-    const lastCheckDate = localStorage.getItem(lastCheckKey);
+    
+    // [Architect] 使用 Firestore 的欄位作為唯一真理，而非 localStorage
+    const todayStr = getLocalISODate(); 
+    const lastCheckDate = ledgerData.lastSubscriptionCheck; 
+
+    // 如果雲端已經標記今天檢查過了，直接跳過
     if (lastCheckDate === todayStr) return; 
 
+    // [Optimization] 防止單次 Session 重複觸發 (Local Lock)
+    const localSessionKey = `temp_subs_lock_${ledgerCode}_${todayStr}`;
+    if (sessionStorage.getItem(localSessionKey)) return;
+
+    // 設定一個延遲，給予「取消執行」的機會 (Debounce/Race Protection)
     const timer = setTimeout(async () => {
+        sessionStorage.setItem(localSessionKey, 'true'); // Set Local Lock
+
         let updatesNeeded = false;
-        let generatedTxs = []; // 僅儲存新生成的交易，避免覆蓋舊交易
+        let generatedTxs = []; 
         let newSubscriptions = [...ledgerData.subscriptions];
         const now = new Date();
         now.setHours(0,0,0,0);
@@ -215,11 +225,15 @@ export const LedgerProvider = ({ children }) => {
         newSubscriptions = newSubscriptions.map(sub => {
             let nextDate = new Date(sub.nextPaymentDate);
             let updated = false;
-            let loopCount = 0;
+            let loopCount = 0; // 安全閥，防止死無窮迴圈
+            
+            // 檢查是否到達扣款日
             while (nextDate <= now && loopCount < 12) {
                 updated = true;
                 updatesNeeded = true;
                 const { nextPaymentDate, cycle, payDay, mode, ...txBase } = sub;
+                
+                // 產生交易紀錄
                 const tx = {
                     ...txBase,
                     id: generateId(), 
@@ -230,11 +244,12 @@ export const LedgerProvider = ({ children }) => {
                 };
                 generatedTxs.push(tx);
                 
-                // Calculate next date
+                // 計算下一次扣款日
                 if (sub.cycle === 'monthly') {
                     const currentMonth = nextDate.getMonth();
                     nextDate.setMonth(currentMonth + 1);
                     if (sub.payDay) {
+                        // 處理月底日期 (如 2/30 -> 2/28)
                         const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
                         const targetDay = Math.min(parseInt(sub.payDay), daysInNextMonth);
                         nextDate.setDate(targetDay);
@@ -250,18 +265,28 @@ export const LedgerProvider = ({ children }) => {
             return sub;
         });
 
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        
+        // 無論是否有新交易，都必須更新 lastSubscriptionCheck 以防止重複檢查
+        // 使用 updateDoc 原子操作
         if (updatesNeeded) {
-            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-            // 關鍵修正：使用 arrayUnion 加入新交易，並更新訂閱狀態
             await updateDoc(docRef, { 
                 ...(generatedTxs.length > 0 ? { transactions: arrayUnion(...generatedTxs) } : {}),
-                subscriptions: newSubscriptions
+                subscriptions: newSubscriptions,
+                lastSubscriptionCheck: todayStr // [Key Fix] 更新雲端檢查日期
             });
+            console.log(`✅ 已執行自動扣款: ${generatedTxs.length} 筆`);
+        } else {
+            // 即使沒交易，也要標記今天已檢查
+            await updateDoc(docRef, { lastSubscriptionCheck: todayStr });
         }
-        localStorage.setItem(lastCheckKey, todayStr);
-    }, 5000); 
+    }, 5000); // 5秒延遲，確保資料載入穩定
+
+    // [Crucial] 若在等待期間 ledgerData 更新了 (代表另一半已經執行了扣款)，
+    // 這個 cleanup function 會被觸發，取消本地的 timer，防止雙重扣款。
     return () => clearTimeout(timer);
-  }, [ledgerData, ledgerCode]);
+
+  }, [ledgerData, ledgerCode]); // 依賴 ledgerData 確保能感知遠端變更
 
 
   // --- Actions ---
@@ -286,11 +311,11 @@ export const LedgerProvider = ({ children }) => {
     const userName = currentUser.displayName || 'Host';
     const newLedger = {
         ...INITIAL_LEDGER_STATE,
-        users: { [currentUser.uid]: { name: userName, avatar: 'cat', role: 'host' } }
+        users: { [currentUser.uid]: { name: userName, avatar: 'cat', role: 'host' } },
+        lastSubscriptionCheck: getLocalISODate() // Init date
     };
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
     
-    // FIX: 加入 merge: true，避免覆蓋舊使用者資料 (如 avatar, name)
     await setDoc(doc(db, 'users', currentUser.uid), {
         email: currentUser.email,
         ledgerCode: code,
@@ -406,8 +431,6 @@ export const LedgerProvider = ({ children }) => {
     let finalSplitType = splitType;
 
     // Fix: Implement Logic for 'self' and 'partner' shortcuts
-    // 'self' = Payer owns 100% (No debt generated)
-    // 'partner' = Partner owns 100% (Full amount is debt)
     if (splitType === 'self') {
          finalSplitType = 'custom';
          cleanCustomSplit = { [payer]: cleanAmount };
@@ -417,15 +440,12 @@ export const LedgerProvider = ({ children }) => {
          const partners = allUsers.filter(u => u !== payer);
          
          if (partners.length === 1) {
-             // 標準兩人情境：全歸給對方
              cleanCustomSplit = { [partners[0]]: cleanAmount };
          } else if (partners.length > 1) {
-             // 多人情境：平分給所有非付款人
              const share = cleanAmount / partners.length;
              cleanCustomSplit = {};
              partners.forEach(p => cleanCustomSplit[p] = share);
          } else {
-             // 找不到伴侶 (例如自己一人時)，回退為自己
              cleanCustomSplit = { [payer]: cleanAmount };
          }
     } else if ((splitType === 'custom' || splitType === 'multi_payer') && customSplit) {
@@ -461,7 +481,6 @@ export const LedgerProvider = ({ children }) => {
           nextDate.setDate(nextDate.getDate() + 7);
       }
       
-      // 使用 arrayUnion 確保不會覆蓋他人交易
       await updateDoc(docRef, { 
           subscriptions: arrayUnion({ 
               ...commonData, 
@@ -478,7 +497,7 @@ export const LedgerProvider = ({ children }) => {
           transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 
       });
     }
-  }, [ledgerCode, user, ledgerData]); // Added ledgerData to deps
+  }, [ledgerCode, user, ledgerData]);
 
   const updateTransaction = useCallback(async (updatedTx) => {
       if (!ledgerCode || !ledgerData || !db) return;
