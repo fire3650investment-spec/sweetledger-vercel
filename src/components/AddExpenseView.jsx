@@ -3,9 +3,10 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { 
   X, RefreshCw, Sparkles, StopCircle, Mic, Check, 
   Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock,
-  Globe, Search, CheckCircle // [New] Icons
+  Globe, Search, CheckCircle 
 } from 'lucide-react';
-import { getIconComponent, parseReceiptWithGemini, getCategoryStyle, callGemini, getLocalISODate } from '../utils/helpers';
+// [Batch 5] Import fetchExchangeRate
+import { getIconComponent, parseReceiptWithGemini, getCategoryStyle, callGemini, getLocalISODate, fetchExchangeRate } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
 import ScanReceiptModal from './ScanReceiptModal';
 
@@ -20,7 +21,7 @@ export default function AddExpenseView({
   setView,
   addTransaction, 
   isSubmittingTransaction,
-  updateProjectRates // [Batch 2] 接收更新匯率函式
+  updateProjectRates 
 }) {
     if (!ledgerData) return null; 
 
@@ -29,6 +30,7 @@ export default function AddExpenseView({
     const [note, setNote] = useState('');
     const [date, setDate] = useState(getLocalISODate());
     const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
+    // [Note] Currency defaults to TWD unless updated by user in localStorage
     const [currency, setCurrency] = useState(() => localStorage.getItem('sweet_last_currency') || 'TWD');
     const [payer, setPayer] = useState(user?.uid || '');
     
@@ -52,7 +54,10 @@ export default function AddExpenseView({
     const [scannedItems, setScannedItems] = useState([]);
     const [localSubmitting, setLocalSubmitting] = useState(false);
 
-    // [Batch 2] Currency Sheet State
+    // [Batch 5] Rate Loading State
+    const [isRateLoading, setIsRateLoading] = useState(false);
+
+    // Currency Sheet State
     const [isCurrencySheetOpen, setIsCurrencySheetOpen] = useState(false);
     const [currencySearch, setCurrencySearch] = useState('');
 
@@ -65,7 +70,6 @@ export default function AddExpenseView({
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
     const isPrivateProject = currentProject?.type === 'private';
     
-    // [Batch 2] User Favorites
     const mySettings = ledgerData.users?.[user?.uid] || {};
     const myFavorites = mySettings.favoriteCurrencies || DEFAULT_FAVORITE_CURRENCIES;
 
@@ -326,15 +330,33 @@ export default function AddExpenseView({
         else return payerRole === 'guest' ? `私人 (${guestName})` : (payerRole === 'host' ? `代墊 (幫${guestName}付)` : `${guestName} 全額`);
     };
 
-    // [Batch 2] Currency Filter Logic
+    // Currency Filter Logic
     const filteredCurrencies = currencySearch 
         ? CURRENCY_OPTIONS.filter(c => c.code.includes(currencySearch.toUpperCase()) || c.name.includes(currencySearch))
         : CURRENCY_OPTIONS;
 
-    const selectCurrency = (code) => {
+    // [Batch 5 New] Select Currency with Auto API Fetch
+    const selectCurrency = async (code) => {
         setCurrency(code);
         setIsCurrencySheetOpen(false);
         setCurrencySearch('');
+
+        // API Strategy: Snapshot (First time only)
+        if (code === 'TWD') return;
+
+        const projectRates = currentProject?.rates || {};
+        // 若該專案尚未設定此幣別匯率，則自動抓取
+        if (!projectRates[code]) {
+            setIsRateLoading(true);
+            const rate = await fetchExchangeRate(code);
+            if (rate) {
+                // Call parent updater to save to Firestore
+                if (updateProjectRates) {
+                    await updateProjectRates(currentProjectId, code, rate);
+                }
+            }
+            setIsRateLoading(false);
+        }
     };
 
     return (
@@ -373,13 +395,17 @@ export default function AddExpenseView({
             </div>
 
             <div className="flex items-center gap-3">
-                {/* [Batch 2] Currency Selector Trigger */}
+                {/* [Batch 5 Updated] Currency Trigger with Loading */}
                 <button 
                     onClick={() => setIsCurrencySheetOpen(true)}
                     className="flex items-center gap-1.5 bg-gray-100 rounded-lg px-3 py-1.5 border border-gray-200 active:bg-gray-200 transition-colors"
                 >
                     <span className="text-sm font-bold text-gray-800">{currency}</span>
-                    <ChevronDown size={14} className="text-gray-400"/>
+                    {isRateLoading ? (
+                        <RefreshCw className="animate-spin w-3 h-3 text-rose-500 ml-1"/>
+                    ) : (
+                        <ChevronDown size={14} className="text-gray-400"/>
+                    )}
                 </button>
                 
                 <div className="flex-1 bg-gray-100 border border-gray-200 rounded-lg flex items-center px-3 py-1.5 text-slate-600 relative">
