@@ -48,6 +48,32 @@ export const calculateTwdValue = (amount, currency, rates) => {
     return numAmount * rate;
 };
 
+// [Batch 5 New] 匯率 API 串接
+export const fetchExchangeRate = async (currencyCode) => {
+    if (!currencyCode || currencyCode === 'TWD') return 1;
+    
+    // ExchangeRate-API Key
+    const API_KEY = '8973165beb18750d2b42bbf5';
+    const URL = `https://v6.exchangerate-api.com/v6/${API_KEY}/latest/${currencyCode}`;
+
+    try {
+        const response = await fetch(URL);
+        const data = await response.json();
+        
+        // 驗證回傳資料結構
+        if (data && data.result === 'success' && data.conversion_rates) {
+            // 取得對 TWD 的匯率 (例如 1 JPY = 0.21 TWD)
+            const rate = data.conversion_rates.TWD;
+            if (rate) return rate;
+        }
+        console.warn(`Exchange Rate API: No TWD rate found for ${currencyCode}`);
+        return null;
+    } catch (e) {
+        console.error("Exchange Rate API Error:", e);
+        return null;
+    }
+};
+
 // --- Icon & UI System ---
 
 export const getIconComponent = (iconName) => {
