@@ -3,10 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { 
   User, LogOut, RotateCcw, Download, X, Check, Trash2, 
   Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe,
-  ShieldAlert, FileText, UserX, AlertTriangle, Repeat // [Added] Repeat Icon
+  ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins // [Added] Coins for currency UI
 } from 'lucide-react';
 import { getIconComponent, renderAvatar, getCategoryStyle } from '../utils/helpers';
-import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS } from '../utils/constants';
+// [Modified] 引入 Batch 1 新增的貨幣常數
+import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
 import { useLedger } from '../contexts/LedgerContext';
 
 export default function SettingsView({ 
@@ -33,7 +34,8 @@ export default function SettingsView({
   updateLedgerCurrency,
   currentProjectId,
   handleReorderCategories,
-  setView // [Restored] 補回 setView 以支援跳轉
+  setView,
+  updateUserSetting // [Added] 用於儲存常用貨幣設定 (請確保 App.jsx 後續會傳入此 prop)
 }) {
   // [Preserved] 保留您的刪除帳號邏輯
   const { leaveLedger, resetAccount, deleteAccount } = useLedger();
@@ -51,6 +53,10 @@ export default function SettingsView({
   const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
   const serverRates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
   const [localRates, setLocalRates] = useState(serverRates);
+
+  // [New] Batch 1: Favorite Currencies Logic
+  const mySettings = ledgerData?.users?.[user?.uid] || {};
+  const myFavorites = mySettings.favoriteCurrencies || DEFAULT_FAVORITE_CURRENCIES;
 
   // Role Check
   const currentUserRole = ledgerData?.users?.[user?.uid]?.role;
@@ -79,6 +85,31 @@ export default function SettingsView({
           updateLedgerCurrency(currency, val);
       } else {
           setLocalRates(prev => ({ ...prev, [currency]: serverRates[currency] }));
+      }
+  };
+
+  // [New] Batch 1: Toggle Favorite Currency
+  const toggleFavoriteCurrency = async (code) => {
+      let newFavorites = [...myFavorites];
+      if (newFavorites.includes(code)) {
+          if (newFavorites.length > 1) {
+              newFavorites = newFavorites.filter(c => c !== code);
+          } else {
+              alert("至少保留一個常用貨幣");
+              return;
+          }
+      } else {
+          if (newFavorites.length >= 4) {
+              alert("最多只能設定 4 個常用貨幣");
+              return;
+          }
+          newFavorites.push(code);
+      }
+      
+      if (updateUserSetting) {
+           await updateUserSetting('favoriteCurrencies', newFavorites);
+      } else {
+           console.warn("API 尚未串接：App.jsx 尚未傳入 updateUserSetting");
       }
   };
 
@@ -113,7 +144,6 @@ export default function SettingsView({
       }
   };
 
-  // [Preserved] 保留您的刪除帳號邏輯
   const handleDeleteAccount = async () => {
       if (!window.confirm("警告：此操作將「永久刪除」您的帳號與所有個人資料，且無法復原！")) return;
       if (!window.confirm("再次確認：您確定要刪除帳號嗎？")) return;
@@ -212,24 +242,59 @@ export default function SettingsView({
              </div>
         </section>
 
-        {/* --- Island B: Preferences --- */}
+        {/* --- Island B: Preferences (Modified for Batch 1) --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            {/* Rates */}
+            
+            {/* [New] Favorite Currencies */}
             <div className="p-4 border-b border-gray-50">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Globe size={14}/> 匯率設定</h3>
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Coins size={14}/> 常用貨幣 (最多4個)</h3>
+                <div className="flex flex-wrap gap-2">
+                    {CURRENCY_OPTIONS.map(currency => {
+                        const isSelected = myFavorites.includes(currency.code);
+                        return (
+                            <button 
+                                key={currency.code} 
+                                onClick={() => toggleFavoriteCurrency(currency.code)}
+                                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border ${isSelected ? 'bg-gray-900 text-white border-gray-900 shadow-md' : 'bg-gray-50 text-gray-500 border-gray-50 hover:bg-gray-100'}`}
+                            >
+                                <span className="text-sm">{currency.flag}</span>
+                                {currency.code}
+                                {isSelected && <Check size={12} className="ml-1"/>}
+                            </button>
+                        );
+                    })}
+                </div>
+                <p className="text-[10px] text-gray-400 mt-2 px-1">這些貨幣將會出現在記帳選單，並可於下方設定當前專案匯率。</p>
+            </div>
+
+            {/* Rates (Updated to use Favorites) */}
+            <div className="p-4 border-b border-gray-50 bg-gray-50/30">
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Globe size={14}/> 專案匯率設定 (TWD)</h3>
                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-                    {['JPY', 'THB'].map(curr => (
-                        <div key={curr} className="flex-1 min-w-[120px] flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-transparent focus-within:border-rose-200 focus-within:bg-white transition-colors">
+                    {/* [Updated] 動態根據 myFavorites 顯示匯率輸入框 */}
+                    {myFavorites.filter(c => c !== 'TWD').map(curr => (
+                        <div key={curr} className="flex-1 min-w-[120px] flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100 focus-within:border-rose-200 focus-within:ring-2 focus-within:ring-rose-50 transition-all shadow-sm">
                             <span className="text-sm font-bold text-gray-500">{curr}</span>
                             <div className="flex items-center gap-1">
-                                <input type="number" value={localRates[curr]} onChange={(e) => handleRateChange(curr, e.target.value)} onBlur={() => handleRateBlur(curr)} className="w-16 bg-transparent text-sm font-bold text-gray-900 outline-none text-right" placeholder="1.0" step="0.01"/>
+                                <input 
+                                    type="number" 
+                                    value={localRates[curr] !== undefined ? localRates[curr] : ''} 
+                                    onChange={(e) => handleRateChange(curr, e.target.value)} 
+                                    onBlur={() => handleRateBlur(curr)} 
+                                    className="w-16 bg-transparent text-sm font-bold text-gray-900 outline-none text-right" 
+                                    placeholder="?" 
+                                    step="0.01"
+                                />
                             </div>
                         </div>
                     ))}
+                    {myFavorites.filter(c => c !== 'TWD').length === 0 && (
+                        <p className="text-xs text-gray-400 italic py-2">請先上方勾選外幣，即可在此設定匯率。</p>
+                    )}
                 </div>
             </div>
 
-            {/* Category Grid */}
+            {/* Category Grid (Preserved) */}
             <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
                     <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2"><LayoutGrid size={16}/> 分類管理</h2>

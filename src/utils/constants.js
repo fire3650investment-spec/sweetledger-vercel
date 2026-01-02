@@ -6,8 +6,27 @@ import {
   Fish, Turtle 
 } from 'lucide-react';
 
-// --- 1. 全域色票系統 (Design Tokens - Based on User's Existing Colors) ---
-// [New] 根據現有專案顏色定義色票，確保相容性
+// --- 0. 全球貨幣清單 (Batch 1 New) ---
+export const CURRENCY_OPTIONS = [
+  { code: 'JPY', name: '日圓', symbol: '¥', flag: '🇯🇵' },
+  { code: 'USD', name: '美元', symbol: '$', flag: '🇺🇸' },
+  { code: 'THB', name: '泰銖', symbol: '฿', flag: '🇹🇭' },
+  { code: 'KRW', name: '韓元', symbol: '₩', flag: '🇰🇷' },
+  { code: 'EUR', name: '歐元', symbol: '€', flag: '🇪🇺' },
+  { code: 'CNY', name: '人民幣', symbol: '¥', flag: '🇨🇳' },
+  { code: 'GBP', name: '英鎊', symbol: '£', flag: '🇬🇧' },
+  { code: 'AUD', name: '澳幣', symbol: 'A$', flag: '🇦🇺' },
+  { code: 'SGD', name: '新幣', symbol: 'S$', flag: '🇸🇬' },
+  { code: 'HKD', name: '港幣', symbol: 'HK$', flag: '🇭🇰' },
+  { code: 'CAD', name: '加幣', symbol: 'C$', flag: '🇨🇦' },
+  { code: 'VND', name: '越南盾', symbol: '₫', flag: '🇻🇳' },
+  { code: 'PHP', name: '菲律賓披索', symbol: '₱', flag: '🇵🇭' },
+  { code: 'MYR', name: '馬來西亞令吉', symbol: 'RM', flag: '🇲🇾' },
+];
+
+export const DEFAULT_FAVORITE_CURRENCIES = ['JPY', 'THB', 'USD'];
+
+// --- 1. 全域色票系統 (Design Tokens) ---
 export const PALETTE = {
   orange:  { id: 'orange',  bg: 'bg-orange-100',  text: 'text-orange-600',  hex: '#ea580c', name: 'Orange' },
   blue:    { id: 'blue',    bg: 'bg-blue-100',    text: 'text-blue-600',    hex: '#2563eb', name: 'Blue' },
@@ -20,21 +39,30 @@ export const PALETTE = {
   green:   { id: 'green',   bg: 'bg-green-100',   text: 'text-green-600',   hex: '#16a34a', name: 'Green' },
   slate:   { id: 'slate',   bg: 'bg-slate-100',   text: 'text-slate-600',   hex: '#475569', name: 'Slate' },
   emerald: { id: 'emerald', bg: 'bg-emerald-100', text: 'text-emerald-600', hex: '#059669', name: 'Emerald' },
-  // System Primary (Action Color)
   rose:    { id: 'rose',    bg: 'bg-rose-100',    text: 'text-rose-600',    hex: '#e11d48', name: 'Rose' },
+  // Optional extras for variety
+  cyan:    { id: 'cyan',    bg: 'bg-cyan-100',    text: 'text-cyan-600',    hex: '#0891b2', name: 'Cyan' },
+  amber:   { id: 'amber',   bg: 'bg-amber-100',   text: 'text-amber-600',   hex: '#d97706', name: 'Amber' },
+  fuchsia: { id: 'fuchsia', bg: 'bg-fuchsia-100', text: 'text-fuchsia-600', hex: '#c026d3', name: 'Fuchsia' },
 };
 
-// --- 2. Icon 映射 (Updated for Lucide v0.4+) ---
+export const COLORS = Object.values(PALETTE).map(p => ({
+  name: p.name,
+  class: `${p.bg} ${p.text}`,
+  hex: p.hex
+}));
+
+// --- 2. Icon 映射 ---
 export const ICON_MAP = {
-  // Categories
+  // Categories (Preserved Legacy Keys)
   food: Utensils,
   transport: Train,
   shopping: ShoppingBag,
-  housing: House,        // [Fix] Replaced Home with House
+  housing: House,
   hotel: BedDouble,
   ticket: Ticket,
   telecom: Smartphone,
-  insurance: ShieldCheck, // [Fix] Replaced Shield with ShieldCheck
+  insurance: ShieldCheck,
   life: Sun,
   other: MessageCircle,
   // Characters
@@ -48,9 +76,9 @@ export const ICON_MAP = {
   default: Sparkles,
   project_daily: Calendar,
   project_travel: Plane,
-  project_house: House,   // [Fix] Replaced Home with House
+  project_house: House,
   project_private: Wallet,
-  // Other
+  // Other (For new categories or fallbacks)
   coffee: Coffee,
   music: Music,
   game: Gamepad,
@@ -58,35 +86,29 @@ export const ICON_MAP = {
   gift: Gift,
   zap: Zap,
   book: BookOpen,
-  settlement: Coins
+  settlement: Coins,
+  // Map standard icon names for future compatibility
+  'utensils': Utensils, 'train': Train, 'shopping-bag': ShoppingBag,
+  'house': House, 'bed-double': BedDouble, 'smartphone': Smartphone,
+  'shield-check': ShieldCheck, 'sun': Sun, 'message-circle': MessageCircle
 };
 
-// --- 3. 分類定義 (Extended) ---
-// [Modified] 加入 colorId 以支援新的色票系統，同時保留舊有欄位以防崩潰
+// --- 3. 分類定義 ---
 export const CATEGORIES = [
-  { id: 'food', name: '餐飲', icon: 'food', colorId: 'orange', color: 'bg-orange-100 text-orange-600', hex: '#ea580c' },
-  { id: 'transport', name: '交通', icon: 'transport', colorId: 'blue', color: 'bg-blue-100 text-blue-600', hex: '#2563eb' },
-  { id: 'shopping', name: '購物', icon: 'shopping', colorId: 'pink', color: 'bg-pink-100 text-pink-600', hex: '#db2777' },
-  { id: 'housing', name: '房租', icon: 'housing', colorId: 'indigo', color: 'bg-indigo-100 text-indigo-600', hex: '#4f46e5' },
-  { id: 'hotel', name: '旅館', icon: 'hotel', colorId: 'purple', color: 'bg-purple-100 text-purple-600', hex: '#9333ea' },
-  { id: 'ticket', name: '門票', icon: 'ticket', colorId: 'yellow', color: 'bg-yellow-100 text-yellow-600', hex: '#ca8a04' },
-  { id: 'telecom', name: '電信', icon: 'telecom', colorId: 'gray', color: 'bg-gray-100 text-gray-600', hex: '#4b5563' },
-  { id: 'insurance', name: '保險', icon: 'insurance', colorId: 'red', color: 'bg-red-100 text-red-600', hex: '#dc2626' },
-  { id: 'life', name: '生活', icon: 'life', colorId: 'green', color: 'bg-green-100 text-green-600', hex: '#16a34a' },
-  { id: 'other', name: '其他', icon: 'other', colorId: 'slate', color: 'bg-slate-100 text-slate-600', hex: '#475569' },
-  { id: 'settlement', name: '還款結清', icon: 'settlement', colorId: 'emerald', color: 'bg-emerald-100 text-emerald-600', hex: '#059669' }
+  { id: 'food', name: '餐飲', icon: 'food', ...PALETTE.orange },
+  { id: 'transport', name: '交通', icon: 'transport', ...PALETTE.blue },
+  { id: 'shopping', name: '購物', icon: 'shopping', ...PALETTE.pink },
+  { id: 'housing', name: '房租', icon: 'housing', ...PALETTE.indigo },
+  { id: 'hotel', name: '旅館', icon: 'hotel', ...PALETTE.purple },
+  { id: 'ticket', name: '門票', icon: 'ticket', ...PALETTE.yellow },
+  { id: 'telecom', name: '電信', icon: 'telecom', ...PALETTE.gray },
+  { id: 'insurance', name: '保險', icon: 'insurance', ...PALETTE.red },
+  { id: 'life', name: '生活', icon: 'life', ...PALETTE.green },
+  { id: 'other', name: '其他', icon: 'other', ...PALETTE.slate },
+  { id: 'settlement', name: '還款結清', icon: 'settlement', ...PALETTE.emerald }
 ];
 
 export const DEFAULT_CATEGORIES = CATEGORIES.filter(c => c.id !== 'settlement');
-
-// [Legacy Compatibility] 
-// 為了不破壞 SettingsView 的色盤選擇，這裡映射 PALETTE 回舊格式，或者直接保留舊陣列。
-// 這裡選擇從 PALETTE 生成，確保一致性。
-export const COLORS = Object.values(PALETTE).map(p => ({
-  name: p.name,
-  class: `${p.bg} ${p.text}`,
-  hex: p.hex
-}));
 
 export const AVAILABLE_ICONS = [
   'food', 'transport', 'shopping', 'housing', 'hotel', 'ticket', 'telecom', 'insurance', 'life', 'other', 
@@ -109,13 +131,13 @@ export const INITIAL_LEDGER_STATE = {
   subscriptions: [],
   customCategories: DEFAULT_CATEGORIES, 
   projects: [
-    { id: 'daily', name: '日常開銷', icon: 'project_daily' },
-    { id: 'travel', name: '日本旅遊專案', icon: 'project_travel' },
-    { id: 'house', name: '夢想置產專案', icon: 'project_house' },
-    { id: 'private', name: '私人帳本', icon: 'project_private' }
+    { id: 'daily', name: '日常開銷', icon: 'project_daily', rates: { JPY: 0.23, THB: 1 }, type: 'public' },
+    { id: 'travel', name: '日本旅遊專案', icon: 'project_travel', rates: { JPY: 0.23 }, type: 'public' },
+    { id: 'house', name: '夢想置產專案', icon: 'project_house', rates: {}, type: 'public' },
+    { id: 'private', name: '私人帳本', icon: 'project_private', rates: {}, type: 'private' }
   ],
-  rates: { "JPY": 0.23 },
-  currency: 'TWD',
+  // rates: { "JPY": 0.23 }, // [Deprecated] Moved to project level
+  // currency: 'TWD',        // [Deprecated] Not used in new logic
   settings: {
     character: 'cat',
     selectedCategories: DEFAULT_CATEGORIES.map(c => c.id),

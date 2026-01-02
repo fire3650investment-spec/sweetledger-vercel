@@ -38,10 +38,14 @@ export const formatCurrency = (amount, currency = 'TWD', privacyMode = false) =>
 
 export const calculateTwdValue = (amount, currency, rates) => {
     if (!amount) return 0;
-    if (currency === 'TWD') return parseFloat(amount);
+    const numAmount = parseFloat(amount);
+    if (isNaN(numAmount)) return 0;
+
+    if (currency === 'TWD') return numAmount;
     
+    // [Safe] 若找不到匯率，預設為 1 (原幣值)，避免計算結果為 NaN
     const rate = rates?.[currency] || 1;
-    return parseFloat(amount) * rate;
+    return numAmount * rate;
 };
 
 // --- Icon & UI System ---
@@ -83,6 +87,16 @@ export const getCategoryStyle = (category, mode = 'display') => {
 
     // Input Mode (極簡/輸入模式)
     if (mode === 'input') {
+        // [New] 支援直接屬性讀取 (相容 Batch 1 Constants)
+        if (category.bg && category.text) {
+             return {
+                containerClass: 'bg-gray-50 border border-gray-100', // Input mode override
+                iconClass: category.text,
+                activeClass: `${category.bg} ${category.text} ring-2 ring-gray-200 border-transparent`,
+                hex: category.hex || '#64748b'
+             };
+        }
+        // Fallback
         return {
             containerClass: 'bg-gray-50 border border-gray-100',
             iconClass: 'text-gray-400',
@@ -92,6 +106,17 @@ export const getCategoryStyle = (category, mode = 'display') => {
     }
 
     // Display Mode
+    
+    // 1. 優先檢查：直接屬性 (Direct Props - Batch 1 New Logic)
+    if (category.bg && category.text) {
+        return {
+            containerClass: category.bg,
+            iconClass: category.text,
+            hex: category.hex || '#475569'
+        };
+    }
+
+    // 2. 次要檢查：查表法 (Lookup via colorId)
     if (category.colorId && PALETTE && PALETTE[category.colorId]) {
         const token = PALETTE[category.colorId];
         return {
@@ -101,7 +126,7 @@ export const getCategoryStyle = (category, mode = 'display') => {
         };
     }
     
-    // Legacy / Default
+    // 3. Legacy / Default
     return {
         containerClass: category.color || 'bg-slate-100 text-slate-600',
         iconClass: '', 
