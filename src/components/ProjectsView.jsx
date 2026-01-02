@@ -1,7 +1,9 @@
 // src/components/ProjectsView.jsx
 import React from 'react';
-import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Globe, Lock, Unlock } from 'lucide-react';
+import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Globe, Lock, Unlock, AlertCircle } from 'lucide-react';
 import { getIconComponent } from '../utils/helpers';
+// [Batch 4] 引入貨幣選項以取得國旗
+import { CURRENCY_OPTIONS } from '../utils/constants';
 
 export default function ProjectsView({
   ledgerData,
@@ -35,13 +37,16 @@ export default function ProjectsView({
 
     // [Handler]
     const onSaveWrapper = () => {
+        // [Batch 4 Fix] 移除舊的寫死 JPY/THB 邏輯，改為動態保存
+        // 確保 rates 內的數值正確
         if (editingProjectData.rates) {
-            const newRates = {
-                JPY: parseFloat(editingProjectData.rates.JPY) || 0.23,
-                THB: parseFloat(editingProjectData.rates.THB) || 1.0
-            };
-            editingProjectData.rates = newRates;
+            const cleanRates = {};
+            Object.keys(editingProjectData.rates).forEach(key => {
+                cleanRates[key] = parseFloat(editingProjectData.rates[key]) || 0;
+            });
+            editingProjectData.rates = cleanRates;
         }
+        
         if (editingProjectData.id === 'daily') {
             editingProjectData.type = 'public';
         }
@@ -112,46 +117,44 @@ export default function ProjectsView({
                         </div>
                     </div>
 
-                    {/* Rates Input */}
+                    {/* [Batch 4] Dynamic Rates Input */}
                     {editingProjectData.id !== 'daily' && (
                         <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100">
-                            <h4 className="text-xs font-bold text-blue-500 mb-4 flex items-center gap-2 uppercase tracking-wider"><Globe size={14}/> 匯率設定</h4>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-white p-3 rounded-xl border border-blue-100">
-                                    <label className="text-[10px] font-bold text-gray-400 block mb-1">JPY (日幣)</label>
-                                    <div className="flex items-center gap-2">
-                                        <input 
-                                            type="number" 
-                                            value={editingProjectData.rates?.JPY || 0.23} 
-                                            onChange={(e) => setEditingProjectData({
-                                                ...editingProjectData, 
-                                                rates: { ...editingProjectData.rates, JPY: e.target.value }
-                                            })}
-                                            className="w-full bg-transparent font-bold text-gray-800 outline-none"
-                                            placeholder="0.23"
-                                            step="0.01"
-                                        />
-                                        <span className="text-[10px] text-gray-400 font-bold shrink-0">TWD</span>
-                                    </div>
+                            <h4 className="text-xs font-bold text-blue-500 mb-4 flex items-center gap-2 uppercase tracking-wider"><Globe size={14}/> 匯率設定 (TWD)</h4>
+                            
+                            {/* 如果該專案已有設定匯率，則列出 */}
+                            {editingProjectData.rates && Object.keys(editingProjectData.rates).filter(k => k !== 'TWD').length > 0 ? (
+                                <div className="grid grid-cols-2 gap-4">
+                                    {Object.keys(editingProjectData.rates).filter(k => k !== 'TWD').map(currencyCode => {
+                                        const currencyInfo = CURRENCY_OPTIONS.find(c => c.code === currencyCode);
+                                        return (
+                                            <div key={currencyCode} className="bg-white p-3 rounded-xl border border-blue-100">
+                                                <label className="text-[10px] font-bold text-gray-400 mb-1 flex items-center gap-1">
+                                                    {currencyInfo?.flag || '🌐'} {currencyCode}
+                                                </label>
+                                                <div className="flex items-center gap-2">
+                                                    <input 
+                                                        type="number" 
+                                                        value={editingProjectData.rates[currencyCode]} 
+                                                        onChange={(e) => setEditingProjectData({
+                                                            ...editingProjectData, 
+                                                            rates: { ...editingProjectData.rates, [currencyCode]: e.target.value }
+                                                        })}
+                                                        className="w-full bg-transparent font-bold text-gray-800 outline-none"
+                                                        placeholder="?"
+                                                        step="0.01"
+                                                    />
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                                <div className="bg-white p-3 rounded-xl border border-blue-100">
-                                    <label className="text-[10px] font-bold text-gray-400 block mb-1">THB (泰銖)</label>
-                                    <div className="flex items-center gap-2">
-                                        <input 
-                                            type="number" 
-                                            value={editingProjectData.rates?.THB || 1.0} 
-                                            onChange={(e) => setEditingProjectData({
-                                                ...editingProjectData, 
-                                                rates: { ...editingProjectData.rates, THB: e.target.value }
-                                            })}
-                                            className="w-full bg-transparent font-bold text-gray-800 outline-none"
-                                            placeholder="1.0"
-                                            step="0.1"
-                                        />
-                                        <span className="text-[10px] text-gray-400 font-bold shrink-0">TWD</span>
-                                    </div>
+                            ) : (
+                                <div className="text-center py-2">
+                                    <p className="text-xs text-blue-400 mb-2">此專案尚未設定外幣</p>
+                                    <p className="text-[10px] text-blue-300">請至「設定 > 常用貨幣」新增貨幣後，即可在此調整匯率。</p>
                                 </div>
-                            </div>
+                            )}
                         </div>
                     )}
 
@@ -173,7 +176,8 @@ export default function ProjectsView({
                 <h2 className="text-2xl font-bold text-gray-800">專案管理</h2>
                 <button 
                     onClick={() => { 
-                        setEditingProjectData({id:'', name:'', icon:'project_daily', rates: { JPY: 0.23, THB: 1 }, type: 'public'}); 
+                        // [Batch 4] 初始化時給一個空的 rates，讓使用者之後透過設定去加
+                        setEditingProjectData({id:'', name:'', icon:'project_daily', rates: {}, type: 'public'}); 
                         setIsEditingProject(true); 
                     }} 
                     className="bg-gray-900 text-white p-2 rounded-xl shadow-lg shadow-gray-300 active:scale-90 transition-transform"
@@ -188,8 +192,13 @@ export default function ProjectsView({
                     const ProjIcon = getIconComponent(p.icon); 
                     const isLast = idx === (visibleProjects.length - 1);
                     const isFirst = idx === 0;
-                    const rates = p.rates || { JPY: 0.23, THB: 1 };
                     const isPrivate = p.type === 'private';
+                    
+                    // [Batch 4] Dynamic Rate Tags Logic
+                    const rates = p.rates || {};
+                    const activeCurrencies = Object.keys(rates).filter(k => k !== 'TWD' && rates[k]);
+                    const displayCurrencies = activeCurrencies.slice(0, 2); // 顯示前兩個
+                    const moreCount = activeCurrencies.length - 2;
 
                     return (
                         <div 
@@ -197,7 +206,7 @@ export default function ProjectsView({
                             className={`
                                 p-4 rounded-2xl flex items-center justify-between group transition-colors
                                 ${isPrivate 
-                                    ? 'bg-slate-50 border-2 border-dashed border-slate-200' /* Plan A: Ghost Style */
+                                    ? 'bg-slate-50 border-2 border-dashed border-slate-200' 
                                     : 'bg-white border border-gray-100 shadow-sm'
                                 }
                             `}
@@ -213,7 +222,6 @@ export default function ProjectsView({
                                     <ProjIcon size={24} />
                                 </div>
                                 <div>
-                                    {/* [Title Style Update] 消費貢獻度 Style */}
                                     <h3 className={`font-bold flex items-center gap-2 ${isPrivate ? 'text-slate-500' : 'text-gray-600'}`}>
                                         {p.name}
                                         {isPrivate && <Lock size={14} className="text-slate-400"/>}
@@ -224,12 +232,25 @@ export default function ProjectsView({
                                             <span className="bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-md text-[10px] font-bold">預設</span>
                                         ) : (
                                             <>
-                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${isPrivate ? 'bg-white text-slate-400 border border-slate-100' : 'bg-blue-50 text-blue-600'}`}>
-                                                    <span className="opacity-50 text-[8px]">JPY</span> {rates.JPY}
-                                                </span>
-                                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${isPrivate ? 'bg-white text-slate-400 border border-slate-100' : 'bg-orange-50 text-orange-600'}`}>
-                                                    <span className="opacity-50 text-[8px]">THB</span> {rates.THB}
-                                                </span>
+                                                {/* [Batch 4] Dynamic Tags Rendering */}
+                                                {displayCurrencies.map(code => {
+                                                    const info = CURRENCY_OPTIONS.find(c => c.code === code);
+                                                    return (
+                                                        <span key={code} className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${isPrivate ? 'bg-white text-slate-400 border border-slate-100' : 'bg-blue-50 text-blue-600'}`}>
+                                                            <span className="opacity-80">{info?.flag || ''}</span> 
+                                                            <span className="opacity-50 text-[8px]">{code}</span> 
+                                                            {rates[code]}
+                                                        </span>
+                                                    );
+                                                })}
+                                                {moreCount > 0 && (
+                                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-100 text-gray-500">
+                                                        +{moreCount}
+                                                    </span>
+                                                )}
+                                                {activeCurrencies.length === 0 && (
+                                                    <span className="text-[10px] text-gray-300 italic">無外幣設定</span>
+                                                )}
                                             </>
                                         )}
                                     </div>
