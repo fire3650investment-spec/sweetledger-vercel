@@ -45,11 +45,12 @@ export const LedgerProvider = ({ children }) => {
       return null;
   });
 
-  // 預設為 false，除非有 ledgerCode 才設為 true (避免無限 Loading)
-  const [isLedgerInitializing, setIsLedgerInitializing] = useState(() => !!localStorage.getItem('sweet_ledger_code'));
+  // [Rescue Fix] 強制預設為 false，避免因 LocalStorage 殘留導致死結
+  // 這可能會導致畫面閃爍一下，但在救援階段，穩定性優先於轉場滑順度
+  const [isLedgerInitializing, setIsLedgerInitializing] = useState(false);
   
   const isRepairingRef = useRef(false);
-  const ignoreRemoteBindingRef = useRef(false); // [重要] 防止死循環的旗標
+  const ignoreRemoteBindingRef = useRef(false);
 
   // 2. LocalStorage Sync
   useEffect(() => {
@@ -61,45 +62,44 @@ export const LedgerProvider = ({ children }) => {
         localStorage.setItem('sweet_ledger_code', ledgerCode);
     } else {
         localStorage.removeItem('sweet_ledger_code');
-        // [Safety Fix] 只要 code 清空，強制關閉 Loading，確保蛋糕消失
+        // 確保 code 清除時，Loading 也必定關閉
         setIsLedgerInitializing(false);
     }
   }, [ledgerCode]);
 
-  // [Helper] 錯誤處理與強制斷線邏輯
+  // [Helper] 強制斷線邏輯
   const handleDisconnectError = useCallback(async (reason) => {
-      console.warn(`⚠️ Disconnecting Ledger due to: ${reason}`);
+      console.warn(`⚠️ Force Disconnect triggered: ${reason}`);
       
-      // 1. 立即切斷本地狀態，讓 UI 恢復
+      // 1. 立即切斷本地狀態
       setLedgerCode('');
       setLedgerData(null);
       localStorage.removeItem('sweet_ledger_code');
-      setIsLedgerInitializing(false);
+      setIsLedgerInitializing(false); // 關閉蛋糕畫面
       
-      // 2. 設定旗標，阻止 App 再次自動綁定
+      // 2. 設置旗標，阻止 App 再次自動從 Firestore 綁定錯誤的帳本
       ignoreRemoteBindingRef.current = true; 
 
-      // 3. 嘗試從 Firestore 清除綁定 (非阻塞，失敗也沒關係)
+      // 3. 嘗試從 Firestore 移除欄位
       if (user) {
          try {
             const userRef = doc(db, 'users', user.uid);
-            // 使用 deleteField() 確保欄位被刪除
             await updateDoc(userRef, { ledgerCode: deleteField() });
-            console.log("Successfully unlinked user from ghost ledger.");
+            console.log("Unlinked user from ghost ledger (Firestore).");
          } catch (e) { 
              console.error("Unlink failed (minor):", e); 
          }
      }
   }, [user]);
 
-  // [New] Watchdog Timer (加強版保險絲)
-  // 如果 isLedgerInitializing 為 true 超過 3 秒，強制觸發斷線
+  // [Watchdog] 終極保險絲 (2秒)
+  // 只要 Loading 超過 2 秒，無條件殺掉同步程序
   useEffect(() => {
       if (isLedgerInitializing) {
           const timer = setTimeout(() => {
-              console.error("🚨 Watchdog Triggered: Force killing sync.");
-              handleDisconnectError("Timeout (3s)");
-          }, 3000); // 縮短為 3 秒
+              console.error("🚨 Watchdog: Sync timed out (2s). Killing process.");
+              handleDisconnectError("Timeout 2s");
+          }, 2000); 
           return () => clearTimeout(timer);
       }
   }, [isLedgerInitializing, handleDisconnectError]);
@@ -118,15 +118,14 @@ export const LedgerProvider = ({ children }) => {
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     
-    // 開始讀取
+    // [Active Loading] 只有在確認要連線時，才開啟 Loading
     setIsLedgerInitializing(true);
 
     const unsubscribe = onSnapshot(docRef, async (docSnap) => { 
       if (docSnap.exists()) {
         const data = docSnap.data();
         
-        // [Logic Check] 再次檢查自己是否還在 users 名單中
-        // 這是防止 Firestore 權限規則沒攔住，但邏輯上已經被踢出的狀況
+        // [Logic Check] 檢查權限 (雙重驗證)
         if (data.users && !data.users[user.uid]) {
              handleDisconnectError("User removed from ledger (Logic Check)");
              return;
@@ -134,14 +133,13 @@ export const LedgerProvider = ({ children }) => {
 
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
-        setIsLedgerInitializing(false); // 成功讀取，關閉 Loading
+        setIsLedgerInitializing(false); // 成功，關閉 Loading
       } else { 
-          // 帳本不存在 (被刪除)
+          // 帳本不存在
           handleDisconnectError("Ledger not found (remote)");
       }
     }, (error) => { 
         console.error("Snapshot error:", error); 
-        // 任何權限錯誤 (Permission Denied) 都會觸發這裡
         handleDisconnectError(`Firestore Error: ${error.code}`);
     });
 
@@ -225,7 +223,7 @@ export const LedgerProvider = ({ children }) => {
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode, user]);
 
-  // 5. Subscription Logic (自動扣款)
+  // 5. Subscription Logic
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return;
     
@@ -309,7 +307,7 @@ export const LedgerProvider = ({ children }) => {
   const checkUserBinding = useCallback(async (uid) => {
       if (!db) return null;
       
-      // [Fix] 如果之前發生過錯誤 (Watchdog 觸發過)，直接回傳 null，防止 App 死循環
+      // [Fix] 若先前發生錯誤 (Watchdog 觸發過)，直接回傳 null，防止 App 死循環
       if (ignoreRemoteBindingRef.current) {
           console.log("Blocking remote binding check due to previous error.");
           return null;
