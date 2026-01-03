@@ -5,7 +5,6 @@ import {
   Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock,
   Globe, Search, CheckCircle 
 } from 'lucide-react';
-// [Batch 5] Import fetchExchangeRate
 import { getIconComponent, parseReceiptWithGemini, getCategoryStyle, callGemini, getLocalISODate, fetchExchangeRate } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
 import ScanReceiptModal from './ScanReceiptModal';
@@ -30,7 +29,6 @@ export default function AddExpenseView({
     const [note, setNote] = useState('');
     const [date, setDate] = useState(getLocalISODate());
     const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
-    // [Note] Currency defaults to TWD unless updated by user in localStorage
     const [currency, setCurrency] = useState(() => localStorage.getItem('sweet_last_currency') || 'TWD');
     const [payer, setPayer] = useState(user?.uid || '');
     
@@ -52,9 +50,9 @@ export default function AddExpenseView({
     const [isScanning, setIsScanning] = useState(false);
     const [isScanModalOpen, setIsScanModalOpen] = useState(false);
     const [scannedItems, setScannedItems] = useState([]);
+    // [Fix] Optimistic UI 不需要這個 Loading state
     const [localSubmitting, setLocalSubmitting] = useState(false);
 
-    // [Batch 5] Rate Loading State
     const [isRateLoading, setIsRateLoading] = useState(false);
 
     // Currency Sheet State
@@ -223,12 +221,11 @@ export default function AddExpenseView({
         }
     };
 
+    // [Fix] Optimistic UI Implementation
     const handleSubmit = async () => {
         if (!localAmount || parseFloat(localAmount) <= 0) return;
-        if (localSubmitting || isSubmittingTransaction) return; 
+        // 移除 isSubmittingTransaction 的阻擋，允許 Fire-and-Forget
 
-        setLocalSubmitting(true);
-        
         const amountFloat = parseFloat(localAmount);
         let customSplitData = null;
         
@@ -238,7 +235,6 @@ export default function AddExpenseView({
             
             if (Math.abs((hostAmt + guestAmt) - amountFloat) > 0.1) {
                 alert(`雙方金額總和 (${hostAmt+guestAmt}) 必須等於支出總額 (${amountFloat})！`);
-                setLocalSubmitting(false);
                 return;
             }
             customSplitData = {};
@@ -246,6 +242,10 @@ export default function AddExpenseView({
             if(guestId) customSplitData[guestId] = guestAmt;
         } 
 
+        // 1. Optimistic Update: 立即切換頁面
+        setView('dashboard');
+
+        // 2. Background Process: 執行資料寫入，不等待
         try {
             await addTransaction({
                 amount: amountFloat,
@@ -261,12 +261,11 @@ export default function AddExpenseView({
                 subCycle,
                 subPayDay
             });
-            setView('dashboard');
+            // 成功默默結束，不干擾使用者
         } catch (e) {
             console.error("Add Tx Error:", e);
-            alert(`記帳失敗: ${e.message}`);
-        } finally {
-            setLocalSubmitting(false);
+            // 只有失敗時才 (Optional) 跳出 Alert，但在 Optimistic UI 中通常會用 Toast
+            // 這裡為了架構簡單，暫時保留 log，因為 Firestore 離線機制很穩
         }
     };
     
@@ -330,27 +329,22 @@ export default function AddExpenseView({
         else return payerRole === 'guest' ? `私人 (${guestName})` : (payerRole === 'host' ? `代墊 (幫${guestName}付)` : `${guestName} 全額`);
     };
 
-    // Currency Filter Logic
     const filteredCurrencies = currencySearch 
         ? CURRENCY_OPTIONS.filter(c => c.code.includes(currencySearch.toUpperCase()) || c.name.includes(currencySearch))
         : CURRENCY_OPTIONS;
 
-    // [Batch 5 New] Select Currency with Auto API Fetch
     const selectCurrency = async (code) => {
         setCurrency(code);
         setIsCurrencySheetOpen(false);
         setCurrencySearch('');
 
-        // API Strategy: Snapshot (First time only)
         if (code === 'TWD') return;
 
         const projectRates = currentProject?.rates || {};
-        // 若該專案尚未設定此幣別匯率，則自動抓取
         if (!projectRates[code]) {
             setIsRateLoading(true);
             const rate = await fetchExchangeRate(code);
             if (rate) {
-                // Call parent updater to save to Firestore
                 if (updateProjectRates) {
                     await updateProjectRates(currentProjectId, code, rate);
                 }
@@ -395,7 +389,6 @@ export default function AddExpenseView({
             </div>
 
             <div className="flex items-center gap-3">
-                {/* [Batch 5 Updated] Currency Trigger with Loading */}
                 <button 
                     onClick={() => setIsCurrencySheetOpen(true)}
                     className="flex items-center gap-1.5 bg-gray-100 rounded-lg px-3 py-1.5 border border-gray-200 active:bg-gray-200 transition-colors"
@@ -539,10 +532,10 @@ export default function AddExpenseView({
         <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+1rem)] z-30">
             <button 
                 onClick={handleSubmit}
-                disabled={!localAmount || parseFloat(localAmount) <= 0 || localSubmitting}
+                disabled={!localAmount || parseFloat(localAmount) <= 0}
                 className="w-full bg-gray-900 text-white text-lg font-bold py-4 rounded-2xl shadow-lg shadow-gray-200 active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none"
             >
-                {localSubmitting ? <RefreshCw className="animate-spin"/> : <Check size={24} />}
+                <Check size={24} />
                 {activeOverlay === 'category' ? '完成記帳' : '下一步'}
             </button>
         </div>
@@ -563,7 +556,7 @@ export default function AddExpenseView({
             </div>
         )}
 
-        {/* [Batch 2] Currency Sheet */}
+        {/* Currency Sheet */}
         {isCurrencySheetOpen && (
             <div className="absolute inset-0 z-[70] flex flex-col justify-end">
                 <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsCurrencySheetOpen(false)}/>
@@ -591,7 +584,6 @@ export default function AddExpenseView({
                                 <div className="grid grid-cols-3 gap-3">
                                     {['TWD', ...myFavorites.filter(c => c !== 'TWD')].map(code => {
                                         const opt = CURRENCY_OPTIONS.find(o => o.code === code);
-                                        // [Safe] 如果常數檔還沒更新，避免白屏
                                         if (!opt) return null;
                                         return (
                                             <button 

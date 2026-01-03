@@ -6,9 +6,8 @@ import {
   Fish, Turtle 
 } from 'lucide-react';
 
-// --- 0. 全球貨幣清單 (Batch 1 New) ---
+// --- 0. 全球貨幣清單 ---
 export const CURRENCY_OPTIONS = [
-  // [Fix] 補上 TWD 定義，並置於首位
   { code: 'TWD', name: '新台幣', symbol: 'NT$', flag: '🇹🇼' },
   { code: 'JPY', name: '日圓', symbol: '¥', flag: '🇯🇵' },
   { code: 'USD', name: '美元', symbol: '$', flag: '🇺🇸' },
@@ -95,18 +94,19 @@ export const ICON_MAP = {
 };
 
 // --- 3. 分類定義 ---
+// [Fix] 將 PALETTE 展開放在最前面，確保後面的 name 不會被覆蓋
 export const CATEGORIES = [
-  { id: 'food', name: '餐飲', icon: 'food', ...PALETTE.orange },
-  { id: 'transport', name: '交通', icon: 'transport', ...PALETTE.blue },
-  { id: 'shopping', name: '購物', icon: 'shopping', ...PALETTE.pink },
-  { id: 'housing', name: '房租', icon: 'housing', ...PALETTE.indigo },
-  { id: 'hotel', name: '旅館', icon: 'hotel', ...PALETTE.purple },
-  { id: 'ticket', name: '門票', icon: 'ticket', ...PALETTE.yellow },
-  { id: 'telecom', name: '電信', icon: 'telecom', ...PALETTE.gray },
-  { id: 'insurance', name: '保險', icon: 'insurance', ...PALETTE.red },
-  { id: 'life', name: '生活', icon: 'life', ...PALETTE.green },
-  { id: 'other', name: '其他', icon: 'other', ...PALETTE.slate },
-  { id: 'settlement', name: '還款結清', icon: 'settlement', ...PALETTE.emerald }
+  { ...PALETTE.orange, id: 'food', name: '餐飲', icon: 'food' },
+  { ...PALETTE.blue, id: 'transport', name: '交通', icon: 'transport' },
+  { ...PALETTE.pink, id: 'shopping', name: '購物', icon: 'shopping' },
+  { ...PALETTE.indigo, id: 'housing', name: '房租', icon: 'housing' },
+  { ...PALETTE.purple, id: 'hotel', name: '旅館', icon: 'hotel' },
+  { ...PALETTE.yellow, id: 'ticket', name: '門票', icon: 'ticket' },
+  { ...PALETTE.gray, id: 'telecom', name: '電信', icon: 'telecom' },
+  { ...PALETTE.red, id: 'insurance', name: '保險', icon: 'insurance' },
+  { ...PALETTE.green, id: 'life', name: '生活', icon: 'life' },
+  { ...PALETTE.slate, id: 'other', name: '其他', icon: 'other' },
+  { ...PALETTE.emerald, id: 'settlement', name: '還款結清', icon: 'settlement' }
 ];
 
 export const DEFAULT_CATEGORIES = CATEGORIES.filter(c => c.id !== 'settlement');
@@ -132,7 +132,6 @@ export const INITIAL_LEDGER_STATE = {
   subscriptions: [],
   customCategories: DEFAULT_CATEGORIES, 
   projects: [
-    // [Clean Up] 移除寫死的匯率，改為空物件
     { id: 'daily', name: '日常開銷', icon: 'project_daily', rates: {}, type: 'public' },
     { id: 'travel', name: '日本旅遊專案', icon: 'project_travel', rates: {}, type: 'public' },
     { id: 'house', name: '夢想置產專案', icon: 'project_house', rates: {}, type: 'public' },
