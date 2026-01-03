@@ -47,6 +47,9 @@ export const LedgerProvider = ({ children }) => {
 
   const [isLedgerInitializing, setIsLedgerInitializing] = useState(!ledgerData);
   const isRepairingRef = useRef(false);
+  
+  // [New] 防止無限迴圈的 Ref
+  const ignoreRemoteBindingRef = useRef(false);
 
   // 1. LocalStorage Sync
   useEffect(() => {
@@ -61,7 +64,36 @@ export const LedgerProvider = ({ children }) => {
     }
   }, [ledgerCode]);
 
-  // 2. Firebase Listener (Fixed: Permission Denied Handling)
+  // 錯誤處理與斷開連結的共用邏輯 (定義在 Effect 之前)
+  const handleDisconnectError = async () => {
+      setLedgerCode('');
+      setLedgerData(null);
+      localStorage.removeItem('sweet_ledger_code');
+      setIsLedgerInitializing(false);
+      ignoreRemoteBindingRef.current = true; // 防止 App 再次自動綁定
+
+      // 嘗試從 Firestore 解除綁定 (非阻塞)
+      if (user) {
+         try {
+            const userRef = doc(db, 'users', user.uid);
+            await updateDoc(userRef, { ledgerCode: deleteField() });
+         } catch (e) { console.error("Unlink failed (minor):", e); }
+     }
+  };
+
+  // [New] Watchdog Timer (保險絲機制)
+  // 如果正在讀取且有 code，但超過 5 秒沒結果，強制中斷
+  useEffect(() => {
+      if (isLedgerInitializing && ledgerCode) {
+          const timer = setTimeout(() => {
+              console.warn("⚠️ Watchdog: Ledger sync timed out (5s). Forcing disconnect.");
+              handleDisconnectError();
+          }, 5000);
+          return () => clearTimeout(timer);
+      }
+  }, [isLedgerInitializing, ledgerCode]);
+
+  // 2. Firebase Listener
   useEffect(() => {
     if (!db) {
         setIsLedgerInitializing(false);
@@ -78,48 +110,30 @@ export const LedgerProvider = ({ children }) => {
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     
+    // Set a flag to identify initialization start
+    setIsLedgerInitializing(true);
+
     const unsubscribe = onSnapshot(docRef, async (docSnap) => { 
       if (docSnap.exists()) {
         const data = docSnap.data();
+        // 檢查自己是否還在 users 列表內 (雙重保險)
+        if (user && data.users && !data.users[user.uid]) {
+             console.warn("User removed from ledger (Logic Check). Disconnecting...");
+             handleDisconnectError();
+             return;
+        }
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
+        setIsLedgerInitializing(false);
       } else { 
           // Ghost Ledger Handling
           console.warn("Ledger not found (remote)");
-          if (user) {
-              try {
-                  const userRef = doc(db, 'users', user.uid);
-                  await updateDoc(userRef, { ledgerCode: deleteField() });
-              } catch (e) {
-                  console.error("Failed to unlink ghost ledger:", e);
-              }
-          }
-          setLedgerCode('');
-          setLedgerData(null);
-          localStorage.removeItem('sweet_ledger_code');
-          localStorage.removeItem(cacheKey);
+          handleDisconnectError();
       }
-      setIsLedgerInitializing(false);
     }, async (error) => { 
         console.error("Snapshot error:", error); 
-        
-        // [CRITICAL FIX] 處理被踢出或權限不足導致的死結
-        if (error.code === 'permission-denied') {
-             console.warn("Permission denied: Unlinking user from ledger.");
-             setLedgerCode('');
-             setLedgerData(null);
-             localStorage.removeItem('sweet_ledger_code');
-             localStorage.removeItem(cacheKey);
-             
-             // 強制從 Firestore 解除綁定，打破 Loop
-             if (user) {
-                 try {
-                    const userRef = doc(db, 'users', user.uid);
-                    await updateDoc(userRef, { ledgerCode: deleteField() });
-                 } catch (e) { console.error("Unlink failed", e); }
-             }
-        }
-        setIsLedgerInitializing(false); 
+        // 處理所有讀取錯誤 (權限、網路、不存在)
+        handleDisconnectError();
     });
 
     return () => unsubscribe();
@@ -286,6 +300,11 @@ export const LedgerProvider = ({ children }) => {
   
   const checkUserBinding = useCallback(async (uid) => {
       if (!db) return null;
+      // [Fix] 如果 Watchdog 觸發過，則忽略此次檢查，避免死循環
+      if (ignoreRemoteBindingRef.current) {
+          console.log("Ignoring remote binding check due to previous error.");
+          return null;
+      }
       try {
           const userDocRef = doc(db, 'users', uid); 
           const userDoc = await getDoc(userDocRef);
@@ -318,6 +337,7 @@ export const LedgerProvider = ({ children }) => {
 
     localStorage.setItem('sweet_ledger_code', code);
     setLedgerCode(code);
+    ignoreRemoteBindingRef.current = false; // Reset flag
     return code;
   }, []);
 
@@ -342,6 +362,7 @@ export const LedgerProvider = ({ children }) => {
       }, { merge: true });
       localStorage.setItem('sweet_ledger_code', code);
       setLedgerCode(code);
+      ignoreRemoteBindingRef.current = false; // Reset flag
       return true;
     } else { throw new Error("找不到這個帳本代碼！"); }
   }, []);
@@ -350,6 +371,8 @@ export const LedgerProvider = ({ children }) => {
       setLedgerCode('');
       setLedgerData(null);
       localStorage.removeItem('sweet_ledger_code');
+      setIsLedgerInitializing(false);
+      ignoreRemoteBindingRef.current = true; // Avoid auto-rejoin immediately
       Object.keys(localStorage).forEach(key => {
           if (key.startsWith('sweet_ledger_data_')) localStorage.removeItem(key);
       });
