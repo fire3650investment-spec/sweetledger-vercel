@@ -8,13 +8,12 @@ import {
   Tv, Music, Smartphone, Baby, AlertCircle,
   User, Coins
 } from 'lucide-react';
-// 引入剛安裝的 SDK
+// 引入 SDK
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ICON_MAP, CHARACTERS, PALETTE } from './constants';
 
 // --- Formatters & Helpers ---
 
-// [Fix] 補回遺失的 generateId
 export const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
 // [New] 本地時區日期 (修復早晨時差 Bug)
@@ -48,24 +47,74 @@ export const calculateTwdValue = (amount, currency, rates) => {
     return numAmount * rate;
 };
 
-// [Batch 5 New] 匯率 API 串接
+// [Batch 5 Updated] 匯率 API 串接 (含 Cache 機制與架構預留)
 export const fetchExchangeRate = async (currencyCode) => {
     if (!currencyCode || currencyCode === 'TWD') return 1;
-    
-    // ExchangeRate-API Key
-    const API_KEY = '8973165beb18750d2b42bbf5';
-    const URL = `https://v6.exchangerate-api.com/v6/${API_KEY}/latest/${currencyCode}`;
 
+    // 1. Cache Check (LocalStorage) - 效能優先
+    // Key format: sweet_rate_{CURRENCY}
+    const cacheKey = `sweet_rate_${currencyCode}`;
+    const cachedData = localStorage.getItem(cacheKey);
+    const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 Hours
+
+    if (cachedData) {
+        try {
+            const { rate, timestamp } = JSON.parse(cachedData);
+            const now = Date.now();
+            if (now - timestamp < CACHE_DURATION) {
+                // console.log(`Hit Cache for ${currencyCode}: ${rate}`);
+                return rate;
+            }
+        } catch (e) {
+            console.warn("Cache parse error", e);
+            localStorage.removeItem(cacheKey);
+        }
+    }
+    
+    // 2. Prepare API URL (Architecture Switch)
+    // 未來若啟用 Firebase Functions，將此設為 true 並填入 Function URL
+    const USE_PROXY = false; 
+    const PROXY_URL = 'https://us-central1-YOUR-PROJECT.cloudfunctions.net/getExchangeRate';
+    
+    let url;
+    if (USE_PROXY) {
+        url = `${PROXY_URL}?currency=${currencyCode}`;
+    } else {
+        const API_KEY = import.meta.env.VITE_EXCHANGE_RATE_API_KEY;
+        if (!API_KEY) {
+            console.warn("⚠️ Missing Exchange Rate API Key");
+            return null;
+        }
+        url = `https://v6.exchangerate-api.com/v6/${API_KEY}/latest/${currencyCode}`;
+    }
+
+    // 3. Fetch & Update Cache
     try {
-        const response = await fetch(URL);
+        const response = await fetch(url);
         const data = await response.json();
         
-        // 驗證回傳資料結構
-        if (data && data.result === 'success' && data.conversion_rates) {
-            // 取得對 TWD 的匯率 (例如 1 JPY = 0.21 TWD)
-            const rate = data.conversion_rates.TWD;
-            if (rate) return rate;
+        let rate = null;
+
+        if (USE_PROXY) {
+            // 假設 Proxy 直接回傳 { rate: 0.23 }
+            rate = data.rate;
+        } else {
+            // 直接呼叫 ExchangeRate-API 的結構
+            if (data && data.result === 'success' && data.conversion_rates) {
+                rate = data.conversion_rates.TWD;
+            }
         }
+
+        if (rate) {
+            // Write to Cache
+            const cachePayload = JSON.stringify({
+                rate: rate,
+                timestamp: Date.now()
+            });
+            localStorage.setItem(cacheKey, cachePayload);
+            return rate;
+        }
+        
         console.warn(`Exchange Rate API: No TWD rate found for ${currencyCode}`);
         return null;
     } catch (e) {
@@ -77,7 +126,6 @@ export const fetchExchangeRate = async (currencyCode) => {
 // --- Icon & UI System ---
 
 export const getIconComponent = (iconName) => {
-  // 如果 helper 裡沒有 map，嘗試從 constants 讀取或使用本地 fallback
   const localMap = {
     'food': Utensils,
     'drink': Coffee,
@@ -102,27 +150,23 @@ export const getIconComponent = (iconName) => {
     'settlement': Coins 
   };
   
-  // 優先使用 ICON_MAP (如果 constants 有定義)，否則用本地 map
   const TargetIcon = (ICON_MAP && ICON_MAP[iconName]) || localMap[iconName] || HelpCircle;
   return TargetIcon;
 };
 
 export const getCategoryStyle = (category, mode = 'display') => {
-    // 防呆
     if (!category) return { containerClass: 'bg-gray-100', iconClass: 'text-gray-500', hex: '#94a3b8' };
 
-    // Input Mode (極簡/輸入模式)
+    // Input Mode
     if (mode === 'input') {
-        // [New] 支援直接屬性讀取 (相容 Batch 1 Constants)
         if (category.bg && category.text) {
              return {
-                containerClass: 'bg-gray-50 border border-gray-100', // Input mode override
+                containerClass: 'bg-gray-50 border border-gray-100', 
                 iconClass: category.text,
                 activeClass: `${category.bg} ${category.text} ring-2 ring-gray-200 border-transparent`,
                 hex: category.hex || '#64748b'
              };
         }
-        // Fallback
         return {
             containerClass: 'bg-gray-50 border border-gray-100',
             iconClass: 'text-gray-400',
@@ -132,8 +176,6 @@ export const getCategoryStyle = (category, mode = 'display') => {
     }
 
     // Display Mode
-    
-    // 1. 優先檢查：直接屬性 (Direct Props - Batch 1 New Logic)
     if (category.bg && category.text) {
         return {
             containerClass: category.bg,
@@ -142,7 +184,6 @@ export const getCategoryStyle = (category, mode = 'display') => {
         };
     }
 
-    // 2. 次要檢查：查表法 (Lookup via colorId)
     if (category.colorId && PALETTE && PALETTE[category.colorId]) {
         const token = PALETTE[category.colorId];
         return {
@@ -152,7 +193,6 @@ export const getCategoryStyle = (category, mode = 'display') => {
         };
     }
     
-    // 3. Legacy / Default
     return {
         containerClass: category.color || 'bg-slate-100 text-slate-600',
         iconClass: '', 
@@ -191,7 +231,6 @@ export const callGemini = async (prompt, imageBase64 = null) => {
 
   try {
       const genAI = new GoogleGenerativeAI(apiKey);
-      // 使用最新的 Flash 模型，速度快且便宜
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
       let result;
