@@ -5,7 +5,7 @@ import {
   Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe,
   ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins 
 } from 'lucide-react';
-import { getIconComponent, renderAvatar, getCategoryStyle, fetchExchangeRate } from '../utils/helpers'; // [Added] fetchExchangeRate
+import { getIconComponent, renderAvatar, getCategoryStyle, fetchExchangeRate } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
 import { useLedger } from '../contexts/LedgerContext';
 
@@ -47,9 +47,11 @@ export default function SettingsView({
   const [activeSortId, setActiveSortId] = useState(null); 
   const [copied, setCopied] = useState(false);
   
+  // [New] Currency Config Modal State
+  const [isCurrencyConfigOpen, setIsCurrencyConfigOpen] = useState(false);
+
   const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
   const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
-  // [Fix] 移除寫死匯率，改為空物件，避免誤導
   const serverRates = currentProject?.rates || {}; 
   const [localRates, setLocalRates] = useState(serverRates);
 
@@ -87,10 +89,9 @@ export default function SettingsView({
 
   const toggleFavoriteCurrency = async (code) => {
       let newFavorites = [...myFavorites];
-      const isAdding = !newFavorites.includes(code); // [Logic] 判斷是新增還是移除
+      const isAdding = !newFavorites.includes(code); 
 
       if (!isAdding) {
-          // 移除邏輯
           if (newFavorites.length > 1) {
               newFavorites = newFavorites.filter(c => c !== code);
           } else {
@@ -98,7 +99,6 @@ export default function SettingsView({
               return;
           }
       } else {
-          // 新增邏輯
           if (newFavorites.length >= 4) {
               alert("最多只能設定 4 個常用貨幣");
               return;
@@ -109,9 +109,7 @@ export default function SettingsView({
       if (updateUserSetting) {
            await updateUserSetting('favoriteCurrencies', newFavorites);
 
-           // [New] Smart Init: 自動抓取新幣別匯率
            if (isAdding && code !== 'TWD') {
-               // 不用 await，讓它在背景執行即可，不卡 UI
                fetchExchangeRate(code).then(rate => {
                    if (rate) {
                        updateLedgerCurrency(code, rate);
@@ -252,38 +250,39 @@ export default function SettingsView({
              </div>
         </section>
 
-        {/* --- Island B: Preferences (Modified for Batch 1) --- */}
+        {/* --- Island B: Preferences (Refactored) --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             
-            {/* [New] Favorite Currencies */}
-            <div className="p-4 border-b border-gray-50">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Coins size={14}/> 常用貨幣 (最多4個)</h3>
-                <div className="flex flex-wrap gap-2">
-                    {CURRENCY_OPTIONS.map(currency => {
-                        const isSelected = myFavorites.includes(currency.code);
-                        return (
-                            <button 
-                                key={currency.code} 
-                                onClick={() => toggleFavoriteCurrency(currency.code)}
-                                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border ${isSelected ? 'bg-gray-900 text-white border-gray-900 shadow-md' : 'bg-gray-50 text-gray-500 border-gray-50 hover:bg-gray-100'}`}
-                            >
-                                <span className="text-sm">{currency.flag}</span>
-                                {currency.code}
-                                {isSelected && <Check size={12} className="ml-1"/>}
-                            </button>
-                        );
-                    })}
+            {/* [Modified] Favorite Currencies Entry Point (Clean & Simple) */}
+            <div 
+                className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50" 
+                onClick={() => setIsCurrencyConfigOpen(true)}
+            >
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><Coins size={18}/></div>
+                    <span className="font-bold text-gray-700 text-sm">設定常用貨幣</span>
                 </div>
-                <p className="text-[10px] text-gray-400 mt-2 px-1">這些貨幣將會出現在記帳選單，並可於下方設定當前專案匯率。</p>
+                <div className="flex items-center gap-2">
+                    <div className="flex -space-x-1">
+                        {myFavorites.slice(0, 3).map(c => (
+                            <span key={c} className="text-[10px] bg-gray-100 border border-white px-1.5 py-0.5 rounded-md text-gray-500 font-bold">{c}</span>
+                        ))}
+                        {myFavorites.length > 3 && <span className="text-[10px] bg-gray-50 border border-white px-1.5 py-0.5 rounded-md text-gray-400 font-bold">...</span>}
+                    </div>
+                    <ChevronRight size={16} className="text-gray-300"/>
+                </div>
             </div>
 
-            {/* Rates (Updated to use Favorites) */}
-            <div className="p-4 border-b border-gray-50 bg-gray-50/30">
-                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><Globe size={14}/> 專案匯率設定 (TWD)</h3>
+            {/* Rates */}
+            <div className="p-4 border-b border-gray-50 bg-white">
+                {/* [Modified] Header Style Consistency */}
+                <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2 mb-4">
+                    <Globe size={16}/> 專案匯率設定 (TWD)
+                </h2>
+                
                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-                    {/* [Updated] 動態根據 myFavorites 顯示匯率輸入框 */}
                     {myFavorites.filter(c => c !== 'TWD').map(curr => (
-                        <div key={curr} className="flex-1 min-w-[120px] flex items-center justify-between p-3 bg-white rounded-xl border border-gray-100 focus-within:border-rose-200 focus-within:ring-2 focus-within:ring-rose-50 transition-all shadow-sm">
+                        <div key={curr} className="flex-1 min-w-[120px] flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100 focus-within:border-rose-200 focus-within:ring-2 focus-within:ring-rose-50 focus-within:bg-white transition-all shadow-sm">
                             <span className="text-sm font-bold text-gray-500">{curr}</span>
                             <div className="flex items-center gap-1">
                                 <input 
@@ -299,14 +298,15 @@ export default function SettingsView({
                         </div>
                     ))}
                     {myFavorites.filter(c => c !== 'TWD').length === 0 && (
-                        <p className="text-xs text-gray-400 italic py-2">請先上方勾選外幣，即可在此設定匯率。</p>
+                        <p className="text-xs text-gray-400 italic py-2">請先點擊上方設定外幣，即可在此調整匯率。</p>
                     )}
                 </div>
             </div>
 
-            {/* Category Grid (Preserved) */}
+            {/* Category Grid */}
             <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
+                    {/* [Consistent Header Style] */}
                     <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2"><LayoutGrid size={16}/> 分類管理</h2>
                     <button 
                         onClick={() => { setIsReorderMode(!isReorderMode); setActiveSortId(null); }}
@@ -358,7 +358,7 @@ export default function SettingsView({
         {/* --- Island C: System Actions --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
              
-             {/* [Restored] Subscriptions Entry Point */}
+             {/* Subscriptions Entry Point */}
              <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={() => setView('subscriptions')}>
                  <div className="flex items-center gap-3">
                      <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><Repeat size={18}/></div>
@@ -385,7 +385,6 @@ export default function SettingsView({
 
         {/* --- Island D: Danger Zone --- */}
         <section className="space-y-3 pt-2">
-          {/* 紅色小標題保留，作為區域提示 */}
           <h3 className="text-xs font-bold text-rose-500 ml-2 flex items-center gap-1">
               <AlertTriangle size={12}/> 危險區域
           </h3>
@@ -421,7 +420,7 @@ export default function SettingsView({
                 <ChevronRight size={16} className="text-gray-300"/>
             </div>
 
-            {/* [Preserved] Delete Account (Gray Style) */}
+            {/* Delete Account */}
             <div 
                 className="p-4 flex justify-between items-center active:bg-gray-50 hover:bg-gray-50 transition-colors cursor-pointer"
                 onClick={handleDeleteAccount}
@@ -447,7 +446,43 @@ export default function SettingsView({
         </div>
       </div>
 
-      {/* --- Modals (Keep unchanged) --- */}
+      {/* --- Modals --- */}
+      
+      {/* [New] Currency Config Modal */}
+      {isCurrencyConfigOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsCurrencyConfigOpen(false)}>
+            <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Coins size={18}/> 常用貨幣設定</h3>
+                    <button onClick={() => setIsCurrencyConfigOpen(false)} className="p-1.5 bg-gray-50 rounded-full text-gray-400 hover:bg-gray-100"><X size={18}/></button>
+                </div>
+                
+                <p className="text-xs text-gray-400 mb-4">請勾選您最常使用的貨幣（最多 4 個）。這些貨幣將會優先顯示在記帳頁面。</p>
+
+                <div className="flex flex-wrap gap-2 mb-6">
+                    {CURRENCY_OPTIONS.map(currency => {
+                        const isSelected = myFavorites.includes(currency.code);
+                        return (
+                            <button 
+                                key={currency.code} 
+                                onClick={() => toggleFavoriteCurrency(currency.code)}
+                                className={`px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all border ${isSelected ? 'bg-gray-900 text-white border-gray-900 shadow-md' : 'bg-gray-50 text-gray-500 border-gray-50 hover:bg-gray-100'}`}
+                            >
+                                <span className="text-sm">{currency.flag}</span>
+                                {currency.code}
+                                {isSelected && <Check size={12} className="ml-1"/>}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                <button onClick={() => setIsCurrencyConfigOpen(false)} className="w-full py-3 font-bold text-white bg-gray-900 rounded-xl shadow-lg shadow-gray-200">
+                    完成設定
+                </button>
+            </div>
+        </div>
+      )}
+
       {/* Avatar Modal */}
       {isAvatarModalOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsAvatarModalOpen(false)}>
