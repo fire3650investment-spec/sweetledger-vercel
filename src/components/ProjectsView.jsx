@@ -1,6 +1,6 @@
 // src/components/ProjectsView.jsx
-import React from 'react';
-import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Globe, Lock, Unlock, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Globe, Lock, Unlock, AlertCircle, Coins, Check } from 'lucide-react';
 import { getIconComponent, fetchExchangeRate } from '../utils/helpers';
 import { CURRENCY_OPTIONS } from '../utils/constants';
 
@@ -15,6 +15,9 @@ export default function ProjectsView({
   handleDeleteProject,
   handleReorderProjects
 }) {
+    // [Local State for Currency Picker in Edit Mode]
+    const [isCurrencyPickerOpen, setIsCurrencyPickerOpen] = useState(false);
+
     if (!ledgerData) return null;
     
     // [Filter Logic]
@@ -49,9 +52,35 @@ export default function ProjectsView({
         }
         handleSaveProject();
     };
+
+    // [New] Handle Default Currency Change
+    const handleDefaultCurrencyChange = async (code) => {
+        setIsCurrencyPickerOpen(false);
+        
+        // Update default currency
+        setEditingProjectData(prev => ({ ...prev, defaultCurrency: code }));
+
+        // If foreign currency, ensure rate exists or fetch it
+        if (code !== 'TWD') {
+            const currentRate = editingProjectData.rates?.[code];
+            if (!currentRate) {
+                const rate = await fetchExchangeRate(code);
+                if (rate) {
+                    setEditingProjectData(prev => ({
+                        ...prev,
+                        rates: { ...prev.rates, [code]: rate }
+                    }));
+                }
+            }
+        }
+    };
     
     // --- Edit View (Full Page) ---
     if (isEditingProject) { 
+        // [Safety] Ensure defaultCurrency exists
+        const currentDefaultCurrency = editingProjectData.defaultCurrency || 'TWD';
+        const currentCurrencyInfo = CURRENCY_OPTIONS.find(c => c.code === currentDefaultCurrency);
+
         return (
             <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 animate-in fade-in slide-in-from-bottom-4">
                 <h2 className="text-2xl font-bold text-gray-800 mb-6">{editingProjectData.id ? '編輯專案' : '新增專案'}</h2>
@@ -67,6 +96,46 @@ export default function ProjectsView({
                             placeholder="例如：2024 日本行" 
                             className="w-full p-4 bg-gray-50 rounded-xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-gray-200 transition-all"
                         />
+                    </div>
+
+                    {/* [New] Default Currency Picker */}
+                    <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase mb-2">預設幣別</label>
+                        <div className="relative">
+                            <button 
+                                onClick={() => setIsCurrencyPickerOpen(!isCurrencyPickerOpen)}
+                                className="w-full p-4 bg-white border border-gray-200 rounded-xl flex items-center justify-between shadow-sm active:bg-gray-50 transition-colors"
+                            >
+                                <div className="flex items-center gap-3">
+                                    <span className="text-2xl">{currentCurrencyInfo?.flag || '🌐'}</span>
+                                    <div className="flex flex-col items-start">
+                                        <span className="font-bold text-gray-800">{currentCurrencyInfo?.code}</span>
+                                        <span className="text-xs text-gray-400">{currentCurrencyInfo?.name}</span>
+                                    </div>
+                                </div>
+                                <ChevronDown size={16} className={`text-gray-400 transition-transform ${isCurrencyPickerOpen ? 'rotate-180' : ''}`}/>
+                            </button>
+
+                            {isCurrencyPickerOpen && (
+                                <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-100 z-20 max-h-60 overflow-y-auto p-2">
+                                    {CURRENCY_OPTIONS.map(opt => (
+                                        <button 
+                                            key={opt.code} 
+                                            onClick={() => handleDefaultCurrencyChange(opt.code)}
+                                            className={`w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors ${currentDefaultCurrency === opt.code ? 'bg-rose-50' : ''}`}
+                                        >
+                                            <span className="text-xl w-8 text-center">{opt.flag}</span>
+                                            <div className="flex-1 text-left">
+                                                <span className={`font-bold text-sm ${currentDefaultCurrency === opt.code ? 'text-rose-600' : 'text-gray-700'}`}>{opt.code}</span>
+                                                <span className="text-xs text-gray-400 ml-2">{opt.name}</span>
+                                            </div>
+                                            {currentDefaultCurrency === opt.code && <Check size={16} className="text-rose-500"/>}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-2 ml-1">在此專案記帳時，將自動預選此幣別。</p>
                     </div>
                     
                     {/* Private Toggle */}
@@ -114,43 +183,61 @@ export default function ProjectsView({
                         </div>
                     </div>
 
-                    {/* Rates Input (This remains available for Manual Adjustment) */}
-                    {editingProjectData.id !== 'daily' && (
-                        <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100">
+                    {/* Rates Input (Dynamic) */}
+                    {/* [Updated Logic] Show rates for Default Currency OR any existing rates */}
+                    {(currentDefaultCurrency !== 'TWD' || (editingProjectData.rates && Object.keys(editingProjectData.rates).filter(k => k !== 'TWD').length > 0)) && editingProjectData.id !== 'daily' && (
+                        <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 animate-fade-in">
                             <h4 className="text-xs font-bold text-blue-500 mb-4 flex items-center gap-2 uppercase tracking-wider"><Globe size={14}/> 匯率設定 (TWD)</h4>
                             
-                            {editingProjectData.rates && Object.keys(editingProjectData.rates).filter(k => k !== 'TWD').length > 0 ? (
-                                <div className="grid grid-cols-2 gap-4">
-                                    {Object.keys(editingProjectData.rates).filter(k => k !== 'TWD').map(currencyCode => {
-                                        const currencyInfo = CURRENCY_OPTIONS.find(c => c.code === currencyCode);
-                                        return (
-                                            <div key={currencyCode} className="bg-white p-3 rounded-xl border border-blue-100">
-                                                <label className="text-[10px] font-bold text-gray-400 mb-1 flex items-center gap-1">
-                                                    {currencyInfo?.flag || '🌐'} {currencyCode}
-                                                </label>
-                                                <div className="flex items-center gap-2">
-                                                    <input 
-                                                        type="number" 
-                                                        value={editingProjectData.rates[currencyCode]} 
-                                                        onChange={(e) => setEditingProjectData({
-                                                            ...editingProjectData, 
-                                                            rates: { ...editingProjectData.rates, [currencyCode]: e.target.value }
-                                                        })}
-                                                        className="w-full bg-transparent font-bold text-gray-800 outline-none"
-                                                        placeholder="?"
-                                                        step="0.01"
-                                                    />
-                                                </div>
+                            <div className="grid grid-cols-1 gap-4">
+                                {/* Always show input for Default Currency if foreign */}
+                                {currentDefaultCurrency !== 'TWD' && (
+                                    <div className="bg-white p-3 rounded-xl border border-blue-100 shadow-sm">
+                                        <label className="text-[10px] font-bold text-gray-400 mb-1 flex items-center justify-between">
+                                            <span className="flex items-center gap-1">{currentCurrencyInfo?.flag} {currentDefaultCurrency} (預設)</span>
+                                            <span className="text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded text-[8px]">主幣別</span>
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="number" 
+                                                value={editingProjectData.rates?.[currentDefaultCurrency] || ''} 
+                                                onChange={(e) => setEditingProjectData({
+                                                    ...editingProjectData, 
+                                                    rates: { ...editingProjectData.rates, [currentDefaultCurrency]: e.target.value }
+                                                })}
+                                                className="w-full bg-transparent font-bold text-gray-800 outline-none text-lg"
+                                                placeholder="?"
+                                                step="0.01"
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Show other rates */}
+                                {Object.keys(editingProjectData.rates || {}).filter(k => k !== 'TWD' && k !== currentDefaultCurrency).map(currencyCode => {
+                                    const currencyInfo = CURRENCY_OPTIONS.find(c => c.code === currencyCode);
+                                    return (
+                                        <div key={currencyCode} className="bg-white/50 p-3 rounded-xl border border-blue-100">
+                                            <label className="text-[10px] font-bold text-gray-400 mb-1 flex items-center gap-1">
+                                                {currencyInfo?.flag || '🌐'} {currencyCode}
+                                            </label>
+                                            <div className="flex items-center gap-2">
+                                                <input 
+                                                    type="number" 
+                                                    value={editingProjectData.rates[currencyCode]} 
+                                                    onChange={(e) => setEditingProjectData({
+                                                        ...editingProjectData, 
+                                                        rates: { ...editingProjectData.rates, [currencyCode]: e.target.value }
+                                                    })}
+                                                    className="w-full bg-transparent font-bold text-gray-600 outline-none"
+                                                    placeholder="?"
+                                                    step="0.01"
+                                                />
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <div className="text-center py-2">
-                                    <p className="text-xs text-blue-400 mb-2">此專案尚未設定外幣</p>
-                                    <p className="text-[10px] text-blue-300">請至「設定 常用貨幣」新增貨幣，或記帳時選用外幣，即可在此調整。</p>
-                                </div>
-                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </div>
                     )}
 
@@ -171,32 +258,11 @@ export default function ProjectsView({
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">專案管理</h2>
                 <button 
-                    onClick={async () => { 
-                        const initData = {id:'', name:'', icon:'project_daily', rates: {}, type: 'public'};
+                    onClick={() => { 
+                        // [Updated] Smart Init: Default to TWD
+                        const initData = {id:'', name:'', icon:'project_daily', rates: {}, type: 'public', defaultCurrency: 'TWD'};
                         setEditingProjectData(initData); 
                         setIsEditingProject(true); 
-
-                        // Smart Init Logic (Fetch Favorites)
-                        const userFavs = user?.uid && ledgerData.users[user.uid]?.favoriteCurrencies
-                            ? ledgerData.users[user.uid].favoriteCurrencies
-                            : ['JPY', 'THB', 'USD']; 
-
-                        const newRates = {};
-                        const targets = userFavs.filter(c => c !== 'TWD');
-
-                        if (targets.length > 0) {
-                            await Promise.all(targets.map(async (code) => {
-                                const rate = await fetchExchangeRate(code);
-                                if (rate) newRates[code] = rate;
-                            }));
-
-                            setEditingProjectData(prev => {
-                                if (prev.id === '') { 
-                                    return { ...prev, rates: { ...prev.rates, ...newRates } };
-                                }
-                                return prev;
-                            });
-                        }
                     }} 
                     className="bg-gray-900 text-white p-2 rounded-xl shadow-lg shadow-gray-300 active:scale-90 transition-transform"
                 >
@@ -239,12 +305,18 @@ export default function ProjectsView({
                                         {isPrivate && <Lock size={14} className="text-slate-400"/>}
                                     </h3>
                                     
-                                    {/* [Clean Up] 僅保留「預設」標籤，移除所有匯率標籤 */}
-                                    {p.id === 'daily' && (
-                                        <div className="mt-1">
+                                    {/* [Updated] Show Default Currency Tag */}
+                                    <div className="mt-1 flex gap-2">
+                                        {p.id === 'daily' ? (
                                             <span className="bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-md text-[10px] font-bold">預設</span>
-                                        </div>
-                                    )}
+                                        ) : (
+                                            p.defaultCurrency && p.defaultCurrency !== 'TWD' && (
+                                                <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1">
+                                                    {CURRENCY_OPTIONS.find(c=>c.code===p.defaultCurrency)?.flag} {p.defaultCurrency}
+                                                </span>
+                                            )
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                             
