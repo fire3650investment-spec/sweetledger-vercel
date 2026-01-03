@@ -14,7 +14,7 @@ import { deleteUser } from 'firebase/auth';
 import { db, appId } from '../utils/firebase';
 import { useAuth } from './AuthContext';
 import { INITIAL_LEDGER_STATE, DEFAULT_CATEGORIES } from '../utils/constants';
-import { generateId, getLocalISODate } from '../utils/helpers'; // [Fix] 引入時間工具
+import { generateId, getLocalISODate } from '../utils/helpers'; 
 
 const LedgerContext = createContext();
 
@@ -37,7 +37,6 @@ export const LedgerProvider = ({ children }) => {
           const cached = localStorage.getItem(cacheKey);
           if (cached) {
               const parsed = JSON.parse(cached);
-              // 基本結構檢查
               if (parsed && (Array.isArray(parsed.transactions) || parsed.users)) {
                   return parsed;
               }
@@ -62,7 +61,7 @@ export const LedgerProvider = ({ children }) => {
     }
   }, [ledgerCode]);
 
-  // 2. Firebase Listener (Fixed: Ghost Ledger Handling)
+  // 2. Firebase Listener
   useEffect(() => {
     if (!db) {
         setIsLedgerInitializing(false);
@@ -79,15 +78,13 @@ export const LedgerProvider = ({ children }) => {
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     
-    const unsubscribe = onSnapshot(docRef, async (docSnap) => { // async for cleanup
+    const unsubscribe = onSnapshot(docRef, async (docSnap) => { 
       if (docSnap.exists()) {
         const data = docSnap.data();
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
       } else { 
           console.warn("Ledger not found (remote) - Detected Ghost Ledger");
-          // FIX: 自動修復幽靈帳本狀態
-          // 若遠端帳本已被刪除，必須切斷使用者的連結，否則會陷入白屏或無限重試迴圈
           if (user) {
               try {
                   const userRef = doc(db, 'users', user.uid);
@@ -96,24 +93,21 @@ export const LedgerProvider = ({ children }) => {
                   console.error("Failed to unlink ghost ledger:", e);
               }
           }
-          // 清除本地狀態
           setLedgerCode('');
           setLedgerData(null);
           localStorage.removeItem('sweet_ledger_code');
           localStorage.removeItem(cacheKey);
-          // 這裡不使用 alert 避免無限彈窗，由 UI 層處理呈現
       }
       setIsLedgerInitializing(false);
     }, (error) => { 
         console.error("Snapshot error:", error); 
-        // 注意：權限錯誤或網路錯誤不應觸發 disconnect，僅停止 loading
         setIsLedgerInitializing(false); 
     });
 
     return () => unsubscribe();
   }, [ledgerCode, user]);
 
-  // 3. Auto-Repair Logic (Optimized for Performance)
+  // 3. Auto-Repair Logic
   useEffect(() => {
     if (!ledgerCode || !ledgerData || !user || !db) return;
     if (isRepairingRef.current) return;
@@ -123,7 +117,6 @@ export const LedgerProvider = ({ children }) => {
         let needsUpdate = false;
         let updates = {};
 
-        // (1) User Check (Cheap)
         const hasUsers = ledgerData.users && Object.keys(ledgerData.users).length > 0;
         const currentUserExists = ledgerData.users && ledgerData.users[user.uid];
 
@@ -138,6 +131,7 @@ export const LedgerProvider = ({ children }) => {
                 }
             };
         } else if (!currentUserExists) {
+             // [Safety] 如果使用者不見了，自動加回來，預設為 guest
              needsUpdate = true;
              updates[`users.${user.uid}`] = {
                 name: user.displayName || 'Guest',
@@ -147,19 +141,14 @@ export const LedgerProvider = ({ children }) => {
              };
         }
 
-        // (2) Transaction Check (Expensive - Optimize Loop)
         if (!needsUpdate && ledgerData.transactions && ledgerData.transactions.length > 0) {
             let foundDirty = false;
-            
-            // First pass: just check
             for (const tx of ledgerData.transactions) {
                 if (!tx.date || typeof tx.amount === 'string' || (tx.customSplit && Object.values(tx.customSplit).some(v => isNaN(v)))) {
                     foundDirty = true;
                     break;
                 }
             }
-
-            // Second pass: fix only if needed
             if (foundDirty) {
                 const cleanTransactions = ledgerData.transactions.map(tx => {
                     let newTx = { ...tx };
@@ -176,7 +165,6 @@ export const LedgerProvider = ({ children }) => {
                     }
                     return newTx;
                 });
-                
                 needsUpdate = true;
                 updates.transactions = cleanTransactions;
             }
@@ -197,24 +185,20 @@ export const LedgerProvider = ({ children }) => {
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode, user]);
 
-  // 4. Subscription Logic (CRITICAL FIX: Firestore-based Lock)
+  // 4. Subscription Logic
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return;
     
-    // [Architect] 使用 Firestore 的欄位作為唯一真理，而非 localStorage
     const todayStr = getLocalISODate(); 
     const lastCheckDate = ledgerData.lastSubscriptionCheck; 
 
-    // 如果雲端已經標記今天檢查過了，直接跳過
     if (lastCheckDate === todayStr) return; 
 
-    // [Optimization] 防止單次 Session 重複觸發 (Local Lock)
     const localSessionKey = `temp_subs_lock_${ledgerCode}_${todayStr}`;
     if (sessionStorage.getItem(localSessionKey)) return;
 
-    // 設定一個延遲，給予「取消執行」的機會 (Debounce/Race Protection)
     const timer = setTimeout(async () => {
-        sessionStorage.setItem(localSessionKey, 'true'); // Set Local Lock
+        sessionStorage.setItem(localSessionKey, 'true'); 
 
         let updatesNeeded = false;
         let generatedTxs = []; 
@@ -225,15 +209,13 @@ export const LedgerProvider = ({ children }) => {
         newSubscriptions = newSubscriptions.map(sub => {
             let nextDate = new Date(sub.nextPaymentDate);
             let updated = false;
-            let loopCount = 0; // 安全閥，防止死無窮迴圈
+            let loopCount = 0; 
             
-            // 檢查是否到達扣款日
             while (nextDate <= now && loopCount < 12) {
                 updated = true;
                 updatesNeeded = true;
                 const { nextPaymentDate, cycle, payDay, mode, ...txBase } = sub;
                 
-                // 產生交易紀錄
                 const tx = {
                     ...txBase,
                     id: generateId(), 
@@ -244,12 +226,10 @@ export const LedgerProvider = ({ children }) => {
                 };
                 generatedTxs.push(tx);
                 
-                // 計算下一次扣款日
                 if (sub.cycle === 'monthly') {
                     const currentMonth = nextDate.getMonth();
                     nextDate.setMonth(currentMonth + 1);
                     if (sub.payDay) {
-                        // 處理月底日期 (如 2/30 -> 2/28)
                         const daysInNextMonth = new Date(nextDate.getFullYear(), nextDate.getMonth() + 1, 0).getDate();
                         const targetDay = Math.min(parseInt(sub.payDay), daysInNextMonth);
                         nextDate.setDate(targetDay);
@@ -267,26 +247,21 @@ export const LedgerProvider = ({ children }) => {
 
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         
-        // 無論是否有新交易，都必須更新 lastSubscriptionCheck 以防止重複檢查
-        // 使用 updateDoc 原子操作
         if (updatesNeeded) {
             await updateDoc(docRef, { 
                 ...(generatedTxs.length > 0 ? { transactions: arrayUnion(...generatedTxs) } : {}),
                 subscriptions: newSubscriptions,
-                lastSubscriptionCheck: todayStr // [Key Fix] 更新雲端檢查日期
+                lastSubscriptionCheck: todayStr 
             });
             console.log(`✅ 已執行自動扣款: ${generatedTxs.length} 筆`);
         } else {
-            // 即使沒交易，也要標記今天已檢查
             await updateDoc(docRef, { lastSubscriptionCheck: todayStr });
         }
-    }, 5000); // 5秒延遲，確保資料載入穩定
+    }, 5000); 
 
-    // [Crucial] 若在等待期間 ledgerData 更新了 (代表另一半已經執行了扣款)，
-    // 這個 cleanup function 會被觸發，取消本地的 timer，防止雙重扣款。
     return () => clearTimeout(timer);
 
-  }, [ledgerData, ledgerCode]); // 依賴 ledgerData 確保能感知遠端變更
+  }, [ledgerData, ledgerCode]);
 
 
   // --- Actions ---
@@ -312,7 +287,7 @@ export const LedgerProvider = ({ children }) => {
     const newLedger = {
         ...INITIAL_LEDGER_STATE,
         users: { [currentUser.uid]: { name: userName, avatar: 'cat', role: 'host' } },
-        lastSubscriptionCheck: getLocalISODate() // Init date
+        lastSubscriptionCheck: getLocalISODate() 
     };
     await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), newLedger);
     
@@ -422,15 +397,22 @@ export const LedgerProvider = ({ children }) => {
     } = payload;
 
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-    const selectedDate = new Date(date).toISOString(); 
-    const cleanAmount = parseFloat(amount);
     
+    // [Fix: Timezone Bug] 僅存儲 YYYY-MM-DD 或加上固定時間以抵抗時區偏移
+    // 這裡我們維持 ISO 完整字串，但在 DashboardView 顯示時會依賴 new Date(date) 
+    // 若要完全修復日期跳動，建議在此處強制設定為中午 12:00
+    let selectedDate = new Date(date);
+    selectedDate.setHours(12, 0, 0, 0);
+    const dateStr = selectedDate.toISOString(); 
+
+    const cleanAmount = parseFloat(amount);
     if (isNaN(cleanAmount)) throw new Error("金額無效");
 
     let cleanCustomSplit = null;
     let finalSplitType = splitType;
 
-    // Fix: Implement Logic for 'self' and 'partner' shortcuts
+    // [Critical Logic Fix] 處理 AddExpenseView 傳來的 'self' 與 'partner'
+    // 將其正規化為 'custom' 模式，並明確指定 100% 分攤對象
     if (splitType === 'self') {
          finalSplitType = 'custom';
          cleanCustomSplit = { [payer]: cleanAmount };
@@ -446,6 +428,7 @@ export const LedgerProvider = ({ children }) => {
              cleanCustomSplit = {};
              partners.forEach(p => cleanCustomSplit[p] = share);
          } else {
+             // Fallback if no partner found
              cleanCustomSplit = { [payer]: cleanAmount };
          }
     } else if ((splitType === 'custom' || splitType === 'multi_payer') && customSplit) {
@@ -469,7 +452,7 @@ export const LedgerProvider = ({ children }) => {
     };
 
     if (isSubscription) {
-      let nextDate = new Date(selectedDate);
+      let nextDate = new Date(dateStr);
       if (subCycle === 'monthly') {
           nextDate.setMonth(nextDate.getMonth() + 1);
           if (subPayDay) {
@@ -490,11 +473,11 @@ export const LedgerProvider = ({ children }) => {
               mode: 'infinite', 
               nextPaymentDate: nextDate.toISOString(),
           }),
-          transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }) 
+          transactions: arrayUnion({ ...commonData, date: dateStr, isSettlement: false }) 
       });
     } else {
       await updateDoc(docRef, { 
-          transactions: arrayUnion({ ...commonData, date: selectedDate, isSettlement: false }), 
+          transactions: arrayUnion({ ...commonData, date: dateStr, isSettlement: false }), 
       });
     }
   }, [ledgerCode, user, ledgerData]);
@@ -558,7 +541,6 @@ export const LedgerProvider = ({ children }) => {
       const { type = 'public', owner = null } = projectData;
       const projectWithRates = { 
           ...projectData, 
-          // [Fix] 移除寫死匯率，改為空物件
           rates: projectData.rates || {},
           type, 
           ...(type === 'private' && owner ? { owner } : {}) 
@@ -597,7 +579,6 @@ export const LedgerProvider = ({ children }) => {
     if (!numVal || numVal <= 0) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const newProjects = ledgerData.projects.map(p => {
-        // [Fix] 移除寫死匯率 fallback，改為空物件
         if (p.id === projectId) return { ...p, rates: { ...(p.rates || {}), [currency]: numVal } };
         return p;
     });
@@ -656,30 +637,39 @@ export const LedgerProvider = ({ children }) => {
     alert('帳本已重置。');
   }, [ledgerCode, ledgerData, user]);
 
+  // [Fix] 安全版的 fixIdentity，不再刪除使用者
   const fixIdentity = useCallback(async () => {
     if (!ledgerCode || !ledgerData || !user || !db) return;
+    
+    // 找出除了自己以外的其他 host (殭屍戶長)
     const zombieHostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host' && uid !== user.uid);
-    if (!zombieHostId) return; 
+    if (!zombieHostId) {
+        alert("系統檢測正常，無需修復。");
+        return; 
+    }
+
+    if (!confirm(`檢測到重複的戶長權限 (${ledgerData.users[zombieHostId]?.name})。\n是否將對方降級為「成員 (Guest)」，並將您設為「戶長 (Host)」？\n\n注意：這不會刪除對方的資料。`)) {
+        return;
+    }
+
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const newUsers = { ...(ledgerData.users || {}) };
-    delete newUsers[zombieHostId];
-    if (newUsers[user.uid]) newUsers[user.uid] = { ...newUsers[user.uid], role: 'host' };
     
-    // Fix transactions
-    const newTransactions = (ledgerData.transactions || []).map(tx => {
-        let newTx = { ...tx };
-        if (newTx.payer === zombieHostId) newTx.payer = user.uid;
-        if (newTx.customSplit) {
-            const newSplit = {};
-            Object.keys(newTx.customSplit).forEach(key => {
-                const newKey = key === zombieHostId ? user.uid : key;
-                newSplit[newKey] = newTx.customSplit[key];
-            });
-            newTx.customSplit = newSplit;
-        }
-        return newTx;
-    });
-    await updateDoc(docRef, { users: newUsers, transactions: newTransactions });
+    // [Safety Fix] 僅降級，不刪除
+    if (newUsers[zombieHostId]) {
+        newUsers[zombieHostId] = { ...newUsers[zombieHostId], role: 'guest' };
+    }
+
+    // 提升自己
+    if (newUsers[user.uid]) {
+        newUsers[user.uid] = { ...newUsers[user.uid], role: 'host' };
+    }
+    
+    // Fix transactions (將原本掛在殭屍戶長名下的交易，轉移到自己名下嗎？通常不需要，除非是為了合併帳號)
+    // 這裡維持原樣，只修復 role
+    await updateDoc(docRef, { users: newUsers });
+    alert("權限修復完成！");
+
   }, [ledgerCode, ledgerData, user]);
 
   const value = useMemo(() => ({
