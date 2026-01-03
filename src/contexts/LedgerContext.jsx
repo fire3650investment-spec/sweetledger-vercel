@@ -23,8 +23,10 @@ export const useLedger = () => useContext(LedgerContext);
 export const LedgerProvider = ({ children }) => {
   const { user } = useAuth();
   
-  // [Circuit Breaker] 斷路器機制
-  // 用來記錄本次 Session 是否已經發生過嚴重錯誤。如果是，則拒絕一切自動重連。
+  // [Blacklist] 黑名單機制：記錄本次 Session 中失敗過的 LedgerCode
+  const blacklistedCodesRef = useRef(new Set());
+
+  // [Circuit Breaker] 斷路器：若為 true，則暫停所有自動連線
   const circuitBreakerRef = useRef(false);
 
   // 1. 初始化 State
@@ -36,7 +38,7 @@ export const LedgerProvider = ({ children }) => {
 
   const [ledgerData, setLedgerData] = useState(null);
 
-  // [Rescue Fix] 預設 Loading 為 false，避免一開始就卡住
+  // [Safety] 預設 Loading 為 false，避免一開始就卡住
   const [isLedgerInitializing, setIsLedgerInitializing] = useState(false);
   
   const isRepairingRef = useRef(false);
@@ -56,49 +58,54 @@ export const LedgerProvider = ({ children }) => {
     }
   }, [ledgerCode]);
 
-  // [Handler] 觸發斷路器並斷線
-  const tripCircuitBreaker = useCallback(async (reason) => {
-      console.warn(`⚡ Circuit Breaker Tripped: ${reason}`);
-      circuitBreakerRef.current = true;
-      sessionStorage.setItem('sweet_ledger_trip', 'true'); // 標記此 Session 已損毀，防止 F5 重連
+  // [Handler] 錯誤處理與黑名單登錄
+  const handleConnectionFailure = useCallback(async (reason, badCode) => {
+      console.warn(`⛔ Connection Failed (${reason}). Blacklisting code: ${badCode}`);
       
-      // 立即切斷
+      // 1. 加入黑名單，防止下次 checkUserBinding 再次回傳此代碼
+      if (badCode) blacklistedCodesRef.current.add(badCode);
+      
+      // 2. 觸發斷路器
+      circuitBreakerRef.current = true;
+      sessionStorage.setItem('sweet_ledger_trip', 'true');
+
+      // 3. 清除狀態
       setLedgerCode('');
       setLedgerData(null);
-      setIsLedgerInitializing(false); // 關閉蛋糕
+      setIsLedgerInitializing(false); // 殺掉蛋糕
       localStorage.removeItem('sweet_ledger_code');
 
-      // 嘗試從後端解綁 (非阻塞)
+      // 4. 嘗試從後端解綁 (盡力而為)
       if (user) {
          try {
             const userRef = doc(db, 'users', user.uid);
             await updateDoc(userRef, { ledgerCode: deleteField() });
-         } catch (e) { console.error("Unlink failed:", e); }
+         } catch (e) { console.error("Unlink attempt failed:", e); }
      }
   }, [user]);
 
-  // [Watchdog] 3秒強制斷路
-  // 如果 Loading 超過 3 秒，視為異常，直接觸發斷路器
+  // [Watchdog] 2秒強制斷線 (縮短時間)
   useEffect(() => {
-      if (isLedgerInitializing) {
+      if (isLedgerInitializing && ledgerCode) {
           const timer = setTimeout(() => {
-              console.error("🚨 Watchdog: Sync timeout (3s). Tripping breaker.");
-              tripCircuitBreaker("Timeout");
-          }, 3000);
+              console.error("🚨 Watchdog: Sync timed out (2s).");
+              handleConnectionFailure("Timeout", ledgerCode);
+          }, 2000);
           return () => clearTimeout(timer);
       }
-  }, [isLedgerInitializing, tripCircuitBreaker]);
+  }, [isLedgerInitializing, ledgerCode, handleConnectionFailure]);
 
-  // 3. Firebase Listener (核心同步邏輯)
+  // 3. Firebase Listener (核心同步)
   useEffect(() => {
     if (!db || !user || !ledgerCode) {
         setIsLedgerInitializing(false);
         return;
     }
 
-    // [Critical] 如果斷路器已跳開，禁止再次連線，防止迴圈
-    if (circuitBreakerRef.current) {
-        console.warn("Blocked sync attempt due to tripped breaker.");
+    // [Critical] 如果此代碼在黑名單中，直接中止，不開啟 Loading
+    if (blacklistedCodesRef.current.has(ledgerCode)) {
+        console.warn(`Blocking attempt to connect to blacklisted ledger: ${ledgerCode}`);
+        setLedgerCode(''); // 清空它
         setIsLedgerInitializing(false);
         return;
     }
@@ -108,34 +115,30 @@ export const LedgerProvider = ({ children }) => {
     // 開啟 Loading
     setIsLedgerInitializing(true);
 
-    const unsubscribe = onSnapshot(docRef, async (docSnap) => { 
+    const unsubscribe = onSnapshot(docRef, (docSnap) => { 
       if (docSnap.exists()) {
         const data = docSnap.data();
         
-        // [Logic Check] 權限檢查：如果你不在 users 名單裡，代表被踢出了
+        // [Permissions Check]
         if (data.users && !data.users[user.uid]) {
-             tripCircuitBreaker("User logic permission denied (Removed from ledger)");
+             handleConnectionFailure("User removed from ledger", ledgerCode);
              return;
         }
 
-        const cacheKey = `sweet_ledger_data_${ledgerCode}`;
-        localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
         setIsLedgerInitializing(false); // 成功，關閉蛋糕
       } else { 
-          // 帳本不存在
-          tripCircuitBreaker("Ledger not found (Remote)");
+          handleConnectionFailure("Ledger not found", ledgerCode);
       }
     }, (error) => { 
         console.error("Snapshot error:", error); 
-        // 任何權限錯誤或網路錯誤，觸發斷路器
-        tripCircuitBreaker(`Firestore Error: ${error.code}`);
+        handleConnectionFailure(`Firestore Error: ${error.code}`, ledgerCode);
     });
 
     return () => unsubscribe();
-  }, [ledgerCode, user, tripCircuitBreaker]);
+  }, [ledgerCode, user, handleConnectionFailure]);
 
-  // 4. Auto-Repair Logic (資料修復)
+  // 4. Auto-Repair Logic (保留原始完整功能)
   useEffect(() => {
     if (!ledgerCode || !ledgerData || !user || !db) return;
     if (isRepairingRef.current) return;
@@ -212,7 +215,7 @@ export const LedgerProvider = ({ children }) => {
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode, user]);
 
-  // 5. Subscription Logic
+  // 5. Subscription Logic (保留原始完整功能)
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return;
     
@@ -296,9 +299,9 @@ export const LedgerProvider = ({ children }) => {
   const checkUserBinding = useCallback(async (uid) => {
       if (!db) return null;
       
-      // [Vital] 斷路器檢查：如果之前失敗過，絕對不回傳代碼，防止迴圈
+      // [Vital] 斷路器檢查：如果斷路器跳開，直接回傳 null
       if (circuitBreakerRef.current) {
-          console.log("🛑 Circuit Breaker active: Blocking auto-reconnect.");
+          console.log("🛑 Circuit Breaker active: checkUserBinding returning null.");
           return null;
       }
 
@@ -306,8 +309,13 @@ export const LedgerProvider = ({ children }) => {
           const userDocRef = doc(db, 'users', uid); 
           const userDoc = await getDoc(userDocRef);
           if (userDoc.exists()) {
-              const data = userDoc.data();
-              if (data.ledgerCode) return data.ledgerCode;
+              const code = userDoc.data().ledgerCode;
+              // [Vital] 黑名單檢查：如果這個 code 剛失敗過，直接忽略
+              if (code && blacklistedCodesRef.current.has(code)) {
+                  console.warn(`🛑 Ignoring blacklisted code from DB: ${code}`);
+                  return null;
+              }
+              return code;
           }
       } catch (e) { console.error("Check binding failed:", e); }
       return null;
@@ -332,7 +340,7 @@ export const LedgerProvider = ({ children }) => {
         updatedAt: new Date().toISOString()
     }, { merge: true });
 
-    // 重置斷路器，允許連線
+    // 重置防禦機制
     circuitBreakerRef.current = false;
     sessionStorage.removeItem('sweet_ledger_trip');
 
@@ -361,7 +369,7 @@ export const LedgerProvider = ({ children }) => {
         updatedAt: new Date().toISOString()
       }, { merge: true });
 
-      // 重置斷路器
+      // 重置防禦機制
       circuitBreakerRef.current = false;
       sessionStorage.removeItem('sweet_ledger_trip');
 
@@ -372,8 +380,8 @@ export const LedgerProvider = ({ children }) => {
   }, []);
   
   const disconnectLedger = useCallback(() => {
-      tripCircuitBreaker("User Manual Disconnect");
-  }, [tripCircuitBreaker]);
+      handleConnectionFailure("User Manual Disconnect", ledgerCode);
+  }, [ledgerCode, handleConnectionFailure]);
 
   const leaveLedger = useCallback(async () => {
     if (!ledgerCode || !user || !db) return;
@@ -384,7 +392,7 @@ export const LedgerProvider = ({ children }) => {
       await updateDoc(docRef, {
         [`users.${user.uid}`]: deleteField()
       });
-      disconnectLedger(); // 也會觸發斷路，確保乾淨
+      disconnectLedger();
       alert('您已成功退出帳本。');
     } catch (e) {
       console.error("Leave Ledger Error:", e);
