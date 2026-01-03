@@ -61,7 +61,7 @@ export const LedgerProvider = ({ children }) => {
     }
   }, [ledgerCode]);
 
-  // 2. Firebase Listener
+  // 2. Firebase Listener (Fixed: Permission Denied Handling)
   useEffect(() => {
     if (!db) {
         setIsLedgerInitializing(false);
@@ -84,7 +84,8 @@ export const LedgerProvider = ({ children }) => {
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
       } else { 
-          console.warn("Ledger not found (remote) - Detected Ghost Ledger");
+          // Ghost Ledger Handling
+          console.warn("Ledger not found (remote)");
           if (user) {
               try {
                   const userRef = doc(db, 'users', user.uid);
@@ -99,8 +100,25 @@ export const LedgerProvider = ({ children }) => {
           localStorage.removeItem(cacheKey);
       }
       setIsLedgerInitializing(false);
-    }, (error) => { 
+    }, async (error) => { 
         console.error("Snapshot error:", error); 
+        
+        // [CRITICAL FIX] 處理被踢出或權限不足導致的死結
+        if (error.code === 'permission-denied') {
+             console.warn("Permission denied: Unlinking user from ledger.");
+             setLedgerCode('');
+             setLedgerData(null);
+             localStorage.removeItem('sweet_ledger_code');
+             localStorage.removeItem(cacheKey);
+             
+             // 強制從 Firestore 解除綁定，打破 Loop
+             if (user) {
+                 try {
+                    const userRef = doc(db, 'users', user.uid);
+                    await updateDoc(userRef, { ledgerCode: deleteField() });
+                 } catch (e) { console.error("Unlink failed", e); }
+             }
+        }
         setIsLedgerInitializing(false); 
     });
 
@@ -398,9 +416,7 @@ export const LedgerProvider = ({ children }) => {
 
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     
-    // [Fix: Timezone Bug] 僅存儲 YYYY-MM-DD 或加上固定時間以抵抗時區偏移
-    // 這裡我們維持 ISO 完整字串，但在 DashboardView 顯示時會依賴 new Date(date) 
-    // 若要完全修復日期跳動，建議在此處強制設定為中午 12:00
+    // [Fix: Timezone Bug] 設定為中午 12:00
     let selectedDate = new Date(date);
     selectedDate.setHours(12, 0, 0, 0);
     const dateStr = selectedDate.toISOString(); 
@@ -412,7 +428,6 @@ export const LedgerProvider = ({ children }) => {
     let finalSplitType = splitType;
 
     // [Critical Logic Fix] 處理 AddExpenseView 傳來的 'self' 與 'partner'
-    // 將其正規化為 'custom' 模式，並明確指定 100% 分攤對象
     if (splitType === 'self') {
          finalSplitType = 'custom';
          cleanCustomSplit = { [payer]: cleanAmount };
@@ -428,7 +443,6 @@ export const LedgerProvider = ({ children }) => {
              cleanCustomSplit = {};
              partners.forEach(p => cleanCustomSplit[p] = share);
          } else {
-             // Fallback if no partner found
              cleanCustomSplit = { [payer]: cleanAmount };
          }
     } else if ((splitType === 'custom' || splitType === 'multi_payer') && customSplit) {
@@ -637,11 +651,11 @@ export const LedgerProvider = ({ children }) => {
     alert('帳本已重置。');
   }, [ledgerCode, ledgerData, user]);
 
-  // [Fix] 安全版的 fixIdentity，不再刪除使用者
+  // [Fix] 安全版的 fixIdentity，不再刪除使用者，允許「篡位」
   const fixIdentity = useCallback(async () => {
     if (!ledgerCode || !ledgerData || !user || !db) return;
     
-    // 找出除了自己以外的其他 host (殭屍戶長)
+    // 找出除了自己以外的其他 host (例如 B 變成了 Host)
     const zombieHostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host' && uid !== user.uid);
     if (!zombieHostId) {
         alert("系統檢測正常，無需修復。");
@@ -655,18 +669,16 @@ export const LedgerProvider = ({ children }) => {
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const newUsers = { ...(ledgerData.users || {}) };
     
-    // [Safety Fix] 僅降級，不刪除
+    // 將對方降級
     if (newUsers[zombieHostId]) {
         newUsers[zombieHostId] = { ...newUsers[zombieHostId], role: 'guest' };
     }
 
-    // 提升自己
+    // 將自己提升
     if (newUsers[user.uid]) {
         newUsers[user.uid] = { ...newUsers[user.uid], role: 'host' };
     }
     
-    // Fix transactions (將原本掛在殭屍戶長名下的交易，轉移到自己名下嗎？通常不需要，除非是為了合併帳號)
-    // 這裡維持原樣，只修復 role
     await updateDoc(docRef, { users: newUsers });
     alert("權限修復完成！");
 
