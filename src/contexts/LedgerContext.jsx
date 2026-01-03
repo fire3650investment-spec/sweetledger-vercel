@@ -23,7 +23,7 @@ export const useLedger = () => useContext(LedgerContext);
 export const LedgerProvider = ({ children }) => {
   const { user } = useAuth();
   
-  // Cache check
+  // 1. 初始化 State
   const [ledgerCode, setLedgerCode] = useState(() => {
       return localStorage.getItem('sweet_ledger_code') || '';
   });
@@ -45,13 +45,13 @@ export const LedgerProvider = ({ children }) => {
       return null;
   });
 
-  const [isLedgerInitializing, setIsLedgerInitializing] = useState(!ledgerData);
-  const isRepairingRef = useRef(false);
+  // 預設為 false，除非有 ledgerCode 才設為 true (避免無限 Loading)
+  const [isLedgerInitializing, setIsLedgerInitializing] = useState(() => !!localStorage.getItem('sweet_ledger_code'));
   
-  // [New] 防止無限迴圈的 Ref
-  const ignoreRemoteBindingRef = useRef(false);
+  const isRepairingRef = useRef(false);
+  const ignoreRemoteBindingRef = useRef(false); // [重要] 防止死循環的旗標
 
-  // 1. LocalStorage Sync
+  // 2. LocalStorage Sync
   useEffect(() => {
     if (!db) {
         setIsLedgerInitializing(false);
@@ -61,85 +61,94 @@ export const LedgerProvider = ({ children }) => {
         localStorage.setItem('sweet_ledger_code', ledgerCode);
     } else {
         localStorage.removeItem('sweet_ledger_code');
+        // [Safety Fix] 只要 code 清空，強制關閉 Loading，確保蛋糕消失
+        setIsLedgerInitializing(false);
     }
   }, [ledgerCode]);
 
-  // 錯誤處理與斷開連結的共用邏輯 (定義在 Effect 之前)
-  const handleDisconnectError = async () => {
+  // [Helper] 錯誤處理與強制斷線邏輯
+  const handleDisconnectError = useCallback(async (reason) => {
+      console.warn(`⚠️ Disconnecting Ledger due to: ${reason}`);
+      
+      // 1. 立即切斷本地狀態，讓 UI 恢復
       setLedgerCode('');
       setLedgerData(null);
       localStorage.removeItem('sweet_ledger_code');
       setIsLedgerInitializing(false);
-      ignoreRemoteBindingRef.current = true; // 防止 App 再次自動綁定
+      
+      // 2. 設定旗標，阻止 App 再次自動綁定
+      ignoreRemoteBindingRef.current = true; 
 
-      // 嘗試從 Firestore 解除綁定 (非阻塞)
+      // 3. 嘗試從 Firestore 清除綁定 (非阻塞，失敗也沒關係)
       if (user) {
          try {
             const userRef = doc(db, 'users', user.uid);
+            // 使用 deleteField() 確保欄位被刪除
             await updateDoc(userRef, { ledgerCode: deleteField() });
-         } catch (e) { console.error("Unlink failed (minor):", e); }
+            console.log("Successfully unlinked user from ghost ledger.");
+         } catch (e) { 
+             console.error("Unlink failed (minor):", e); 
+         }
      }
-  };
+  }, [user]);
 
-  // [New] Watchdog Timer (保險絲機制)
-  // 如果正在讀取且有 code，但超過 5 秒沒結果，強制中斷
+  // [New] Watchdog Timer (加強版保險絲)
+  // 如果 isLedgerInitializing 為 true 超過 3 秒，強制觸發斷線
   useEffect(() => {
-      if (isLedgerInitializing && ledgerCode) {
+      if (isLedgerInitializing) {
           const timer = setTimeout(() => {
-              console.warn("⚠️ Watchdog: Ledger sync timed out (5s). Forcing disconnect.");
-              handleDisconnectError();
-          }, 5000);
+              console.error("🚨 Watchdog Triggered: Force killing sync.");
+              handleDisconnectError("Timeout (3s)");
+          }, 3000); // 縮短為 3 秒
           return () => clearTimeout(timer);
       }
-  }, [isLedgerInitializing, ledgerCode]);
+  }, [isLedgerInitializing, handleDisconnectError]);
 
-  // 2. Firebase Listener
+  // 3. Firebase Listener (核心同步邏輯)
   useEffect(() => {
-    if (!db) {
+    if (!db || !user) {
         setIsLedgerInitializing(false);
         return;
     }
     if (!ledgerCode) {
-      if (!localStorage.getItem('sweet_ledger_code')) {
-          setLedgerData(null);
-          setIsLedgerInitializing(false);
-      }
-      return;
+        setIsLedgerInitializing(false);
+        return;
     }
 
     const cacheKey = `sweet_ledger_data_${ledgerCode}`;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     
-    // Set a flag to identify initialization start
+    // 開始讀取
     setIsLedgerInitializing(true);
 
     const unsubscribe = onSnapshot(docRef, async (docSnap) => { 
       if (docSnap.exists()) {
         const data = docSnap.data();
-        // 檢查自己是否還在 users 列表內 (雙重保險)
-        if (user && data.users && !data.users[user.uid]) {
-             console.warn("User removed from ledger (Logic Check). Disconnecting...");
-             handleDisconnectError();
+        
+        // [Logic Check] 再次檢查自己是否還在 users 名單中
+        // 這是防止 Firestore 權限規則沒攔住，但邏輯上已經被踢出的狀況
+        if (data.users && !data.users[user.uid]) {
+             handleDisconnectError("User removed from ledger (Logic Check)");
              return;
         }
+
         localStorage.setItem(cacheKey, JSON.stringify(data));
         setLedgerData(data);
-        setIsLedgerInitializing(false);
+        setIsLedgerInitializing(false); // 成功讀取，關閉 Loading
       } else { 
-          // Ghost Ledger Handling
-          console.warn("Ledger not found (remote)");
-          handleDisconnectError();
+          // 帳本不存在 (被刪除)
+          handleDisconnectError("Ledger not found (remote)");
       }
-    }, async (error) => { 
+    }, (error) => { 
         console.error("Snapshot error:", error); 
-        // 處理所有讀取錯誤 (權限、網路、不存在)
-        handleDisconnectError();
+        // 任何權限錯誤 (Permission Denied) 都會觸發這裡
+        handleDisconnectError(`Firestore Error: ${error.code}`);
     });
 
     return () => unsubscribe();
-  }, [ledgerCode, user]);
+  }, [ledgerCode, user, handleDisconnectError]);
 
-  // 3. Auto-Repair Logic
+  // 4. Auto-Repair Logic (資料修復)
   useEffect(() => {
     if (!ledgerCode || !ledgerData || !user || !db) return;
     if (isRepairingRef.current) return;
@@ -163,7 +172,6 @@ export const LedgerProvider = ({ children }) => {
                 }
             };
         } else if (!currentUserExists) {
-             // [Safety] 如果使用者不見了，自動加回來，預設為 guest
              needsUpdate = true;
              updates[`users.${user.uid}`] = {
                 name: user.displayName || 'Guest',
@@ -217,7 +225,7 @@ export const LedgerProvider = ({ children }) => {
     return () => clearTimeout(timer);
   }, [ledgerData, ledgerCode, user]);
 
-  // 4. Subscription Logic
+  // 5. Subscription Logic (自動扣款)
   useEffect(() => {
     if (!ledgerData || !ledgerData.subscriptions || !ledgerCode || !db) return;
     
@@ -300,11 +308,13 @@ export const LedgerProvider = ({ children }) => {
   
   const checkUserBinding = useCallback(async (uid) => {
       if (!db) return null;
-      // [Fix] 如果 Watchdog 觸發過，則忽略此次檢查，避免死循環
+      
+      // [Fix] 如果之前發生過錯誤 (Watchdog 觸發過)，直接回傳 null，防止 App 死循環
       if (ignoreRemoteBindingRef.current) {
-          console.log("Ignoring remote binding check due to previous error.");
+          console.log("Blocking remote binding check due to previous error.");
           return null;
       }
+
       try {
           const userDocRef = doc(db, 'users', uid); 
           const userDoc = await getDoc(userDocRef);
@@ -337,7 +347,7 @@ export const LedgerProvider = ({ children }) => {
 
     localStorage.setItem('sweet_ledger_code', code);
     setLedgerCode(code);
-    ignoreRemoteBindingRef.current = false; // Reset flag
+    ignoreRemoteBindingRef.current = false; // 重置旗標
     return code;
   }, []);
 
@@ -362,21 +372,14 @@ export const LedgerProvider = ({ children }) => {
       }, { merge: true });
       localStorage.setItem('sweet_ledger_code', code);
       setLedgerCode(code);
-      ignoreRemoteBindingRef.current = false; // Reset flag
+      ignoreRemoteBindingRef.current = false; // 重置旗標
       return true;
     } else { throw new Error("找不到這個帳本代碼！"); }
   }, []);
   
   const disconnectLedger = useCallback(() => {
-      setLedgerCode('');
-      setLedgerData(null);
-      localStorage.removeItem('sweet_ledger_code');
-      setIsLedgerInitializing(false);
-      ignoreRemoteBindingRef.current = true; // Avoid auto-rejoin immediately
-      Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('sweet_ledger_data_')) localStorage.removeItem(key);
-      });
-  }, []);
+      handleDisconnectError("User Manual Disconnect");
+  }, [handleDisconnectError]);
 
   const leaveLedger = useCallback(async () => {
     if (!ledgerCode || !user || !db) return;
@@ -450,7 +453,7 @@ export const LedgerProvider = ({ children }) => {
     let cleanCustomSplit = null;
     let finalSplitType = splitType;
 
-    // [Critical Logic Fix] 處理 AddExpenseView 傳來的 'self' 與 'partner'
+    // [Logic Fix] 處理 AddExpenseView 傳來的 'self' 與 'partner'
     if (splitType === 'self') {
          finalSplitType = 'custom';
          cleanCustomSplit = { [payer]: cleanAmount };
@@ -674,11 +677,11 @@ export const LedgerProvider = ({ children }) => {
     alert('帳本已重置。');
   }, [ledgerCode, ledgerData, user]);
 
-  // [Fix] 安全版的 fixIdentity，不再刪除使用者，允許「篡位」
+  // [FixIdentity] 允許成員篡位 (修復身分錯置)
   const fixIdentity = useCallback(async () => {
     if (!ledgerCode || !ledgerData || !user || !db) return;
     
-    // 找出除了自己以外的其他 host (例如 B 變成了 Host)
+    // 找出除了自己以外的其他 host
     const zombieHostId = Object.keys(ledgerData.users).find(uid => ledgerData.users[uid].role === 'host' && uid !== user.uid);
     if (!zombieHostId) {
         alert("系統檢測正常，無需修復。");
