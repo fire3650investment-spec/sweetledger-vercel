@@ -94,6 +94,9 @@ export default function AddExpenseView({
     const hostName = hostId ? (users[hostId]?.name || '戶長') : '戶長';
     const guestName = guestId ? (users[guestId]?.name || '成員') : '成員';
 
+    // [Critical Fix] 判斷目前付款人是否為 Host，用於動態切換選單邏輯
+    const isPayerHost = users[payer]?.role === 'host';
+
     const recentNotes = useMemo(() => {
         if (!ledgerData.transactions || !selectedCategory) return [];
         const recentTxs = ledgerData.transactions.slice(-50).reverse();
@@ -470,8 +473,13 @@ export default function AddExpenseView({
                                 <select value={splitType} onChange={(e) => setSplitType(e.target.value)} className="w-full appearance-none bg-gray-50 text-xs font-bold text-gray-700 py-2 pl-3 pr-8 rounded-xl outline-none border border-gray-100 focus:border-blue-200 text-right">
                                     <option value="even">平均分攤</option>
                                     <option value="multi_payer">混合出資</option>
-                                    <option value="self">{getLabelForRole('host')}</option>
-                                    <option value="partner">{getLabelForRole('guest')}</option>
+                                    {/* 修正：動態顯示正確的角色標籤 */}
+                                    <option value="self">
+                                        {isPayerHost ? getLabelForRole('host') : getLabelForRole('guest')}
+                                    </option>
+                                    <option value="partner">
+                                        {isPayerHost ? getLabelForRole('guest') : getLabelForRole('host')}
+                                    </option>
                                 </select>
                                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"><ChevronDown size={14}/></div>
                             </div>
