@@ -1,7 +1,7 @@
 // src/components/ProjectsView.jsx
 import React from 'react';
 import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Globe, Lock, Unlock, AlertCircle } from 'lucide-react';
-import { getIconComponent } from '../utils/helpers';
+import { getIconComponent, fetchExchangeRate } from '../utils/helpers';
 // [Batch 4] 引入貨幣選項以取得國旗
 import { CURRENCY_OPTIONS } from '../utils/constants';
 
@@ -175,10 +175,38 @@ export default function ProjectsView({
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">專案管理</h2>
                 <button 
-                    onClick={() => { 
-                        // [Batch 4] 初始化時給一個空的 rates，讓使用者之後透過設定去加
-                        setEditingProjectData({id:'', name:'', icon:'project_daily', rates: {}, type: 'public'}); 
+                    onClick={async () => { 
+                        // [Batch 4] Smart Init: 先給一個空的 rates
+                        const initData = {id:'', name:'', icon:'project_daily', rates: {}, type: 'public'};
+                        setEditingProjectData(initData); 
                         setIsEditingProject(true); 
+
+                        // [New] 非同步抓取使用者「常用貨幣」的最新匯率
+                        // 1. 取得使用者常用貨幣 (若無則使用預設)
+                        const userFavs = user?.uid && ledgerData.users[user.uid]?.favoriteCurrencies
+                            ? ledgerData.users[user.uid].favoriteCurrencies
+                            : ['JPY', 'THB', 'USD']; 
+
+                        // 2. 過濾掉 TWD，準備抓取
+                        const newRates = {};
+                        const targets = userFavs.filter(c => c !== 'TWD');
+
+                        if (targets.length > 0) {
+                            // 3. 並行發送 API 請求 (利用 Cache 機制，速度極快)
+                            await Promise.all(targets.map(async (code) => {
+                                const rate = await fetchExchangeRate(code);
+                                if (rate) newRates[code] = rate;
+                            }));
+
+                            // 4. 只有當使用者還在「新增專案」畫面 (id 為空) 時，才更新資料
+                            // 避免使用者已經取消或儲存了，還去更新 state
+                            setEditingProjectData(prev => {
+                                if (prev.id === '') { 
+                                    return { ...prev, rates: { ...prev.rates, ...newRates } };
+                                }
+                                return prev;
+                            });
+                        }
                     }} 
                     className="bg-gray-900 text-white p-2 rounded-xl shadow-lg shadow-gray-300 active:scale-90 transition-transform"
                 >

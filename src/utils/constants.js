@@ -6,7 +6,7 @@ import {
   Fish, Turtle 
 } from 'lucide-react';
 
-// --- 0. 全球貨幣清單 (Batch 1 New) ---
+// --- 0. 全球貨幣清單 ---
 export const CURRENCY_OPTIONS = [
   { code: 'JPY', name: '日圓', symbol: '¥', flag: '🇯🇵' },
   { code: 'USD', name: '美元', symbol: '$', flag: '🇺🇸' },
@@ -131,13 +131,12 @@ export const INITIAL_LEDGER_STATE = {
   subscriptions: [],
   customCategories: DEFAULT_CATEGORIES, 
   projects: [
-    { id: 'daily', name: '日常開銷', icon: 'project_daily', rates: { JPY: 0.23, THB: 1 }, type: 'public' },
-    { id: 'travel', name: '日本旅遊專案', icon: 'project_travel', rates: { JPY: 0.23 }, type: 'public' },
+    // [Updated] 移除寫死的 JPY/THB 匯率，改為空物件
+    { id: 'daily', name: '日常開銷', icon: 'project_daily', rates: {}, type: 'public' },
+    { id: 'travel', name: '日本旅遊專案', icon: 'project_travel', rates: {}, type: 'public' },
     { id: 'house', name: '夢想置產專案', icon: 'project_house', rates: {}, type: 'public' },
     { id: 'private', name: '私人帳本', icon: 'project_private', rates: {}, type: 'private' }
   ],
-  // rates: { "JPY": 0.23 }, // [Deprecated] Moved to project level
-  // currency: 'TWD',        // [Deprecated] Not used in new logic
   settings: {
     character: 'cat',
     selectedCategories: DEFAULT_CATEGORIES.map(c => c.id),

@@ -79,7 +79,8 @@ export default function DashboardView({
             } catch (e) {}
         });
 
-        const rates = currentProjectObj.rates || { JPY: 0.23, THB: 1 };
+        // [Fix] 移除寫死 fallback，改為空物件
+        const rates = currentProjectObj.rates || {};
         
         // Stats
         const mTotal = thisMonthTxs.reduce((acc, curr) => {

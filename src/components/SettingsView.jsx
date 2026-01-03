@@ -3,10 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { 
   User, LogOut, RotateCcw, Download, X, Check, Trash2, 
   Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe,
-  ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins // [Added] Coins for currency UI
+  ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins 
 } from 'lucide-react';
-import { getIconComponent, renderAvatar, getCategoryStyle } from '../utils/helpers';
-// [Modified] 引入 Batch 1 新增的貨幣常數
+import { getIconComponent, renderAvatar, getCategoryStyle, fetchExchangeRate } from '../utils/helpers'; // [Added] fetchExchangeRate
 import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
 import { useLedger } from '../contexts/LedgerContext';
 
@@ -35,9 +34,8 @@ export default function SettingsView({
   currentProjectId,
   handleReorderCategories,
   setView,
-  updateUserSetting // [Added] 用於儲存常用貨幣設定 (請確保 App.jsx 後續會傳入此 prop)
+  updateUserSetting 
 }) {
-  // [Preserved] 保留您的刪除帳號邏輯
   const { leaveLedger, resetAccount, deleteAccount } = useLedger();
 
   useEffect(() => {
@@ -51,14 +49,13 @@ export default function SettingsView({
   
   const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
   const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
-  const serverRates = currentProject?.rates || { JPY: 0.23, THB: 1 }; 
+  // [Fix] 移除寫死匯率，改為空物件，避免誤導
+  const serverRates = currentProject?.rates || {}; 
   const [localRates, setLocalRates] = useState(serverRates);
 
-  // [New] Batch 1: Favorite Currencies Logic
   const mySettings = ledgerData?.users?.[user?.uid] || {};
   const myFavorites = mySettings.favoriteCurrencies || DEFAULT_FAVORITE_CURRENCIES;
 
-  // Role Check
   const currentUserRole = ledgerData?.users?.[user?.uid]?.role;
   const isHost = currentUserRole === 'host';
 
@@ -88,10 +85,12 @@ export default function SettingsView({
       }
   };
 
-  // [New] Batch 1: Toggle Favorite Currency
   const toggleFavoriteCurrency = async (code) => {
       let newFavorites = [...myFavorites];
-      if (newFavorites.includes(code)) {
+      const isAdding = !newFavorites.includes(code); // [Logic] 判斷是新增還是移除
+
+      if (!isAdding) {
+          // 移除邏輯
           if (newFavorites.length > 1) {
               newFavorites = newFavorites.filter(c => c !== code);
           } else {
@@ -99,6 +98,7 @@ export default function SettingsView({
               return;
           }
       } else {
+          // 新增邏輯
           if (newFavorites.length >= 4) {
               alert("最多只能設定 4 個常用貨幣");
               return;
@@ -108,6 +108,16 @@ export default function SettingsView({
       
       if (updateUserSetting) {
            await updateUserSetting('favoriteCurrencies', newFavorites);
+
+           // [New] Smart Init: 自動抓取新幣別匯率
+           if (isAdding && code !== 'TWD') {
+               // 不用 await，讓它在背景執行即可，不卡 UI
+               fetchExchangeRate(code).then(rate => {
+                   if (rate) {
+                       updateLedgerCurrency(code, rate);
+                   }
+               });
+           }
       } else {
            console.warn("API 尚未串接：App.jsx 尚未傳入 updateUserSetting");
       }

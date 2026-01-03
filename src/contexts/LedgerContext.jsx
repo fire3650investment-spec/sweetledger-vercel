@@ -558,7 +558,8 @@ export const LedgerProvider = ({ children }) => {
       const { type = 'public', owner = null } = projectData;
       const projectWithRates = { 
           ...projectData, 
-          rates: projectData.rates || { JPY: 0.23, THB: 1 },
+          // [Fix] 移除寫死匯率，改為空物件
+          rates: projectData.rates || {},
           type, 
           ...(type === 'private' && owner ? { owner } : {}) 
       };
@@ -596,7 +597,8 @@ export const LedgerProvider = ({ children }) => {
     if (!numVal || numVal <= 0) return;
     const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
     const newProjects = ledgerData.projects.map(p => {
-        if (p.id === projectId) return { ...p, rates: { ...(p.rates || { JPY: 0.23, THB: 1 }), [currency]: numVal } };
+        // [Fix] 移除寫死匯率 fallback，改為空物件
+        if (p.id === projectId) return { ...p, rates: { ...(p.rates || {}), [currency]: numVal } };
         return p;
     });
     await updateDoc(docRef, { projects: newProjects });
