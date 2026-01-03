@@ -6,8 +6,10 @@ import {
   Fish, Turtle 
 } from 'lucide-react';
 
-// --- 0. 全球貨幣清單 ---
+// --- 0. 全球貨幣清單 (Batch 1 New) ---
 export const CURRENCY_OPTIONS = [
+  // [Fix] 補上 TWD 定義，並置於首位
+  { code: 'TWD', name: '新台幣', symbol: 'NT$', flag: '🇹🇼' },
   { code: 'JPY', name: '日圓', symbol: '¥', flag: '🇯🇵' },
   { code: 'USD', name: '美元', symbol: '$', flag: '🇺🇸' },
   { code: 'THB', name: '泰銖', symbol: '฿', flag: '🇹🇭' },
@@ -40,7 +42,6 @@ export const PALETTE = {
   slate:   { id: 'slate',   bg: 'bg-slate-100',   text: 'text-slate-600',   hex: '#475569', name: 'Slate' },
   emerald: { id: 'emerald', bg: 'bg-emerald-100', text: 'text-emerald-600', hex: '#059669', name: 'Emerald' },
   rose:    { id: 'rose',    bg: 'bg-rose-100',    text: 'text-rose-600',    hex: '#e11d48', name: 'Rose' },
-  // Optional extras for variety
   cyan:    { id: 'cyan',    bg: 'bg-cyan-100',    text: 'text-cyan-600',    hex: '#0891b2', name: 'Cyan' },
   amber:   { id: 'amber',   bg: 'bg-amber-100',   text: 'text-amber-600',   hex: '#d97706', name: 'Amber' },
   fuchsia: { id: 'fuchsia', bg: 'bg-fuchsia-100', text: 'text-fuchsia-600', hex: '#c026d3', name: 'Fuchsia' },
@@ -54,7 +55,7 @@ export const COLORS = Object.values(PALETTE).map(p => ({
 
 // --- 2. Icon 映射 ---
 export const ICON_MAP = {
-  // Categories (Preserved Legacy Keys)
+  // Categories
   food: Utensils,
   transport: Train,
   shopping: ShoppingBag,
@@ -78,7 +79,7 @@ export const ICON_MAP = {
   project_travel: Plane,
   project_house: House,
   project_private: Wallet,
-  // Other (For new categories or fallbacks)
+  // Other
   coffee: Coffee,
   music: Music,
   game: Gamepad,
@@ -87,7 +88,7 @@ export const ICON_MAP = {
   zap: Zap,
   book: BookOpen,
   settlement: Coins,
-  // Map standard icon names for future compatibility
+  // Mapping
   'utensils': Utensils, 'train': Train, 'shopping-bag': ShoppingBag,
   'house': House, 'bed-double': BedDouble, 'smartphone': Smartphone,
   'shield-check': ShieldCheck, 'sun': Sun, 'message-circle': MessageCircle
@@ -131,7 +132,7 @@ export const INITIAL_LEDGER_STATE = {
   subscriptions: [],
   customCategories: DEFAULT_CATEGORIES, 
   projects: [
-    // [Updated] 移除寫死的 JPY/THB 匯率，改為空物件
+    // [Clean Up] 移除寫死的匯率，改為空物件
     { id: 'daily', name: '日常開銷', icon: 'project_daily', rates: {}, type: 'public' },
     { id: 'travel', name: '日本旅遊專案', icon: 'project_travel', rates: {}, type: 'public' },
     { id: 'house', name: '夢想置產專案', icon: 'project_house', rates: {}, type: 'public' },

@@ -591,6 +591,7 @@ export default function AddExpenseView({
                                 <div className="grid grid-cols-3 gap-3">
                                     {['TWD', ...myFavorites.filter(c => c !== 'TWD')].map(code => {
                                         const opt = CURRENCY_OPTIONS.find(o => o.code === code);
+                                        // [Safe] 如果常數檔還沒更新，避免白屏
                                         if (!opt) return null;
                                         return (
                                             <button 
