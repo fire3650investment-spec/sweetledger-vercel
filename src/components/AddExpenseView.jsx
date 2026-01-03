@@ -24,12 +24,25 @@ export default function AddExpenseView({
 }) {
     if (!ledgerData) return null; 
 
+    // [Smart Init Step 1] 優先取得當前專案資訊，以便判斷預設幣別
+    const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
+    const isPrivateProject = currentProject?.type === 'private';
+
     // State
     const [localAmount, setLocalAmount] = useState(''); 
     const [note, setNote] = useState('');
     const [date, setDate] = useState(getLocalISODate());
     const [selectedCategory, setSelectedCategory] = useState(DEFAULT_CATEGORIES[0]);
-    const [currency, setCurrency] = useState(() => localStorage.getItem('sweet_last_currency') || 'TWD');
+    
+    // [Smart Init Step 2] 幣別初始化邏輯優化
+    // 優先級：專案綁定幣別 > 使用者上次記憶 > TWD
+    const [currency, setCurrency] = useState(() => {
+        if (currentProject?.defaultCurrency) {
+            return currentProject.defaultCurrency;
+        }
+        return localStorage.getItem('sweet_last_currency') || 'TWD';
+    });
+
     const [payer, setPayer] = useState(user?.uid || '');
     
     // Split Logic
@@ -50,7 +63,8 @@ export default function AddExpenseView({
     const [isScanning, setIsScanning] = useState(false);
     const [isScanModalOpen, setIsScanModalOpen] = useState(false);
     const [scannedItems, setScannedItems] = useState([]);
-    // [Fix] Optimistic UI 不需要這個 Loading state
+    
+    // Optimistic UI: Remove local loading state blocking
     const [localSubmitting, setLocalSubmitting] = useState(false);
 
     const [isRateLoading, setIsRateLoading] = useState(false);
@@ -65,8 +79,6 @@ export default function AddExpenseView({
     const recognitionRef = useRef(null);
 
     const currentCats = useMemo(() => ledgerData.customCategories || DEFAULT_CATEGORIES, [ledgerData.customCategories]);
-    const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
-    const isPrivateProject = currentProject?.type === 'private';
     
     const mySettings = ledgerData.users?.[user?.uid] || {};
     const myFavorites = mySettings.favoriteCurrencies || DEFAULT_FAVORITE_CURRENCIES;
@@ -92,6 +104,7 @@ export default function AddExpenseView({
     }, [ledgerData.transactions, selectedCategory]);
 
     useEffect(() => {
+        // 即使有專案預設幣別，我們還是更新 localStorage，方便在「無預設幣別」的專案中延續使用習慣
         localStorage.setItem('sweet_last_currency', currency);
     }, [currency]);
 
@@ -221,11 +234,10 @@ export default function AddExpenseView({
         }
     };
 
-    // [Fix] Optimistic UI Implementation
+    // Optimistic UI Implementation
     const handleSubmit = async () => {
         if (!localAmount || parseFloat(localAmount) <= 0) return;
-        // 移除 isSubmittingTransaction 的阻擋，允許 Fire-and-Forget
-
+        
         const amountFloat = parseFloat(localAmount);
         let customSplitData = null;
         
@@ -261,11 +273,8 @@ export default function AddExpenseView({
                 subCycle,
                 subPayDay
             });
-            // 成功默默結束，不干擾使用者
         } catch (e) {
             console.error("Add Tx Error:", e);
-            // 只有失敗時才 (Optional) 跳出 Alert，但在 Optimistic UI 中通常會用 Toast
-            // 這裡為了架構簡單，暫時保留 log，因為 Firestore 離線機制很穩
         }
     };
     
