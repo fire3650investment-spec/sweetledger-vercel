@@ -47,7 +47,7 @@ export default function SettingsView({
   const [activeSortId, setActiveSortId] = useState(null); 
   const [copied, setCopied] = useState(false);
   
-  // [New] Currency Config Modal State
+  // Currency Config Modal State
   const [isCurrencyConfigOpen, setIsCurrencyConfigOpen] = useState(false);
 
   const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
@@ -250,10 +250,10 @@ export default function SettingsView({
              </div>
         </section>
 
-        {/* --- Island B: Preferences (Refactored) --- */}
+        {/* --- Island B: Preferences --- */}
         <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
             
-            {/* [Modified] Favorite Currencies Entry Point (Clean & Simple) */}
+            {/* Favorite Currencies Entry Point */}
             <div 
                 className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50" 
                 onClick={() => setIsCurrencyConfigOpen(true)}
@@ -275,7 +275,6 @@ export default function SettingsView({
 
             {/* Rates */}
             <div className="p-4 border-b border-gray-50 bg-white">
-                {/* [Modified] Header Style Consistency */}
                 <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2 mb-4">
                     <Globe size={16}/> 專案匯率設定 (TWD)
                 </h2>
@@ -306,7 +305,6 @@ export default function SettingsView({
             {/* Category Grid */}
             <div className="p-4">
                 <div className="flex justify-between items-center mb-4">
-                    {/* [Consistent Header Style] */}
                     <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2"><LayoutGrid size={16}/> 分類管理</h2>
                     <button 
                         onClick={() => { setIsReorderMode(!isReorderMode); setActiveSortId(null); }}
@@ -448,7 +446,7 @@ export default function SettingsView({
 
       {/* --- Modals --- */}
       
-      {/* [New] Currency Config Modal */}
+      {/* Currency Config Modal */}
       {isCurrencyConfigOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsCurrencyConfigOpen(false)}>
             <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
