@@ -2,7 +2,6 @@
 import React from 'react';
 import { Plus, Trash2, Edit2, ChevronUp, ChevronDown, Globe, Lock, Unlock, AlertCircle } from 'lucide-react';
 import { getIconComponent, fetchExchangeRate } from '../utils/helpers';
-// [Batch 4] 引入貨幣選項以取得國旗
 import { CURRENCY_OPTIONS } from '../utils/constants';
 
 export default function ProjectsView({
@@ -37,8 +36,6 @@ export default function ProjectsView({
 
     // [Handler]
     const onSaveWrapper = () => {
-        // [Batch 4 Fix] 移除舊的寫死 JPY/THB 邏輯，改為動態保存
-        // 確保 rates 內的數值正確
         if (editingProjectData.rates) {
             const cleanRates = {};
             Object.keys(editingProjectData.rates).forEach(key => {
@@ -117,12 +114,11 @@ export default function ProjectsView({
                         </div>
                     </div>
 
-                    {/* [Batch 4] Dynamic Rates Input */}
+                    {/* Rates Input (This remains available for Manual Adjustment) */}
                     {editingProjectData.id !== 'daily' && (
                         <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100">
                             <h4 className="text-xs font-bold text-blue-500 mb-4 flex items-center gap-2 uppercase tracking-wider"><Globe size={14}/> 匯率設定 (TWD)</h4>
                             
-                            {/* 如果該專案已有設定匯率，則列出 */}
                             {editingProjectData.rates && Object.keys(editingProjectData.rates).filter(k => k !== 'TWD').length > 0 ? (
                                 <div className="grid grid-cols-2 gap-4">
                                     {Object.keys(editingProjectData.rates).filter(k => k !== 'TWD').map(currencyCode => {
@@ -152,7 +148,7 @@ export default function ProjectsView({
                             ) : (
                                 <div className="text-center py-2">
                                     <p className="text-xs text-blue-400 mb-2">此專案尚未設定外幣</p>
-                                    <p className="text-[10px] text-blue-300">請至「設定 常用貨幣」新增貨幣後，即可在此調整匯率。</p>
+                                    <p className="text-[10px] text-blue-300">請至「設定 常用貨幣」新增貨幣，或記帳時選用外幣，即可在此調整。</p>
                                 </div>
                             )}
                         </div>
@@ -176,30 +172,24 @@ export default function ProjectsView({
                 <h2 className="text-2xl font-bold text-gray-800">專案管理</h2>
                 <button 
                     onClick={async () => { 
-                        // [Batch 4] Smart Init: 先給一個空的 rates
                         const initData = {id:'', name:'', icon:'project_daily', rates: {}, type: 'public'};
                         setEditingProjectData(initData); 
                         setIsEditingProject(true); 
 
-                        // [New] 非同步抓取使用者「常用貨幣」的最新匯率
-                        // 1. 取得使用者常用貨幣 (若無則使用預設)
+                        // Smart Init Logic (Fetch Favorites)
                         const userFavs = user?.uid && ledgerData.users[user.uid]?.favoriteCurrencies
                             ? ledgerData.users[user.uid].favoriteCurrencies
                             : ['JPY', 'THB', 'USD']; 
 
-                        // 2. 過濾掉 TWD，準備抓取
                         const newRates = {};
                         const targets = userFavs.filter(c => c !== 'TWD');
 
                         if (targets.length > 0) {
-                            // 3. 並行發送 API 請求 (利用 Cache 機制，速度極快)
                             await Promise.all(targets.map(async (code) => {
                                 const rate = await fetchExchangeRate(code);
                                 if (rate) newRates[code] = rate;
                             }));
 
-                            // 4. 只有當使用者還在「新增專案」畫面 (id 為空) 時，才更新資料
-                            // 避免使用者已經取消或儲存了，還去更新 state
                             setEditingProjectData(prev => {
                                 if (prev.id === '') { 
                                     return { ...prev, rates: { ...prev.rates, ...newRates } };
@@ -222,12 +212,6 @@ export default function ProjectsView({
                     const isFirst = idx === 0;
                     const isPrivate = p.type === 'private';
                     
-                    // [Batch 4] Dynamic Rate Tags Logic
-                    const rates = p.rates || {};
-                    const activeCurrencies = Object.keys(rates).filter(k => k !== 'TWD' && rates[k]);
-                    const displayCurrencies = activeCurrencies.slice(0, 2); // 顯示前兩個
-                    const moreCount = activeCurrencies.length - 2;
-
                     return (
                         <div 
                             key={p.id} 
@@ -255,33 +239,12 @@ export default function ProjectsView({
                                         {isPrivate && <Lock size={14} className="text-slate-400"/>}
                                     </h3>
                                     
-                                    <div className="flex flex-wrap gap-2 mt-1">
-                                        {p.id === 'daily' ? (
+                                    {/* [Clean Up] 僅保留「預設」標籤，移除所有匯率標籤 */}
+                                    {p.id === 'daily' && (
+                                        <div className="mt-1">
                                             <span className="bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-md text-[10px] font-bold">預設</span>
-                                        ) : (
-                                            <>
-                                                {/* [Batch 4] Dynamic Tags Rendering */}
-                                                {displayCurrencies.map(code => {
-                                                    const info = CURRENCY_OPTIONS.find(c => c.code === code);
-                                                    return (
-                                                        <span key={code} className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 ${isPrivate ? 'bg-white text-slate-400 border border-slate-100' : 'bg-blue-50 text-blue-600'}`}>
-                                                            <span className="opacity-80">{info?.flag || ''}</span> 
-                                                            <span className="opacity-50 text-[8px]">{code}</span> 
-                                                            {rates[code]}
-                                                        </span>
-                                                    );
-                                                })}
-                                                {moreCount > 0 && (
-                                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-gray-100 text-gray-500">
-                                                        +{moreCount}
-                                                    </span>
-                                                )}
-                                                {activeCurrencies.length === 0 && (
-                                                    <span className="text-[10px] text-gray-300 italic">無外幣設定</span>
-                                                )}
-                                            </>
-                                        )}
-                                    </div>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                             
