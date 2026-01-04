@@ -3,10 +3,8 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import {
   onAuthStateChanged,
   signInWithPopup,
-  signInWithRedirect,
   GoogleAuthProvider,
   signOut,
-  getRedirectResult,
   setPersistence,
   signInWithCustomToken,
   browserLocalPersistence
@@ -38,20 +36,6 @@ export const AuthProvider = ({ children }) => {
       setLoading(false);
       return;
     }
-
-    const initAuth = async () => {
-      // 嘗試獲取重導向結果 (Mobile Redirect Login)
-      try {
-        await setPersistence(auth, browserLocalPersistence);
-        const result = await getRedirectResult(auth);
-        if (result?.user) {
-          console.log("🎉 Redirect Login Success:", result.user.uid);
-        }
-      } catch (e) {
-        console.error("Auth/Redirect Error:", e);
-      }
-    };
-    initAuth();
 
     // 處理 Custom Token
     const initCustomToken = async () => {
@@ -94,29 +78,17 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     const provider = new GoogleAuthProvider();
 
-    // [雙軌制] 偵測是否為 Mobile 裝置
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
     try {
-      if (isMobile) {
-        console.log("📱 Using Redirect for Mobile...");
-        await signInWithRedirect(auth, provider);
-      } else {
-        console.log("🖥️ Using Popup for Desktop...");
-        const result = await signInWithPopup(auth, provider);
-        if (result?.user) {
-          console.log("🎉 Popup Login Success:", result.user.uid);
-        }
-        setLoading(false);
+      console.log("🔐 Starting Google Login via Popup...");
+      const result = await signInWithPopup(auth, provider);
+      if (result?.user) {
+        console.log("🎉 Popup Login Success:", result.user.uid);
       }
+      setLoading(false);
     } catch (error) {
       console.error("Login Error:", error);
-      if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
-        console.log("⚠️ Popup blocked, falling back to Redirect...");
-        try { await signInWithRedirect(auth, provider); } catch (e) { setLoading(false); }
-      } else {
-        setLoading(false);
-      }
+      setLoading(false);
+      alert("登入失敗，請確認您的瀏覽器沒有封鎖彈跳視窗。\n或是嘗試使用其他瀏覽器 (如 Chrome)。");
     }
   };
 
