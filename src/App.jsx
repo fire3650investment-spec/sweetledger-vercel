@@ -157,7 +157,24 @@ export default function SweetLedger() {
     };
 
     const handleFixIdentityFn = async () => {
-        if (confirm("是否要繼承舊 Host 帳號並修復權限？")) { await fixIdentity(); alert("修復成功！"); }
+        // Step 1: Explanation
+        alert("【功能說明】此功能僅供「原戶長 (Host)」使用。\n\n當您因為「更換手機」或「重新安裝 App」導致身份變成訪客，無法管理帳本時，此功能可以協助您找回戶長權限。");
+
+        // Step 2: Warning
+        if (!confirm("⚠️嚴重警告⚠️\n\n若您只是普通的「成員 (Guest)」，請絕對不要執行此操作！\n\n這將會強制將原戶長的資料覆蓋到您身上，導致帳本權限錯亂與資料損毀。\n\n您確定您是「原戶長」且目前「遺失權限」嗎？")) return;
+
+        // Step 3: Hard Confirmation
+        const confirmStr = prompt("最後確認：\n\n若您確定要執行救援，請輸入「我是戶長」四個字：");
+        if (confirmStr === "我是戶長") {
+            try {
+                await fixIdentity();
+                alert("權限修復成功！您已取回戶長身份。");
+            } catch (e) {
+                alert("修復失敗，請稍後再試。");
+            }
+        } else {
+            if (confirmStr !== null) alert("輸入錯誤，取消操作。");
+        }
     };
 
     const handleSaveProjectFn = async () => {
