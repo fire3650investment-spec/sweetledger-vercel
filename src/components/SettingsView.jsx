@@ -36,7 +36,7 @@ export default function SettingsView({
     setView,
     updateUserSetting
 }) {
-    const { leaveLedger, resetAccount, deleteAccount } = useLedger();
+    const { leaveLedger, resetAccount, deleteAccount, kickMember } = useLedger();
 
     useEffect(() => {
         window.scrollTo(0, 0);
@@ -262,6 +262,14 @@ export default function SettingsView({
                                         <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${role === 'host' ? 'bg-rose-50 text-rose-600' : 'bg-gray-200 text-gray-500'}`}>
                                             {role === 'host' ? '戶長' : '成員'}
                                         </span>
+                                        {isHost && !isMe && (
+                                            <button
+                                                onClick={() => kickMember(uid)}
+                                                className="p-2 bg-gray-100 text-gray-400 rounded-full hover:bg-rose-50 hover:text-rose-500 transition-colors"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        )}
                                     </div>
                                 );
                             })}

@@ -81,7 +81,23 @@ export const LedgerProvider = ({ children }) => {
 
         const unsubscribe = onSnapshot(docRef, async (docSnap) => { // async for cleanup
             if (docSnap.exists()) {
-                const data = docSnap.data();
+                if (user) {
+                    // [Feature] **Passive Kick-out Check**
+                    // 若這份帳本存在，但我 (user.uid) 不在 users 名單中 -> 代表我被踢出了
+                    if (!data.users || !data.users[user.uid]) {
+                        console.warn("User has been removed from ledger (Kick-out). Disconnecting...");
+                        disconnectLedger();
+                        // 嘗試清除 user document 狀態 (best effort)
+                        try {
+                            const userRef = doc(db, 'users', user.uid);
+                            await updateDoc(userRef, { ledgerCode: deleteField() });
+                        } catch (e) {
+                            // Ignore permission error if kick-out removes write access
+                        }
+                        return; // Stop processing
+                    }
+                }
+
                 localStorage.setItem(cacheKey, JSON.stringify(data));
                 setLedgerData(data);
             } else {
@@ -378,6 +394,36 @@ export const LedgerProvider = ({ children }) => {
             alert("退出失敗，請檢查網路連線。");
         }
     }, [ledgerCode, user, disconnectLedger]);
+
+    const kickMember = useCallback(async (targetUid) => {
+        if (!ledgerCode || !user || !db || !ledgerData) return;
+
+        // 1. 權限檢查：只有 Host 能踢人
+        const myRole = ledgerData.users[user.uid]?.role;
+        if (myRole !== 'host') {
+            alert('權限不足：只有戶長 (Host) 可以移除成員。');
+            return;
+        }
+
+        // 2. 不能踢自己 (應用 leaveLedger)
+        if (targetUid === user.uid) {
+            alert('不能移除自己，請使用「退出帳本」功能。');
+            return;
+        }
+
+        if (!window.confirm('確定要移除這位成員嗎？\n移除後，該成員將無法再存取帳本。')) return;
+
+        try {
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+            await updateDoc(docRef, {
+                [`users.${targetUid}`]: deleteField()
+            });
+            alert('成員已成功移除。');
+        } catch (e) {
+            console.error("Kick Member Error:", e);
+            alert("移除失敗，請稍後再試 (Permission Denied?)。");
+        }
+    }, [ledgerCode, user, ledgerData]);
 
     const deleteAccount = useCallback(async () => {
         if (!user || !db) return;
@@ -691,6 +737,7 @@ export const LedgerProvider = ({ children }) => {
         joinLedger,
         disconnectLedger,
         leaveLedger,
+        kickMember,
         checkUserBinding,
         addTransaction,
         updateTransaction,
