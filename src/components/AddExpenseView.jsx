@@ -6,7 +6,7 @@ import {
     Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock,
     Globe, Search, CheckCircle
 } from 'lucide-react';
-import { getIconComponent, callGemini, getLocalISODate, fetchExchangeRate } from '../utils/helpers';
+import { getIconComponent, callGemini, getLocalISODate, fetchExchangeRate, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
 import ScanReceiptModal from './ScanReceiptModal';
 
