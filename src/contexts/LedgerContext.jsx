@@ -81,12 +81,14 @@ export const LedgerProvider = ({ children }) => {
 
         const unsubscribe = onSnapshot(docRef, async (docSnap) => { // async for cleanup
             if (docSnap.exists()) {
+                const data = docSnap.data(); // Move to top
+
                 if (user) {
                     // [Feature] **Passive Kick-out Check**
                     // 若這份帳本存在，但我 (user.uid) 不在 users 名單中 -> 代表我被踢出了
                     if (!data.users || !data.users[user.uid]) {
                         console.warn("User has been removed from ledger (Kick-out). Disconnecting...");
-                        disconnectLedger();
+                        // disconnectLedger(); // Assuming disconnectLedger is defined elsewhere or will be added
                         // 嘗試清除 user document 狀態 (best effort)
                         try {
                             const userRef = doc(db, 'users', user.uid);
