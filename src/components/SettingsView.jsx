@@ -49,6 +49,8 @@ export default function SettingsView({
 
     // Currency Config Modal State
     const [isCurrencyConfigOpen, setIsCurrencyConfigOpen] = useState(false);
+    // [Refactor] Rate Config Modal State
+    const [isRateConfigOpen, setIsRateConfigOpen] = useState(false);
 
     const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
     const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
@@ -300,34 +302,24 @@ export default function SettingsView({
                         </div>
                     </div>
 
-                    {/* Rates */}
-                    <div className="p-4 border-b border-gray-50 bg-white">
-                        <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2 mb-4">
-                            <Globe size={16} /> 專案匯率設定 (TWD)
-                        </h2>
-
-                        <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
-                            {myFavorites.filter(c => c !== 'TWD').map(curr => (
-                                <div key={curr} className="flex-1 min-w-[120px] flex items-center justify-between p-3 bg-gray-50 rounded-xl border border-gray-100 focus-within:border-rose-200 focus-within:ring-2 focus-within:ring-rose-50 focus-within:bg-white transition-all shadow-sm">
-                                    <span className="text-sm font-bold text-gray-500">{curr}</span>
-                                    <div className="flex items-center gap-1">
-                                        <input
-                                            type="number"
-                                            value={localRates[curr] !== undefined ? localRates[curr] : ''}
-                                            onChange={(e) => handleRateChange(curr, e.target.value)}
-                                            onBlur={() => handleRateBlur(curr)}
-                                            className="w-16 bg-transparent text-sm font-bold text-gray-900 outline-none text-right"
-                                            placeholder="?"
-                                            step="0.01"
-                                        />
-                                    </div>
-                                </div>
-                            ))}
-                            {myFavorites.filter(c => c !== 'TWD').length === 0 && (
-                                <p className="text-xs text-gray-400 italic py-2">請先點擊上方設定外幣，即可在此調整匯率。</p>
-                            )}
+                    {/* [Refactor] Project Rates Entry Point (Hidden Logic) */}
+                    <div
+                        className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 bg-white"
+                        onClick={() => setIsRateConfigOpen(true)}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><Globe size={18} /></div>
+                            <span className="font-bold text-gray-700 text-sm">專案匯率設定 (TWD)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-400 font-bold">
+                                {myFavorites.filter(c => c !== 'TWD' && localRates[c]).length} 組設定
+                            </span>
+                            <ChevronRight size={16} className="text-gray-300" />
                         </div>
                     </div>
+
+
 
                     {/* Category Grid */}
                     <div className="p-4">
@@ -502,6 +494,52 @@ export default function SettingsView({
                         </div>
 
                         <button onClick={() => setIsCurrencyConfigOpen(false)} className="w-full py-3 font-bold text-white bg-gray-900 rounded-xl shadow-lg shadow-gray-200">
+                            完成設定
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* [Refactor] Rate Config Modal */}
+            {isRateConfigOpen && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsRateConfigOpen(false)}>
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Globe size={18} /> 專案匯率設定 (TWD)</h3>
+                            <button onClick={() => setIsRateConfigOpen(false)} className="p-1.5 bg-gray-50 rounded-full text-gray-400 hover:bg-gray-100"><X size={18} /></button>
+                        </div>
+
+                        <p className="text-xs text-gray-400 mb-4">設定外幣對 TWD 的固定匯率，以精確計算本專案的真實花費成本。</p>
+
+                        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+                            {myFavorites.filter(c => c !== 'TWD').map(curr => (
+                                <div key={curr} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100 focus-within:border-rose-200 focus-within:ring-2 focus-within:ring-rose-50 focus-within:bg-white transition-all shadow-sm">
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-xl">{CURRENCY_OPTIONS.find(c => c.code === curr)?.flag}</span>
+                                        <span className="font-bold text-gray-700">{curr}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="number"
+                                            value={localRates[curr] !== undefined ? localRates[curr] : ''}
+                                            onChange={(e) => handleRateChange(curr, e.target.value)}
+                                            onBlur={() => handleRateBlur(curr)}
+                                            className="w-24 bg-transparent text-lg font-bold text-gray-900 outline-none text-right"
+                                            placeholder="?"
+                                            step="0.01"
+                                        />
+                                    </div>
+                                </div>
+                            ))}
+                            {myFavorites.filter(c => c !== 'TWD').length === 0 && (
+                                <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                                    <p className="text-sm text-gray-400 font-bold">尚無常用外幣</p>
+                                    <p className="text-xs text-gray-400 mt-1">請先至上方「設定常用貨幣」新增</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <button onClick={() => setIsRateConfigOpen(false)} className="w-full mt-6 py-3 font-bold text-white bg-gray-900 rounded-xl shadow-lg shadow-gray-200 active:scale-95 transition-transform">
                             完成設定
                         </button>
                     </div>
