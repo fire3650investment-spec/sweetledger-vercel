@@ -53,6 +53,10 @@ export default function SettingsView({
     // Rate Config Modal State
     const [isRateConfigOpen, setIsRateConfigOpen] = useState(false);
 
+    // Debug Mode State
+    const [isDebugMode, setIsDebugMode] = useState(false);
+    const [debugClickCount, setDebugClickCount] = useState(0);
+
     const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
     const serverRates = currentProject?.rates || {};
     const [localRates, setLocalRates] = useState(serverRates);
@@ -349,10 +353,22 @@ export default function SettingsView({
                 </section>
 
                 <div className="text-center pt-8 pb-8">
-                    <button onClick={handleFixIdentity} className="text-[10px] text-gray-300 hover:text-gray-400 flex items-center gap-1 mx-auto">
-                        <ShieldAlert size={10} /> 修復帳號權限 (Debug)
-                    </button>
-                    <p className="text-[10px] text-gray-300 mt-2 font-mono">SweetLedger v2.0.0 (Pro)</p>
+                    {/* Debug Secret Trigger */}
+                    <div onClick={() => {
+                        setDebugClickCount(prev => {
+                            const next = prev + 1;
+                            if (next >= 5) setIsDebugMode(true);
+                            return next;
+                        });
+                    }} className="inline-block">
+                        <p className="text-[10px] text-gray-300 mt-2 font-mono select-none active:scale-95 transition-transform">SweetLedger v2.0.0 (Pro)</p>
+                    </div>
+
+                    {isDebugMode && (
+                        <button onClick={handleFixIdentity} className="mt-4 text-[10px] text-rose-300 hover:text-rose-400 flex items-center gap-1 mx-auto bg-rose-50 px-3 py-1 rounded-full animate-fade-in">
+                            <ShieldAlert size={10} /> 修復帳號權限 (Debug)
+                        </button>
+                    )}
                 </div>
             </div>
 
