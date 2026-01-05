@@ -1,13 +1,16 @@
+
 // src/components/SettingsView.jsx
 import React, { useState, useEffect } from 'react';
 import {
-    User, LogOut, RotateCcw, Download, X, Check, Trash2,
-    Plus, ChevronRight, ArrowLeftRight, Pencil, Palette, LayoutGrid, Copy, Globe,
+    LogOut, RotateCcw, X, Check,
+    ChevronRight, Pencil, Copy, Globe,
     ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins, Share2
 } from 'lucide-react';
-import { getIconComponent, renderAvatar, getCategoryStyle, fetchExchangeRate } from '../utils/helpers';
-import { DEFAULT_CATEGORIES, COLORS, AVAILABLE_ICONS, CHARACTERS, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
+import { renderAvatar, fetchExchangeRate } from '../utils/helpers';
+import { DEFAULT_FAVORITE_CURRENCIES, CURRENCY_OPTIONS, CHARACTERS } from '../utils/constants';
 import { useLedger } from '../contexts/LedgerContext';
+import MemberManager from './settings/MemberManager';
+import CategoryManager from './settings/CategoryManager';
 
 export default function SettingsView({
     user,
@@ -43,16 +46,13 @@ export default function SettingsView({
     }, []);
 
     // --- Local State ---
-    const [isReorderMode, setIsReorderMode] = useState(false);
-    const [activeSortId, setActiveSortId] = useState(null);
     const [copied, setCopied] = useState(false);
 
     // Currency Config Modal State
     const [isCurrencyConfigOpen, setIsCurrencyConfigOpen] = useState(false);
-    // [Refactor] Rate Config Modal State
+    // Rate Config Modal State
     const [isRateConfigOpen, setIsRateConfigOpen] = useState(false);
 
-    const categories = ledgerData?.customCategories || DEFAULT_CATEGORIES;
     const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
     const serverRates = currentProject?.rates || {};
     const [localRates, setLocalRates] = useState(serverRates);
@@ -137,38 +137,7 @@ export default function SettingsView({
         }
     };
 
-    const onSaveCategoryWrapper = () => {
-        setIsEditingCategory(false);
-        handleSaveCategory();
-    };
-
-    const onDeleteCategoryWrapper = (id) => {
-        setIsEditingCategory(false);
-        handleDeleteCategory(id);
-    };
-
-    const handleSortClick = (targetId) => {
-        if (!activeSortId) {
-            setActiveSortId(targetId);
-        } else {
-            if (activeSortId === targetId) {
-                setActiveSortId(null);
-                return;
-            }
-            const oldIndex = categories.findIndex(c => c.id === activeSortId);
-            const newIndex = categories.findIndex(c => c.id === targetId);
-            if (oldIndex === -1 || newIndex === -1) return;
-
-            const newCategories = [...categories];
-            const [movedItem] = newCategories.splice(oldIndex, 1);
-            newCategories.splice(newIndex, 0, movedItem);
-
-            handleReorderCategories(newCategories);
-            setActiveSortId(null);
-        }
-    };
-
-    const handleDeleteAccount = async () => {
+    const handleDeleteAccountFn = async () => {
         if (!window.confirm("警告：此操作將「永久刪除」您的帳號與所有個人資料，且無法復原！")) return;
         if (!window.confirm("再次確認：您確定要刪除帳號嗎？")) return;
 
@@ -182,16 +151,6 @@ export default function SettingsView({
                 alert("刪除失敗：" + e.message);
             }
         }
-    };
-
-    const openNewCategoryModal = () => {
-        setEditingCategoryData({ id: '', name: '', icon: 'food', colorId: 'slate' });
-        setIsEditingCategory(true);
-    };
-
-    const openEditCategoryModal = (cat) => {
-        setEditingCategoryData(cat);
-        setIsEditingCategory(true);
     };
 
     return (
@@ -244,39 +203,13 @@ export default function SettingsView({
                         </div>
                     </div>
 
-                    {/* 3. Members List */}
-                    <div className="border-t border-gray-50 p-4 bg-gray-50/50">
-                        <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2"><User size={12} /> 帳本成員</h4>
-                        <div className="space-y-3">
-                            {Object.keys(ledgerData.users || {}).map(uid => {
-                                const u = ledgerData.users[uid];
-                                const isMe = uid === user.uid;
-                                const role = u.role || 'guest';
-                                return (
-                                    <div key={uid} className="flex items-center gap-3">
-                                        {renderAvatar(u.avatar, "w-8 h-8")}
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className={`font-bold text-sm ${isMe ? 'text-gray-900' : 'text-gray-600'}`}>{u.name}</span>
-                                                {isMe && <span className="text-[10px] text-gray-400 bg-gray-200 px-1.5 rounded-full">(我)</span>}
-                                            </div>
-                                        </div>
-                                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${role === 'host' ? 'bg-rose-50 text-rose-600' : 'bg-gray-200 text-gray-500'}`}>
-                                            {role === 'host' ? '戶長' : '成員'}
-                                        </span>
-                                        {isHost && !isMe && (
-                                            <button
-                                                onClick={() => kickMember(uid)}
-                                                className="p-2 bg-gray-100 text-gray-400 rounded-full hover:bg-rose-50 hover:text-rose-500 transition-colors"
-                                            >
-                                                <Trash2 size={14} />
-                                            </button>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
+                    {/* 3. Members List (Refactored) */}
+                    <MemberManager
+                        ledgerData={ledgerData}
+                        user={user}
+                        isHost={isHost}
+                        kickMember={kickMember}
+                    />
                 </section>
 
                 {/* --- Island B: Preferences --- */}
@@ -302,7 +235,7 @@ export default function SettingsView({
                         </div>
                     </div>
 
-                    {/* [Refactor] Project Rates Entry Point (Hidden Logic) */}
+                    {/* Rate Config Entry Point */}
                     <div
                         className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 bg-white"
                         onClick={() => setIsRateConfigOpen(true)}
@@ -319,57 +252,17 @@ export default function SettingsView({
                         </div>
                     </div>
 
-
-
-                    {/* Category Grid */}
-                    <div className="p-4">
-                        <div className="flex justify-between items-center mb-4">
-                            <h2 className="text-sm font-bold text-gray-400 flex items-center gap-2"><LayoutGrid size={16} /> 分類管理</h2>
-                            <button
-                                onClick={() => { setIsReorderMode(!isReorderMode); setActiveSortId(null); }}
-                                className={`text-xs font-bold px-3 py-1.5 rounded-full transition-all flex items-center gap-1 ${isReorderMode ? 'bg-rose-500 text-white shadow-md' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                            >
-                                <ArrowLeftRight size={12} /> {isReorderMode ? '完成' : '排序'}
-                            </button>
-                        </div>
-
-                        <div className="grid grid-cols-5 gap-2 sm:gap-3">
-                            {categories.map((cat) => {
-                                const Icon = getIconComponent(cat.icon);
-                                const isSelected = activeSortId === cat.id;
-                                const style = getCategoryStyle(cat, 'input');
-                                const wiggleStyle = isReorderMode ? { animation: `wiggle 0.3s ease-in-out infinite ${Math.random() * 0.5}s` } : {};
-
-                                return (
-                                    <button
-                                        key={cat.id}
-                                        style={wiggleStyle}
-                                        onClick={() => isReorderMode ? handleSortClick(cat.id) : openEditCategoryModal(cat)}
-                                        className={`flex flex-col items-center gap-1 group relative transition-all duration-300 ${isSelected ? 'scale-110 z-10' : 'active:scale-95'}`}
-                                    >
-                                        <div
-                                            className={`
-                                        w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-sm border
-                                        ${isSelected ? style.activeClass : style.containerClass}
-                                        ${isSelected ? 'shadow-lg' : ''}
-                                    `}
-                                        >
-                                            <Icon size={20} className={isSelected ? 'text-white' : style.iconClass} />
-                                        </div>
-                                        <span className="text-[10px] font-medium text-gray-500 truncate w-full text-center">{cat.name}</span>
-                                    </button>
-                                );
-                            })}
-                            {!isReorderMode && (
-                                <button onClick={openNewCategoryModal} className="flex flex-col items-center gap-1 group active:scale-95 transition-transform">
-                                    <div className="w-12 h-12 rounded-2xl bg-gray-50 border border-dashed border-gray-300 flex items-center justify-center text-gray-400 group-hover:border-rose-300 group-hover:text-rose-500 transition-colors">
-                                        <Plus size={20} />
-                                    </div>
-                                    <span className="text-[10px] font-medium text-gray-400">新增</span>
-                                </button>
-                            )}
-                        </div>
-                    </div>
+                    {/* Category Manager (Refactored) */}
+                    <CategoryManager
+                        ledgerData={ledgerData}
+                        isEditingCategory={isEditingCategory}
+                        setIsEditingCategory={setIsEditingCategory}
+                        editingCategoryData={editingCategoryData}
+                        setEditingCategoryData={setEditingCategoryData}
+                        handleSaveCategory={handleSaveCategory}
+                        handleDeleteCategory={handleDeleteCategory}
+                        handleReorderCategories={handleReorderCategories}
+                    />
                 </section>
 
                 {/* --- Island C: System Actions --- */}
@@ -440,7 +333,7 @@ export default function SettingsView({
                         {/* Delete Account */}
                         <div
                             className="p-4 flex justify-between items-center active:bg-gray-50 hover:bg-gray-50 transition-colors cursor-pointer"
-                            onClick={handleDeleteAccount}
+                            onClick={handleDeleteAccountFn}
                         >
                             <div className="flex items-center gap-3">
                                 <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><AlertTriangle size={18} /></div>
@@ -500,7 +393,7 @@ export default function SettingsView({
                 </div>
             )}
 
-            {/* [Refactor] Rate Config Modal */}
+            {/* Rate Config Modal */}
             {isRateConfigOpen && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsRateConfigOpen(false)}>
                     <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
@@ -574,111 +467,6 @@ export default function SettingsView({
                     </div>
                 </div>
             )}
-
-            {/* Category Editor Modal */}
-            {isEditingCategory && (
-                <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:px-4">
-                    <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsEditingCategory(false)} />
-                    <div className="bg-white w-full sm:max-w-md sm:rounded-3xl rounded-t-3xl shadow-2xl relative z-10 flex flex-col max-h-[90vh] animate-slide-up">
-
-                        <div className="bg-white px-6 py-4 flex justify-between items-center border-b border-gray-100 rounded-t-3xl">
-                            <h3 className="font-bold text-gray-800 text-lg">{editingCategoryData.id ? '編輯分類' : '新增分類'}</h3>
-                            <button onClick={() => setIsEditingCategory(false)} className="p-2 bg-gray-50 rounded-full text-gray-400 hover:text-gray-600"><X size={20} /></button>
-                        </div>
-
-                        <div className="p-6 space-y-6 overflow-y-auto">
-                            {/* Preview */}
-                            <div className="flex justify-center">
-                                <div className="flex flex-col items-center gap-2">
-                                    {(() => {
-                                        const style = getCategoryStyle(editingCategoryData, 'display');
-                                        return (
-                                            <div className={`w-20 h-20 rounded-3xl flex items-center justify-center shadow-xl transition-colors ${style.containerClass}`}>
-                                                {React.createElement(getIconComponent(editingCategoryData.icon), { size: 36, className: style.iconClass })}
-                                            </div>
-                                        );
-                                    })()}
-                                    <span className="font-bold text-gray-800">{editingCategoryData.name || '分類名稱'}</span>
-                                </div>
-                            </div>
-
-                            {/* Name Input */}
-                            <div>
-                                <label className="block text-xs font-bold text-gray-400 uppercase mb-2">名稱</label>
-                                <input
-                                    type="text"
-                                    value={editingCategoryData.name}
-                                    onChange={(e) => setEditingCategoryData({ ...editingCategoryData, name: e.target.value })}
-                                    className="w-full bg-gray-50 text-gray-900 font-bold py-3 px-4 rounded-xl outline-none border-2 border-transparent focus:border-rose-500 transition-colors"
-                                    placeholder="輸入分類名稱..."
-                                />
-                            </div>
-
-                            {/* Color Picker */}
-                            <div>
-                                <label className="block text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-2"><Palette size={12} /> 顏色</label>
-                                <div className="flex gap-3 overflow-x-auto pb-2 p-3 no-scrollbar">
-                                    {COLORS.map(c => (
-                                        <button
-                                            key={c.hex}
-                                            onClick={() => {
-                                                const colorId = c.id || Object.keys(COLORS).find(k => COLORS[k].hex === c.hex) || 'slate';
-                                                setEditingCategoryData({ ...editingCategoryData, colorId: c.name?.toLowerCase() || 'slate' });
-                                            }}
-                                            className={`w-10 h-10 rounded-full shrink-0 transition-transform ${editingCategoryData.colorId === (c.name?.toLowerCase()) ? 'ring-4 ring-offset-2 ring-gray-200 scale-110' : 'hover:scale-105'}`}
-                                            style={{ backgroundColor: c.hex }}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Icon Picker */}
-                            <div>
-                                <label className="block text-xs font-bold text-gray-400 uppercase mb-2 flex items-center gap-2"><LayoutGrid size={12} /> 圖示</label>
-                                <div className="grid grid-cols-5 gap-3 max-h-40 overflow-y-auto p-1">
-                                    {AVAILABLE_ICONS.map(iconName => {
-                                        const Icon = getIconComponent(iconName);
-                                        const isSelected = editingCategoryData.icon === iconName;
-                                        return (
-                                            <button
-                                                key={iconName}
-                                                onClick={() => setEditingCategoryData({ ...editingCategoryData, icon: iconName })}
-                                                className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isSelected ? 'bg-gray-900 text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-400 hover:bg-gray-100'}`}
-                                            >
-                                                <Icon size={20} />
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-4 border-t border-gray-100 flex gap-3 bg-white pb-[calc(env(safe-area-inset-bottom)+1rem)] rounded-b-3xl">
-                            {editingCategoryData.id && (
-                                <button onClick={() => onDeleteCategoryWrapper(editingCategoryData.id)} className="p-4 bg-gray-50 text-gray-400 rounded-2xl hover:bg-red-50 hover:text-red-500 transition-colors">
-                                    <Trash2 size={20} />
-                                </button>
-                            )}
-                            <button
-                                onClick={onSaveCategoryWrapper}
-                                disabled={!editingCategoryData.name}
-                                className="flex-1 bg-gray-900 text-white font-bold py-4 rounded-2xl shadow-lg shadow-gray-200 active:scale-95 transition-transform disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
-                            >
-                                <Check size={20} /> 儲存變更
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <style>{`
-        @keyframes wiggle {
-          0% { transform: rotate(0deg); }
-          25% { transform: rotate(-2deg); }
-          75% { transform: rotate(2deg); }
-          100% { transform: rotate(0deg); }
-        }
-      `}</style>
         </div>
     );
 }
