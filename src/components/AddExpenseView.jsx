@@ -176,7 +176,7 @@ export default function AddExpenseView({
 
         if (!result) { alert("AI 無法解析"); return; }
         try {
-            const cleanJson = result.replace(/```json / g, '').replace(/```/g, '').trim();
+            const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim();
             const parsed = JSON.parse(cleanJson);
             if (parsed.amount) {
                 setLocalAmount(parsed.amount.toString());
