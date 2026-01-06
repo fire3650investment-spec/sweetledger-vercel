@@ -54,7 +54,8 @@ export default function MonthlyTrendChart({
     const stats = useMemo(() => {
         if (chartData.length === 0) return null;
         const totalSum = chartData.reduce((acc, d) => acc + d.amount, 0);
-        const average = Math.round(totalSum / chartData.length);
+        const activeMonthsCount = chartData.filter(d => d.amount > 0).length;
+        const average = activeMonthsCount > 0 ? Math.round(totalSum / activeMonthsCount) : 0;
 
         const currentData = chartData.find(d => d.isCurrent);
         const prevData = chartData[chartData.length - 2]; // The one before current
