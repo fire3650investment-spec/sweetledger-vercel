@@ -30,7 +30,7 @@ export default function OnboardingView({
                     </div>
                     <div>
                         <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">
-                            AA 記帳<span className="text-rose-500">伴侶、朋友共用帳本</span>
+                            AA<span className="text-rose-500">記帳</span>
                         </h1>
                         <p className="text-gray-500 mt-2 text-sm font-medium">除了愛，什麼都能算清楚</p>
                     </div>
