@@ -216,12 +216,26 @@ export default function SettingsView({
                     />
                 </section>
 
-                {/* --- Island B: Preferences --- */}
+                {/* --- Island B: Categories --- */}
                 <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <CategoryManager
+                        ledgerData={ledgerData}
+                        isEditingCategory={isEditingCategory}
+                        setIsEditingCategory={setIsEditingCategory}
+                        editingCategoryData={editingCategoryData}
+                        setEditingCategoryData={setEditingCategoryData}
+                        handleSaveCategory={handleSaveCategory}
+                        handleDeleteCategory={handleDeleteCategory}
+                        handleReorderCategories={handleReorderCategories}
+                    />
+                </section>
+
+                {/* --- Island C: Preferences & System Actions --- */}
+                <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
 
                     {/* Favorite Currencies Entry Point */}
                     <div
-                        className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50"
+                        className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer"
                         onClick={() => setIsCurrencyConfigOpen(true)}
                     >
                         <div className="flex items-center gap-3">
@@ -241,7 +255,7 @@ export default function SettingsView({
 
                     {/* Rate Config Entry Point */}
                     <div
-                        className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer border-b border-gray-50 bg-white"
+                        className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer bg-white"
                         onClick={() => setIsRateConfigOpen(true)}
                     >
                         <div className="flex items-center gap-3">
@@ -255,22 +269,6 @@ export default function SettingsView({
                             <ChevronRight size={16} className="text-gray-300" />
                         </div>
                     </div>
-
-                    {/* Category Manager (Refactored) */}
-                    <CategoryManager
-                        ledgerData={ledgerData}
-                        isEditingCategory={isEditingCategory}
-                        setIsEditingCategory={setIsEditingCategory}
-                        editingCategoryData={editingCategoryData}
-                        setEditingCategoryData={setEditingCategoryData}
-                        handleSaveCategory={handleSaveCategory}
-                        handleDeleteCategory={handleDeleteCategory}
-                        handleReorderCategories={handleReorderCategories}
-                    />
-                </section>
-
-                {/* --- Island C: System Actions --- */}
-                <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
 
                     {/* Subscriptions Entry Point */}
                     <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={() => setView('subscriptions')}>
