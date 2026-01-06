@@ -181,6 +181,9 @@ export default function SweetLedger() {
         if (!editingProjectData.name) return;
         setIsEditingProject(false);
         const projectToSave = { ...editingProjectData };
+        if (projectToSave.type === 'private' && !projectToSave.owner) {
+            projectToSave.owner = user.uid;
+        }
         setEditingProjectData({ id: '', name: '', icon: 'project_daily' });
         await saveProject(projectToSave);
     };
