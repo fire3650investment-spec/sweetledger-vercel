@@ -628,12 +628,15 @@ export const LedgerProvider = ({ children }) => {
             ...(type === 'private' && owner ? { owner } : {})
         };
 
-        if (projectData.id) {
-            newProjects = newProjects.map(p => p.id === projectData.id ? { ...p, ...projectWithRates } : p);
+        let projectId = projectData.id;
+        if (projectId) {
+            newProjects = newProjects.map(p => p.id === projectId ? { ...p, ...projectWithRates } : p);
         } else {
-            newProjects.push({ ...projectWithRates, id: generateId() });
+            projectId = generateId();
+            newProjects.push({ ...projectWithRates, id: projectId });
         }
         await updateDoc(docRef, { projects: newProjects });
+        return projectId;
     }, [ledgerCode, ledgerData]);
 
     const deleteProject = useCallback(async (projectId) => {

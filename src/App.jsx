@@ -185,7 +185,8 @@ export default function SweetLedger() {
             projectToSave.owner = user.uid;
         }
         setEditingProjectData({ id: '', name: '', icon: 'project_daily' });
-        await saveProject(projectToSave);
+        const savedId = await saveProject(projectToSave);
+        if (savedId) setCurrentProjectId(savedId);
     };
 
     const handleDeleteProjectFn = async (projectId) => {
