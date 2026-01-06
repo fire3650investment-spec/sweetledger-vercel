@@ -165,6 +165,15 @@ export const LedgerProvider = ({ children }) => {
                 };
             }
 
+            // (1.5) Payment Methods Init
+            if (!ledgerData.paymentMethods) {
+                needsUpdate = true;
+                updates.paymentMethods = [
+                    { id: 'cash', name: '現金' },
+                    { id: 'credit_card', name: '信用卡' }
+                ];
+            }
+
             // (2) Transaction Check (Expensive - Optimize Loop)
             if (!needsUpdate && ledgerData.transactions && ledgerData.transactions.length > 0) {
                 let foundDirty = false;
@@ -466,7 +475,8 @@ export const LedgerProvider = ({ children }) => {
         const {
             amount, currency, category, payer,
             splitType, customSplit, note, projectId,
-            date, isSubscription, subCycle, subPayDay
+            date, isSubscription, subCycle, subPayDay,
+            paymentMethod
         } = payload;
 
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
@@ -514,6 +524,7 @@ export const LedgerProvider = ({ children }) => {
             customSplit: cleanCustomSplit,
             note: note || category.name,
             projectId: projectId,
+            paymentMethod: paymentMethod || null,
         };
 
         if (isSubscription) {
@@ -596,6 +607,11 @@ export const LedgerProvider = ({ children }) => {
                 isSettlement: true
             })
         });
+    }, [ledgerCode]);
+    const updatePaymentMethods = useCallback(async (newMethods) => {
+        if (!ledgerCode || !db) return;
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        await updateDoc(docRef, { paymentMethods: newMethods });
     }, [ledgerCode]);
 
     const saveProject = useCallback(async (projectData) => {

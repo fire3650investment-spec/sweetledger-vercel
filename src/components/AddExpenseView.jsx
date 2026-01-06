@@ -1,10 +1,9 @@
-
 // src/components/AddExpenseView.jsx
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
-    X, RefreshCw, Sparkles, StopCircle, Mic, Check,
-    Calendar, User, Users, Repeat, ChevronDown, Camera, AlertCircle, Image, Lock,
-    Globe, Search, CheckCircle
+    X, Camera, Image, RefreshCw, ChevronDown, Check, Lock, Users,
+    AlertCircle, Sparkles, Mic, StopCircle, Calendar, Plus, User, Repeat,
+    Search, CheckCircle, HelpCircle, CreditCard
 } from 'lucide-react';
 import { getIconComponent, callGemini, getLocalISODate, fetchExchangeRate, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
@@ -47,10 +46,11 @@ export default function AddExpenseView({
         return localStorage.getItem('sweet_last_currency') || 'TWD';
     });
 
-    const [payer, setPayer] = useState(user?.uid || '');
-
     // Split Logic
     const [splitType, setSplitType] = useState('even');
+    const [payer, setPayer] = useState('');
+    const [paymentMethod, setPaymentMethod] = useState(''); // New State
+
     const [customSplitHost, setCustomSplitHost] = useState('');
     const [customSplitGuest, setCustomSplitGuest] = useState('');
 
@@ -159,9 +159,9 @@ export default function AddExpenseView({
         setIsAiModalOpen(false);
         setIsAiProcessing(true);
         let prompt = `你是一個記帳助手。請分析使用者的輸入，並回傳一個 JSON 物件。
-        目前的日期是：${new Date().toLocaleString('zh-TW')}。
+目前的日期是：${new Date().toLocaleString('zh-TW')}。
         可用的分類 ID: ${currentCats.map(c => c.id).join(', ')}
-        請解析：1. 金額 (amount) 2. 類別 ID (categoryId) 3. 備註 (note) 4. 幣別 (currency, 預設 TWD)
+請解析：1. 金額(amount) 2. 類別 ID(categoryId) 3. 備註(note) 4. 幣別(currency, 預設 TWD)
         只回傳 JSON。`;
 
         if (isPrivateProject) {
@@ -176,7 +176,7 @@ export default function AddExpenseView({
 
         if (!result) { alert("AI 無法解析"); return; }
         try {
-            const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim();
+            const cleanJson = result.replace(/```json / g, '').replace(/```/g, '').trim();
             const parsed = JSON.parse(cleanJson);
             if (parsed.amount) {
                 setLocalAmount(parsed.amount.toString());
@@ -258,7 +258,8 @@ export default function AddExpenseView({
                 date,
                 isSubscription,
                 subCycle,
-                subPayDay
+                subPayDay,
+                paymentMethod // Pass to action
             });
         } catch (e) {
             console.error("Add Tx Error:", e);
@@ -470,6 +471,32 @@ export default function AddExpenseView({
                                                 </button>
                                             ))}
                                         </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {/* Payment Method Selector (New) */}
+                        {splitType !== 'multi_payer' && (
+                            <>
+                                <div className="h-[1px] bg-gray-50 w-full"></div>
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 text-gray-500">
+                                        <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500"><CreditCard size={16} /></div>
+                                        <span className="text-sm font-bold">支付方式</span>
+                                    </div>
+                                    <div className="relative w-40">
+                                        <select
+                                            value={paymentMethod}
+                                            onChange={(e) => setPaymentMethod(e.target.value)}
+                                            className={`w-full appearance-none bg-gray-50 text-xs font-bold py-2 pl-3 pr-8 rounded-xl outline-none border border-gray-100 focus:border-blue-200 text-right ${!paymentMethod ? 'text-gray-400' : 'text-gray-700'}`}
+                                        >
+                                            <option value="">未指定</option>
+                                            {(ledgerData.paymentMethods || []).map(m => (
+                                                <option key={m.id} value={m.id}>{m.name}</option>
+                                            ))}
+                                        </select>
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"><ChevronDown size={14} /></div>
                                     </div>
                                 </div>
                             </>

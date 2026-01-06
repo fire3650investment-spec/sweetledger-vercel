@@ -11,6 +11,7 @@ import { DEFAULT_FAVORITE_CURRENCIES, CURRENCY_OPTIONS, CHARACTERS } from '../ut
 import { useLedger } from '../contexts/LedgerContext';
 import MemberManager from './settings/MemberManager';
 import CategoryManager from './settings/CategoryManager';
+import PaymentMethodManager from './settings/PaymentMethodManager';
 
 export default function SettingsView({
     user,
@@ -39,7 +40,7 @@ export default function SettingsView({
     setView,
     updateUserSetting
 }) {
-    const { leaveLedger, resetAccount, deleteAccount, kickMember } = useLedger();
+    const { leaveLedger, resetAccount, deleteAccount, kickMember, updatePaymentMethods } = useLedger();
 
     useEffect(() => {
         window.scrollTo(0, 0);
@@ -278,6 +279,12 @@ export default function SettingsView({
                         </div>
                         <ChevronRight size={16} className="text-gray-300" />
                     </div>
+
+                    {/* Payment Payment Manager */}
+                    <PaymentMethodManager
+                        ledgerData={ledgerData}
+                        updatePaymentMethods={updatePaymentMethods}
+                    />
 
                     <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleExport}>
                         <div className="flex items-center gap-3">
