@@ -4,6 +4,8 @@ import { ChevronLeft, ChevronRight, Coins } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS } from '../utils/constants';
 import MonthlyTrendChart from './stats/MonthlyTrendChart';
+import ContributionChart from './stats/ContributionChart';
+import CategoryPieChart from './stats/CategoryPieChart';
 
 export default function StatsView({ ledgerData, currentProjectId, statsMonth, setStatsMonth, privacyMode, setEditingTx, setIsEditTxModalOpen }) {
     if (!ledgerData) return null;
@@ -18,7 +20,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
     const isPrivateProject = currentProject?.type === 'private';
 
-    const { filteredTxs, sortedHistory, rates, hostId, guestId, hostTotal, guestTotal, hostRatio, guestRatio, totalExpense, categoryStats, pieChartGradient } = useMemo(() => {
+    const { filteredTxs, sortedHistory, rates, hostId, guestId, hostTotal, guestTotal, hostRatio, guestRatio, totalExpense, categoryStats, hostName, guestName } = useMemo(() => {
         const rawTxs = ledgerData.transactions || [];
         const safeUsers = ledgerData.users || {};
         const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
@@ -39,6 +41,10 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const currentRates = currentProject?.rates || { JPY: 0.23, THB: 1 };
         const hId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'host');
         const gId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'guest');
+
+        // Pass user names
+        const hName = safeUsers[hId]?.name || 'Host';
+        const gName = safeUsers[gId]?.name || 'Guest';
 
         const calculateTotalPaid = (uid) => {
             return txs.reduce((sum, tx) => {
@@ -87,15 +93,21 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         });
         catStats.sort((a, b) => b.total - a.total);
 
-        let gradientStr = '';
-        if (totalExp === 0 || catStats.length === 0) gradientStr = 'conic-gradient(#e5e7eb 0% 100%)';
-        else {
-            let currentPercent = 0;
-            catStats.forEach(stat => { const percent = (stat.total / totalExp) * 100; const endPercent = currentPercent + percent; gradientStr += `${stat.hex || '#ccc'} ${currentPercent}% ${endPercent}%, `; currentPercent = endPercent; });
-            gradientStr = `conic-gradient(${gradientStr.slice(0, -2)})`;
-        }
+        // Removed Gradient logic (replaced by Recharts)
 
-        return { filteredTxs: txs, sortedHistory: sorted, rates: currentRates, hostId: hId, guestId: gId, hostTotal: isNaN(hTotal) ? 0 : hTotal, guestTotal: isNaN(gTotal) ? 0 : gTotal, hostRatio: isNaN(hRatio) ? 50 : hRatio, guestRatio: isNaN(gRatio) ? 50 : gRatio, totalExpense: isNaN(totalExp) ? 0 : totalExp, categoryStats: catStats, pieChartGradient: gradientStr };
+        return {
+            filteredTxs: txs,
+            sortedHistory: sorted,
+            rates: currentRates,
+            hostId: hId, guestId: gId,
+            hostName: hName, guestName: gName,
+            hostTotal: isNaN(hTotal) ? 0 : hTotal,
+            guestTotal: isNaN(gTotal) ? 0 : gTotal,
+            hostRatio: isNaN(hRatio) ? 50 : hRatio,
+            guestRatio: isNaN(gRatio) ? 50 : gRatio,
+            totalExpense: isNaN(totalExp) ? 0 : totalExp,
+            categoryStats: catStats
+        };
     }, [ledgerData, statsMonth, currentProjectId, currentProject]);
 
     const getSmartTags = (tx) => {
@@ -136,7 +148,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                 </div>
             </div>
 
-            {/* Trend Chart (New) */}
+            {/* Trend Chart (Recharts) */}
             <MonthlyTrendChart
                 ledgerData={ledgerData}
                 currentProjectId={currentProjectId}
@@ -144,43 +156,24 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                 isPrivateProject={isPrivateProject}
             />
 
-            {/* Contribution Chart (Hidden in Private Mode) */}
+            {/* Contribution Chart (Recharts) - Hidden in Private Mode */}
             {!isPrivateProject && (
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
-                    <h3 className="text-gray-600 font-bold mb-4">消費貢獻度 (支付金額 - TWD)</h3>
-                    <div className="flex justify-between items-center mb-2 text-sm">
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-                            <span className="text-gray-600">{(ledgerData.users || {})[hostId]?.name || 'Host'}</span>
-                        </div>
-                        <div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(hostTotal, 'TWD')}</span><span className="text-xs text-gray-400">({Math.round(hostRatio)}%)</span></div>
-                    </div>
-                    <div className="flex justify-between items-center mb-3 text-sm">
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full bg-pink-500"></div>
-                            <span className="text-gray-600">{(ledgerData.users || {})[guestId]?.name || 'Guest'}</span>
-                        </div>
-                        <div className="flex items-center gap-2"><span className="font-bold text-gray-800">{formatCurrency(guestTotal, 'TWD')}</span><span className="text-xs text-gray-400">({Math.round(guestRatio)}%)</span></div>
-                    </div>
-                    <div className="h-4 w-full bg-gray-100 rounded-full flex overflow-hidden"><div style={{ width: `${hostRatio}%` }} className="bg-blue-500 transition-all duration-1000"></div><div style={{ width: `${guestRatio}%` }} className="bg-pink-500 transition-all duration-1000"></div></div>
-                </div>
+                <ContributionChart
+                    hostName={hostName}
+                    guestName={guestName}
+                    hostTotal={hostTotal}
+                    guestTotal={guestTotal}
+                    hostRatio={hostRatio}
+                    guestRatio={guestRatio}
+                />
             )}
 
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 flex flex-col items-center">
-                <h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比 (TWD)</h3>
-                <div className="relative w-48 h-48 rounded-full mb-6" style={{ background: pieChartGradient }}><div className="absolute inset-4 bg-white rounded-full flex flex-col items-center justify-center"><span className="text-sm text-gray-400">總支出</span><span className="text-xl font-bold text-gray-800">{formatCurrency(totalExpense, 'TWD')}</span></div></div>
-                <div className="w-full space-y-3">
-                    {categoryStats.map(stat => (
-                        <div key={stat.id} className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: stat.hex }}></div>
-                                <span className="text-sm text-gray-600 font-medium">{stat.name}</span>
-                            </div>
-                            <div className="text-sm"><span className="font-bold text-gray-800 mr-2">{formatCurrency(stat.total, 'TWD')}</span><span className="text-gray-400 text-xs">{Math.round((stat.total / totalExpense) * 100)}%</span></div>
-                        </div>
-                    ))}
-                </div>
-            </div>
+            {/* Category Pie Chart (Recharts) */}
+            <CategoryPieChart
+                categoryStats={categoryStats}
+                totalExpense={totalExpense}
+            />
+
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
                 <h3 className="text-gray-600 font-bold mb-4">本月交易明細 ({sortedHistory.length}筆)</h3>
                 <div className="space-y-4">
