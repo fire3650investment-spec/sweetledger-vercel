@@ -183,44 +183,58 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
 
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
                 <h3 className="text-gray-600 font-bold mb-4">本月交易明細 ({sortedHistory.length}筆)</h3>
-                <div className="space-y-4">
-                    {sortedHistory.map((tx) => {
-                        const CatIcon = getIconComponent(tx.category?.icon) || Coins;
-                        const tags = getSmartTags(tx);
-                        const style = getCategoryStyle(tx.category, 'display');
 
-                        // [Batch 3 New] Currency Visuals
-                        const txCurrency = tx.currency || 'TWD';
-                        const isForeign = txCurrency !== 'TWD';
-                        const currencyInfo = CURRENCY_OPTIONS.find(c => c.code === txCurrency);
+                {/* [Layout Fix] Group by Date Logic */}
+                <div className="space-y-6">
+                    {Object.entries(sortedHistory.reduce((groups, tx) => {
+                        const dateStr = new Date(tx.date).toLocaleDateString('zh-TW'); // e.g. 2024/1/8
+                        if (!groups[dateStr]) groups[dateStr] = [];
+                        groups[dateStr].push(tx);
+                        return groups;
+                    }, {})).map(([date, txs]) => (
+                        <div key={date}>
+                            <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">{date}</h4>
+                            <div className="border border-gray-50 rounded-2xl overflow-hidden">
+                                {txs.map((tx, idx) => {
+                                    const CatIcon = getIconComponent(tx.category?.icon) || Coins;
+                                    const tags = getSmartTags(tx);
+                                    const style = getCategoryStyle(tx.category, 'display');
 
-                        return (
-                            <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-3 active:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 last:pb-0`}>
-                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                    <div className="text-gray-400 text-xs w-8 text-center shrink-0">{new Date(tx.date).getDate()}日</div>
-                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${style.containerClass}`} style={style.containerStyle}>
-                                        <CatIcon size={16} className={style.iconClass} style={style.iconStyle} />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-medium text-gray-800 text-sm truncate">{tx.note || tx.category?.name || '未分類'}</p>
-                                        <div className="flex items-center flex-wrap gap-1 mt-0.5">
-                                            {/* [Private Mode Fix] Always show category name in sub-line */}
-                                            <p className="text-xs text-gray-400 mr-1 shrink-0">{tx.category?.name}</p>
-                                            {tags.map((tag, i) => (
-                                                <span key={i} className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${tag.color === 'blue' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-gray-100 text-gray-500 border-gray-100'}`}>{tag.label}</span>
-                                            ))}
+                                    // [Batch 3 New] Currency Visuals
+                                    const txCurrency = tx.currency || 'TWD';
+                                    const isForeign = txCurrency !== 'TWD';
+                                    const currencyInfo = CURRENCY_OPTIONS.find(c => c.code === txCurrency);
+
+                                    return (
+                                        <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-3 active:bg-gray-50 transition-colors ${idx !== txs.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                {/* Removed Date Column (32px) */}
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${style.containerClass}`} style={style.containerStyle}>
+                                                    <CatIcon size={16} className={style.iconClass} style={style.iconStyle} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium text-gray-800 text-sm truncate">{tx.note || tx.category?.name || '未分類'}</p>
+                                                    <div className="flex items-center flex-wrap gap-1 mt-0.5">
+                                                        {/* [Private Mode Fix] Always show category name in sub-line */}
+                                                        <p className="text-xs text-gray-400 mr-1 shrink-0">{tx.category?.name}</p>
+                                                        {tags.map((tag, i) => (
+                                                            <span key={i} className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${tag.color === 'blue' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-gray-100 text-gray-500 border-gray-100'}`}>{tag.label}</span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col items-end ml-4">
+                                                <span className={`font-bold whitespace-nowrap text-sm flex items-center gap-1 max-w-[120px] justify-end ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
+                                                    {isForeign && <span className="text-[10px] grayscale opacity-80 mr-0.5 shrink-0">{currencyInfo?.flag || txCurrency}</span>}
+                                                    <span className="truncate">{formatCurrency(tx.amount || 0, txCurrency, privacyMode)}</span>
+                                                </span>
+                                            </div>
                                         </div>
-                                    </div>
-                                </div>
-                                <div className="flex flex-col items-end ml-4">
-                                    <span className={`font-bold whitespace-nowrap text-sm flex items-center gap-1 max-w-[120px] justify-end ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
-                                        {isForeign && <span className="text-[10px] grayscale opacity-80 mr-0.5 shrink-0">{currencyInfo?.flag || txCurrency}</span>}
-                                        <span className="truncate">{formatCurrency(tx.amount || 0, txCurrency, privacyMode)}</span>
-                                    </span>
-                                </div>
+                                    );
+                                })}
                             </div>
-                        );
-                    })}
+                        </div>
+                    ))}
                 </div>
             </div>
         </div>
