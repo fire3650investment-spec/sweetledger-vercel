@@ -137,8 +137,8 @@ export default function CategoryManager({
                                     {(() => {
                                         const style = getCategoryStyle(editingCategoryData, 'display');
                                         return (
-                                            <div className={`w-20 h-20 rounded-3xl flex items-center justify-center shadow-xl transition-colors ${style.containerClass}`}>
-                                                {React.createElement(getIconComponent(editingCategoryData.icon), { size: 36, className: style.iconClass })}
+                                            <div className={`w-20 h-20 rounded-3xl flex items-center justify-center shadow-xl transition-colors ${style.containerClass}`} style={style.containerStyle}>
+                                                {React.createElement(getIconComponent(editingCategoryData.icon), { size: 36, className: style.iconClass, style: style.iconStyle })}
                                             </div>
                                         );
                                     })()}

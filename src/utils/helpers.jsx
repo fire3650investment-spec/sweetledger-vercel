@@ -158,19 +158,22 @@ export const getCategoryStyle = (category, mode = 'display') => {
     if (!category) return { containerClass: 'bg-gray-100', iconClass: 'text-gray-500', hex: '#94a3b8' };
 
     // Input Mode
-    // Input Mode
     if (mode === 'input') {
-        // [Unified Style] Force uniform gray/rose style for cleaner UI, ignoring category colors
         return {
             containerClass: 'bg-gray-50 border border-gray-100',
             iconClass: 'text-gray-400',
-            activeClass: 'bg-rose-500 text-white shadow-md shadow-rose-200 border-transparent',
+            activeClass: 'bg-rose-500 text-white shadow-md shadow-rose-200 border-transparent', // Rose remains as primary active color
             hex: '#64748b'
         };
     }
 
     // Display Mode
-    if (category.bg && category.text) {
+    let token = null;
+
+    if (category.colorId && PALETTE && PALETTE[category.colorId]) {
+        token = PALETTE[category.colorId];
+    } else if (category.bg && category.text) {
+        // Legacy support or direct overrides
         return {
             containerClass: category.bg,
             iconClass: category.text,
@@ -178,17 +181,28 @@ export const getCategoryStyle = (category, mode = 'display') => {
         };
     }
 
-    if (category.colorId && PALETTE && PALETTE[category.colorId]) {
-        const token = PALETTE[category.colorId];
+    if (token) {
+        // Case 1: Legacy Tailwind Class (e.g., Rose)
+        if (token.bg && token.text) {
+            return {
+                containerClass: `${token.bg} ${token.text}`,
+                iconClass: token.text,
+                hex: token.hex
+            };
+        }
+        // Case 2: Morandi Hex (Inline Style)
         return {
-            containerClass: `${token.bg} ${token.text}`,
-            iconClass: token.text,
+            containerClass: '', // No bg color class
+            iconClass: '', // No text color class
+            containerStyle: { backgroundColor: `${token.hex}26`, color: token.hex }, // 15% opacity hex (26 in hex)
+            iconStyle: { color: token.hex },
             hex: token.hex
         };
     }
 
+    // Fallback
     return {
-        containerClass: category.color || 'bg-slate-100 text-slate-600',
+        containerClass: 'bg-slate-100 text-slate-600',
         iconClass: '',
         hex: category.hex || '#475569'
     };
