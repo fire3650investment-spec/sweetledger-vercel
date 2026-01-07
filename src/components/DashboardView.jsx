@@ -253,10 +253,10 @@ export default function DashboardView({
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
                     <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14} /> 總結算狀態 ({currentProjectName})</p>
                     <div className="flex justify-between items-end mb-2">
-                        <h1 className="text-3xl font-bold tracking-tight truncate flex items-center gap-2">
+                        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2 flex-wrap">
                             {settlement >= 0 ?
-                                <><span className="max-w-[5rem] truncate inline-block">{partnerName}</span> <span>欠你</span> <span className="truncate">{formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}</span></> :
-                                <><span>你欠</span> <span className="max-w-[5rem] truncate inline-block">{partnerName}</span> <span className="truncate">{formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}</span></>}
+                                <><span>{partnerName}</span> <span>欠你</span> <span className="truncate">{formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}</span></> :
+                                <><span>你欠</span> <span>{partnerName}</span> <span className="truncate">{formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}</span></>}
                         </h1>
                     </div>
                     <p className="text-white/70 text-xs font-medium truncate">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
