@@ -315,34 +315,36 @@ export default function EditTransactionModal({
                                     ))}
                                 </div>
                             </div>
+
+                            {/* [Moved] Payment Method Selector */}
+                            {splitType !== 'multi_payer' && (
+                                <>
+                                    <div className="h-[1px] bg-gray-200 w-full"></div>
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2 text-gray-500">
+                                            <CreditCard size={16} />
+                                            <span className="text-xs font-bold">支付方式</span>
+                                        </div>
+                                        <div className="relative w-40">
+                                            <select
+                                                value={paymentMethod}
+                                                onChange={(e) => setPaymentMethod(e.target.value)}
+                                                className={`w-full appearance-none bg-white border border-gray-200 text-xs font-bold py-1 pl-2 pr-8 rounded-lg outline-none text-right ${!paymentMethod ? 'text-gray-400' : 'text-gray-700'}`}
+                                            >
+                                                <option value="">未指定</option>
+                                                {(ledgerData.paymentMethods || []).map(m => (
+                                                    <option key={m.id} value={m.id}>{m.name}</option>
+                                                ))}
+                                            </select>
+                                            <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"><ChevronDown size={14} /></div>
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
 
-                    {/* [New Feature] Payment Method Selector */}
-                    {splitType !== 'multi_payer' && !isPrivateProject && (
-                        <>
-                            <div className="h-[1px] bg-gray-200 w-full"></div>
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-2 text-gray-500">
-                                    <CreditCard size={16} />
-                                    <span className="text-xs font-bold">支付方式</span>
-                                </div>
-                                <div className="relative w-40">
-                                    <select
-                                        value={paymentMethod}
-                                        onChange={(e) => setPaymentMethod(e.target.value)}
-                                        className={`w-full appearance-none bg-white border border-gray-200 text-xs font-bold py-1 pl-2 pr-8 rounded-lg outline-none text-right ${!paymentMethod ? 'text-gray-400' : 'text-gray-700'}`}
-                                    >
-                                        <option value="">未指定</option>
-                                        {(ledgerData.paymentMethods || []).map(m => (
-                                            <option key={m.id} value={m.id}>{m.name}</option>
-                                        ))}
-                                    </select>
-                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"><ChevronDown size={14} /></div>
-                                </div>
-                            </div>
-                        </>
-                    )}
+
 
                     {isPrivateProject && (
                         <div className="flex items-center justify-center gap-2 p-3 bg-slate-50 rounded-xl text-slate-400 border border-slate-100">
