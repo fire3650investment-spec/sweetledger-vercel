@@ -397,7 +397,7 @@ export default function AddExpenseView({
                         </button>
 
                         <div className="flex-1 bg-gray-50 rounded-2xl border border-gray-100 flex items-center px-4 focus-within:border-rose-200 focus-within:ring-2 focus-within:ring-rose-50 transition-all">
-                            <input ref={noteInputRef} type="text" value={note} onChange={(e) => setNote(e.target.value)} onFocus={handleNoteFocus} placeholder="寫點備註..." className="w-full bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400 font-medium" />
+                            <input ref={noteInputRef} type="text" value={note} onChange={(e) => setNote(e.target.value)} maxLength={50} onFocus={handleNoteFocus} placeholder="寫點備註..." className="w-full bg-transparent outline-none text-sm text-gray-700 placeholder-gray-400 font-medium" />
                         </div>
                     </div>
 

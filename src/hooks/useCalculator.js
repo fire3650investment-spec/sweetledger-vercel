@@ -34,6 +34,9 @@ export default function useCalculator(onSubmit) {
         if (key === 'DEL') { setLocalAmount(prev => prev.slice(0, -1)); return; }
         if (key === 'DONE') { handleKeypadSubmit(); return; }
 
+        // [Validation] Check for max amount (1億) BEFORE updating state
+        const PREDICT_LIMIT = 100000000;
+
         if (key === '.') {
             setLocalAmount(prev => {
                 const lastChar = prev.slice(-1);
@@ -53,15 +56,52 @@ export default function useCalculator(onSubmit) {
                 if (operators.includes(lastChar)) return prev.slice(0, -1) + key;
                 if (!prev) return prev;
             }
+
+            // [Validation] Simulate next value to check limit
+            const nextValStr = prev + key;
+            // Only check if it looks like a complete number (no pending operators)
+            // But complex expressions are hard to predict without eval. 
+            // Simple check: if it's just a number so far, check limit.
+            if (!/[+\-×÷]/.test(nextValStr)) {
+                if (parseFloat(nextValStr) > PREDICT_LIMIT) return prev; // Ignore input if exceeding limit
+            }
+
             return prev + key;
         });
     }, [localAmount, isMathPending]); // Added isMathPending to dependency although not strictly used inside, but good practice if logic changes
 
-    return {
-        localAmount,
+    const handleKeypadSubmit = () => {
+        if (isMathPending) {
+            try {
+                const safeExpr = localAmount.replace(/×/g, '*').replace(/÷/g, '/');
+                const result = new Function('return ' + safeExpr)();
+                // Round to 2 decimal places to avoid floating point errors
+                let finalVal = Math.round(result * 100) / 100;
+
+                // [Validation] Max Limit Check (1億)
+                if (finalVal > 100000000) finalVal = 100000000;
+
+                setLocalAmount(finalVal.toString());
+            } catch (e) {
+                console.error("Calculation error", e);
+            }
+            return;
+        }
+        if (!localAmount || parseFloat(localAmount) <= 0) return;
+
+        // [Validation] Simple Amount Check
+        if (parseFloat(localAmount) > 100000000) {
+            setLocalAmount('100000000');
+            return;
+        }
+
+        // Trigger the external submit callback (usually to switch overlay)
+        if (onSubmit) onSubmit();
+    };
+    localAmount,
         setLocalAmount,
         handleKeyPress,
         isMathPending,
         handleKeypadSubmit
-    };
+};
 }

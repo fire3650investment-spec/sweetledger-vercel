@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
     LogOut, RotateCcw, X, Check,
     ChevronRight, Pencil, Copy, Globe,
-    ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins, Share2
+    ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins, Share2, Database
 } from 'lucide-react';
 import { renderAvatar, fetchExchangeRate } from '../utils/helpers';
 import { DEFAULT_FAVORITE_CURRENCIES, CURRENCY_OPTIONS, CHARACTERS } from '../utils/constants';
@@ -40,7 +40,7 @@ export default function SettingsView({
     setView,
     updateUserSetting
 }) {
-    const { leaveLedger, resetAccount, deleteAccount, kickMember, updatePaymentMethods } = useLedger();
+    const { leaveLedger, resetAccount, deleteAccount, kickMember, updatePaymentMethods, migrateToSubCollection } = useLedger();
 
     useEffect(() => {
         window.scrollTo(0, 0);
@@ -308,6 +308,27 @@ export default function SettingsView({
                         <AlertTriangle size={12} /> 危險區域
                     </h3>
                     <div className="bg-white rounded-2xl overflow-hidden border border-gray-100 divide-y divide-gray-50">
+
+                        {/* Upgrade Database (Host Only) */}
+                        {isHost && (
+                            <div
+                                className="p-4 flex justify-between items-center active:bg-gray-50 hover:bg-gray-50 transition-colors cursor-pointer"
+                                onClick={() => {
+                                    if (window.confirm('確定要升級資料庫嗎？\n\n此操作將遷移資料至高效能儲存結構 (v2)，解決資料上限問題。舊版 App 將無法讀取新資料。')) {
+                                        migrateToSubCollection();
+                                    }
+                                }}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-blue-50 text-blue-500 rounded-lg"><Database size={18} /></div>
+                                    <div className="flex flex-col text-left">
+                                        <span className="font-bold text-gray-700 text-sm">升級資料庫 (Performance)</span>
+                                        <span className="text-[10px] text-gray-400">遷移至高效能儲存結構 (避免崩潰)</span>
+                                    </div>
+                                </div>
+                                <ChevronRight size={16} className="text-gray-300" />
+                            </div>
+                        )}
 
                         {/* Reset Account */}
                         <div

@@ -223,7 +223,11 @@ export default function EditTransactionModal({
                         <input
                             type="number"
                             value={amount}
-                            onChange={e => setAmount(e.target.value)}
+                            onChange={e => {
+                                const val = parseFloat(e.target.value);
+                                if (val > 100000000) return; // Max limit 1億
+                                setAmount(e.target.value);
+                            }}
                             className="w-32 text-center outline-none bg-transparent placeholder-gray-200 min-w-[120px]"
                             placeholder="0"
                         />

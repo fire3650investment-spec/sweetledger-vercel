@@ -2,47 +2,106 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // 1. 使用者設定檔 (Users Collection)
+    // 1. User Profile (Self-only)
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // 2. 帳本資料 (Ledgers Collection)
+    // 2. Ledger Data
     match /artifacts/{appId}/public/data/ledgers/{ledgerId} {
       
-      // 輔助函式：檢查請求者是否已經在該帳本的 users 名單中
+      // --- Helpers ---
+      
+      function isLoggedIn() {
+        return request.auth != null;
+      }
+      
+      function getMyRole() {
+        // Safe access to role
+        return resource.data.users[request.auth.uid].role;
+      }
+
       function isMember() {
-        return request.auth.uid in resource.data.users;
+        return isLoggedIn() && (request.auth.uid in resource.data.users);
       }
       
-      // 輔助函式：檢查是否為建立新帳本
-      function isCreating() {
-        return request.resource.data.users[request.auth.uid].role == 'host';
+      function isHost() {
+        return isMember() && getMyRole() == 'host';
+      }
+      
+      // Check if the update is only touching 'transactions' or 'subscriptions' (common operations)
+      function isDataUpdate() {
+        // Allow members to update transactions/subscriptions/projects
+        // BUT prevent them from touching 'users' or 'settings' unless allowed below
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['transactions', 'subscriptions', 'projects', 'lastSubscriptionCheck', 'customCategories']);
       }
 
-      // [FIX] 輔助函式：檢查是否為加入帳本 (Join)
-      // 允許非成員進行 update，但只能是在 users 欄位中新增自己
       function isJoining() {
-        // 確保請求者把自己加進 users，且角色是 guest
-        return request.resource.data.users[request.auth.uid].role == 'guest'
-            // 確保沒有竄改現有使用者的資料 (簡單檢查: 新資料的 keys 包含舊資料的 keys)
-            // 注意：完整的 diff 檢查在 Rules 中較複雜，這裡先做基本權限放行
-            && request.resource.data.users.size() == resource.data.users.size() + 1;
+        // 1. Check if adding self to users
+        let newUsers = request.resource.data.users;
+        let oldUsers = resource.data.users;
+        
+        return !isMember() 
+            && newUsers.size() == oldUsers.size() + 1
+            && newUsers[request.auth.uid].role == 'guest' // Must join as guest
+            // Ensure no other data is changed during join
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['users']);
       }
 
-      // 讀取: 成員可讀
-      allow read: if request.auth != null && isMember();
+      function isLeaving() {
+        // 1. Check if removing self from users
+        let newUsers = request.resource.data.users;
+        let oldUsers = resource.data.users;
+        
+        return isMember()
+            && newUsers.size() == oldUsers.size() - 1
+            && !(request.auth.uid in newUsers) // I am gone
+            // Ensure no other data is changed during leave
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['users']);
+      }
 
-      // 寫入: 
-      // 1. 建立 (Create)
-      // 2. 更新 (Update): 是成員 OR 是新成員正在加入 (isJoining)
-      allow create: if request.auth != null && isCreating();
-      allow update: if request.auth != null && (isMember() || isJoining());
+      function isHostManagement() {
+        // Host can do anything via update (kick members, change settings)
+        return isHost();
+      }
+
+      // --- Rules ---
+
+      // Read: Any member can read
+      allow read: if isMember();
+
+      // Create: Anyone can create (becomes Host automatically by app logic, verified here)
+      allow create: if isLoggedIn() 
+                    && request.resource.data.users[request.auth.uid].role == 'host';
+
+      // Update: Complex Logic
+      allow update: if isLoggedIn() && (
+        isHostManagement() || // Host has full power
+        isJoining() ||        // Guest joining
+        isLeaving() ||        // Guest leaving
+        (isMember() && isDataUpdate()) // Guest/Member adding transactions
+      );
       
-      // 刪除: 只有 Host 能刪除
-      allow delete: if request.auth != null 
-                    && isMember() 
-                    && resource.data.users[request.auth.uid].role == 'host';
+      // Delete: Only Host
+      allow delete: if isHost();
+
+      // 3. Transactions Sub-collection (SCALABILITY FIX)
+      match /transactions/{txId} {
+        // Helper to fetch parent ledger data (cost: 1 read)
+        function getLedger() {
+          return get(/databases/$(database)/documents/artifacts/$(appId)/public/data/ledgers/$(ledgerId)).data;
+        }
+
+        function isLedgerMember() {
+          return isLoggedIn() && (request.auth.uid in getLedger().users);
+        }
+
+        allow read: if isLedgerMember();
+        allow create: if isLedgerMember();
+        allow update: if isLedgerMember();
+        allow delete: if isLedgerMember();
+      }
     }
   }
 }
