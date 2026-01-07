@@ -100,9 +100,9 @@ export default function SubscriptionsView({
                                         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl shadow-sm ${style.containerClass}`} style={style.containerStyle}>
                                             <CatIcon size={24} className={style.iconClass} style={style.iconStyle} />
                                         </div>
-                                        <div>
-                                            <h3 className="font-bold text-gray-800 text-lg">{sub.name}</h3>
-                                            <p className="text-xs text-gray-400 flex items-center gap-1 font-medium mt-0.5">
+                                        <div className="min-w-0">
+                                            <h3 className="font-bold text-gray-800 text-lg line-clamp-1">{sub.name}</h3>
+                                            <p className="text-xs text-gray-400 flex items-center gap-1 font-medium mt-0.5 truncate">
                                                 {project?.name || '日常開銷'} · {getCycleLabel(sub.cycle, sub.payDay)}
                                             </p>
                                         </div>

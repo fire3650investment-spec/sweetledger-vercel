@@ -232,7 +232,7 @@ export default function DashboardView({
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10"></div>
                     <p className="text-white/60 mb-1 font-bold text-xs flex items-center gap-2 uppercase tracking-wider"><Wallet size={12} /> 個人支出概況</p>
                     <div className="flex justify-between items-end mb-4">
-                        <h1 className="text-4xl font-bold tracking-tight">
+                        <h1 className="text-4xl font-bold tracking-tight truncate" title={formatCurrency(monthlyTotal, 'TWD', privacyMode)}>
                             {formatCurrency(monthlyTotal, 'TWD', privacyMode)}
                         </h1>
                     </div>
@@ -244,7 +244,7 @@ export default function DashboardView({
                         <div className="w-[1px] h-8 bg-white/10"></div>
                         <div>
                             <p className="text-white/40 text-[10px] font-bold uppercase">平均日花費</p>
-                            <p className="text-sm font-medium">{formatCurrency(dailyAverage, 'TWD', privacyMode)}</p>
+                            <p className="text-sm font-medium truncate">{formatCurrency(dailyAverage, 'TWD', privacyMode)}</p>
                         </div>
                     </div>
                 </div>
@@ -253,11 +253,13 @@ export default function DashboardView({
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
                     <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14} /> 總結算狀態 ({currentProjectName})</p>
                     <div className="flex justify-between items-end mb-2">
-                        <h1 className="text-3xl font-bold tracking-tight">
-                            {settlement >= 0 ? `${partnerName} 欠你 ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}` : `你欠 ${partnerName} ${formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}`}
+                        <h1 className="text-3xl font-bold tracking-tight truncate flex items-center gap-2">
+                            {settlement >= 0 ?
+                                <><span className="max-w-[5rem] truncate inline-block">{partnerName}</span> <span>欠你</span> <span className="truncate">{formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}</span></> :
+                                <><span>你欠</span> <span className="max-w-[5rem] truncate inline-block">{partnerName}</span> <span className="truncate">{formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}</span></>}
                         </h1>
                     </div>
-                    <p className="text-white/70 text-xs font-medium">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
+                    <p className="text-white/70 text-xs font-medium truncate">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
                     {Math.abs(settlement) > 0 && (
                         <button onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你', settlement < 0 ? user.uid : otherUserId)} className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4">
                             <Coins size={14} /> 結清債務
@@ -300,10 +302,10 @@ export default function DashboardView({
                                             </div>
                                         </div>
                                         <div className="flex flex-col items-end ml-4">
-                                            <span className={`font-bold whitespace-nowrap flex items-center gap-1 ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
+                                            <span className={`font-bold whitespace-nowrap flex items-center gap-1 max-w-[120px] justify-end ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
                                                 {/* [Batch 3 New] 若為外幣，顯示國旗與原幣金額 */}
-                                                {isForeign && <span className="text-[10px] grayscale opacity-80 mr-0.5">{currencyInfo?.flag || txCurrency}</span>}
-                                                {formatCurrency(tx.amount || 0, txCurrency, privacyMode)}
+                                                {isForeign && <span className="text-[10px] grayscale opacity-80 mr-0.5 shrink-0">{currencyInfo?.flag || txCurrency}</span>}
+                                                <span className="truncate">{formatCurrency(tx.amount || 0, txCurrency, privacyMode)}</span>
                                             </span>
                                             {/* [Batch 3 New] 若為外幣，顯示換算回台幣的估計值 */}
                                             {isForeign && !privacyMode && !tx.isSettlement && (

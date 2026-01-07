@@ -215,22 +215,22 @@ export default function EditTransactionModal({
                 </div>
 
                 {/* Amount & Currency (修復：使用 Bottom Sheet Trigger) */}
-                <div className="flex justify-center mb-6">
-                    <div className="text-4xl font-bold text-gray-900 flex items-center gap-2">
-                        <span className="text-2xl text-gray-300">
+                <div className="flex justify-center mb-6 overflow-x-auto no-scrollbar">
+                    <div className="text-4xl font-bold text-gray-900 flex items-center gap-2 px-4 mx-auto">
+                        <span className="text-2xl text-gray-300 whitespace-nowrap">
                             {CURRENCY_OPTIONS.find(c => c.code === currency)?.symbol || '$'}
                         </span>
                         <input
                             type="number"
                             value={amount}
                             onChange={e => setAmount(e.target.value)}
-                            className="w-32 text-center outline-none bg-transparent placeholder-gray-200"
+                            className="w-32 text-center outline-none bg-transparent placeholder-gray-200 min-w-[120px]"
                             placeholder="0"
                         />
                         {/* Currency Button */}
                         <button
                             onClick={() => setIsCurrencySheetOpen(true)}
-                            className="flex items-center gap-1 text-sm font-bold bg-gray-100 rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200 transition-colors"
+                            className="flex items-center gap-1 text-sm font-bold bg-gray-100 rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200 transition-colors whitespace-nowrap shrink-0"
                         >
                             {currency} <ChevronDown size={14} />
                         </button>

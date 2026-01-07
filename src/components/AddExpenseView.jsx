@@ -376,11 +376,11 @@ export default function AddExpenseView({
             <div className="flex-1 overflow-y-auto overscroll-contain pb-32">
                 {/* Core Input */}
                 <div className="px-4 py-6 bg-white mb-3 shadow-sm border-b border-gray-100">
-                    <div className="flex justify-center mb-6">
-                        <button onClick={handleAmountClick} className={`text-5xl font-bold tracking-tight flex items-center transition-all ${localAmount ? 'text-gray-900' : 'text-gray-300'} ${activeOverlay === 'amount' ? 'scale-105' : ''}`}>
-                            <span className="text-2xl mr-2 text-gray-300 font-medium">{CURRENCY_OPTIONS.find(c => c.code === currency)?.symbol || '$'}</span>
-                            {localAmount || '0'}
-                            {activeOverlay === 'amount' && <div className="w-[3px] h-10 bg-rose-500 animate-cursor-blink ml-1 rounded-full"></div>}
+                    <div className="flex justify-center mb-6 overflow-x-auto no-scrollbar">
+                        <button onClick={handleAmountClick} className={`text-5xl font-bold tracking-tight flex items-center transition-all px-4 mx-auto ${localAmount ? 'text-gray-900' : 'text-gray-300'} ${activeOverlay === 'amount' ? 'scale-105' : ''}`}>
+                            <span className="text-2xl mr-2 text-gray-300 font-medium whitespace-nowrap">{CURRENCY_OPTIONS.find(c => c.code === currency)?.symbol || '$'}</span>
+                            <span className="whitespace-nowrap">{localAmount || '0'}</span>
+                            {activeOverlay === 'amount' && <div className="w-[3px] h-10 bg-rose-500 animate-cursor-blink ml-1 rounded-full shrink-0"></div>}
                         </button>
                     </div>
 

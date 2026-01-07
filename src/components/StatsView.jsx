@@ -213,9 +213,9 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                                     </div>
                                 </div>
                                 <div className="flex flex-col items-end ml-4">
-                                    <span className={`font-bold whitespace-nowrap text-sm flex items-center gap-1 ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
-                                        {isForeign && <span className="text-[10px] grayscale opacity-80 mr-0.5">{currencyInfo?.flag || txCurrency}</span>}
-                                        {formatCurrency(tx.amount || 0, txCurrency, privacyMode)}
+                                    <span className={`font-bold whitespace-nowrap text-sm flex items-center gap-1 max-w-[120px] justify-end ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
+                                        {isForeign && <span className="text-[10px] grayscale opacity-80 mr-0.5 shrink-0">{currencyInfo?.flag || txCurrency}</span>}
+                                        <span className="truncate">{formatCurrency(tx.amount || 0, txCurrency, privacyMode)}</span>
                                     </span>
                                 </div>
                             </div>

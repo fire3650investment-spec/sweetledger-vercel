@@ -315,10 +315,10 @@ export default function ProjectsView({
                                 `}>
                                     <ProjIcon size={24} />
                                 </div>
-                                <div>
-                                    <h3 className={`font-bold flex items-center gap-2 ${isPrivate ? 'text-slate-500' : 'text-gray-600'}`}>
+                                <div className="min-w-0">
+                                    <h3 className={`font-bold flex items-center gap-2 ${isPrivate ? 'text-slate-500' : 'text-gray-600'} line-clamp-1`}>
                                         {p.name}
-                                        {isPrivate && <Lock size={14} className="text-slate-400" />}
+                                        {isPrivate && <Lock size={14} className="text-slate-400 shrink-0" />}
                                     </h3>
 
                                     {/* [Updated] Show Default Currency Tag */}
