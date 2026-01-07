@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Coins } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
-import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS } from '../utils/constants';
+import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS, MORANDI_PALETTE } from '../utils/constants';
 import MonthlyTrendChart from './stats/MonthlyTrendChart';
 import ContributionChart from './stats/ContributionChart';
 import CategoryPieChart from './stats/CategoryPieChart';
@@ -86,8 +86,12 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
             } else {
                 const cat = currentCategories.find(c => c.id === id);
                 if (cat) {
-                    const style = getCategoryStyle(cat, 'display');
-                    catStats.push({ ...cat, total: amt, hex: style.hex });
+                    // [UX Upgrade] Map to Morandi Palette for Charts
+                    let chartColor = MORANDI_PALETTE.slate;
+                    if (cat.colorId && MORANDI_PALETTE[cat.colorId]) {
+                        chartColor = MORANDI_PALETTE[cat.colorId];
+                    }
+                    catStats.push({ ...cat, total: amt, hex: chartColor });
                 }
             }
         });
@@ -165,6 +169,9 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                     guestTotal={guestTotal}
                     hostRatio={hostRatio}
                     guestRatio={guestRatio}
+                    // [Advanced] Pass custom Morandi colors
+                    hostColor={MORANDI_PALETTE.host}
+                    guestColor={MORANDI_PALETTE.guest}
                 />
             )}
 

@@ -3,7 +3,7 @@ import React, { memo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { formatCurrency } from '../../utils/helpers';
 
-const ContributionChart = memo(({ hostName, guestName, hostTotal, guestTotal, hostRatio, guestRatio }) => {
+const ContributionChart = memo(({ hostName, guestName, hostTotal, guestTotal, hostRatio, guestRatio, hostColor = '#3b82f6', guestColor = '#ec4899' }) => {
     // Transform data for Recharts Stacked Bar
     // We need a single object with keys for each portion
     const data = [
@@ -41,7 +41,7 @@ const ContributionChart = memo(({ hostName, guestName, hostTotal, guestTotal, ho
             {/* Legend / Summary */}
             <div className="flex justify-between items-center mb-4 text-sm">
                 <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: hostColor }}></div>
                     <span className="text-gray-600">{hostName}</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -51,7 +51,7 @@ const ContributionChart = memo(({ hostName, guestName, hostTotal, guestTotal, ho
             </div>
             <div className="flex justify-between items-center mb-4 text-sm">
                 <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-pink-500"></div>
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: guestColor }}></div>
                     <span className="text-gray-600">{guestName}</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -67,8 +67,8 @@ const ContributionChart = memo(({ hostName, guestName, hostTotal, guestTotal, ho
                         <XAxis type="number" hide />
                         <YAxis type="category" dataKey="name" hide />
                         <Tooltip cursor={{ fill: 'transparent' }} content={<CustomTooltip />} />
-                        <Bar dataKey="Host" stackId="a" fill="#3b82f6" radius={[4, 0, 0, 4]} isAnimationActive={true} animationDuration={1000} />
-                        <Bar dataKey="Guest" stackId="a" fill="#ec4899" radius={[0, 4, 4, 0]} isAnimationActive={true} animationDuration={1000} />
+                        <Bar dataKey="Host" stackId="a" fill={hostColor} radius={[4, 0, 0, 4]} isAnimationActive={true} animationDuration={1000} />
+                        <Bar dataKey="Guest" stackId="a" fill={guestColor} radius={[0, 4, 4, 0]} isAnimationActive={true} animationDuration={1000} />
                     </BarChart>
                 </ResponsiveContainer>
             </div>
