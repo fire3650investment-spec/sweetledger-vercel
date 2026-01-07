@@ -1,20 +1,20 @@
 // src/components/EditTransactionModal.jsx
 import React, { useState, useEffect } from 'react';
-import { 
-  X, Calendar, Trash2, Check, User, Users, AlertCircle, Lock, Tag, DollarSign,
-  ChevronDown, RefreshCw, Search, CheckCircle // [Fix] 補回遺失的 Icon
+import {
+    X, Calendar, Trash2, Check, User, Users, AlertCircle, Lock, Tag, DollarSign,
+    ChevronDown, RefreshCw, Search, CheckCircle, CreditCard // [Fix] 補回遺失的 Icon
 } from 'lucide-react';
 import { getCategoryStyle, getIconComponent, getLocalISODate } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants'; // [Fix] 補回遺失的常數
 
-export default function EditTransactionModal({ 
-    isOpen, 
-    onClose, 
-    editingTx: transaction, 
-    ledgerData, 
-    user, 
-    updateTransaction, 
-    deleteTransaction, 
+export default function EditTransactionModal({
+    isOpen,
+    onClose,
+    editingTx: transaction,
+    ledgerData,
+    user,
+    updateTransaction,
+    deleteTransaction,
     currentProjectId,
     updateProjectRates // [Batch 2] 確保此接口存在
 }) {
@@ -31,6 +31,7 @@ export default function EditTransactionModal({
     const [customSplitGuest, setCustomSplitGuest] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [currency, setCurrency] = useState('TWD');
+    const [paymentMethod, setPaymentMethod] = useState(''); // [New Feature] 支付方式
 
     // [Batch 2] Currency Sheet State (補回)
     const [isCurrencySheetOpen, setIsCurrencySheetOpen] = useState(false);
@@ -39,7 +40,7 @@ export default function EditTransactionModal({
     // Context Logic
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
     const isPrivateProject = currentProject?.type === 'private';
-    
+
     const users = ledgerData.users || {};
     const hostId = Object.keys(users).find(uid => users[uid].role === 'host');
     const guestId = Object.keys(users).find(uid => users[uid].role === 'guest');
@@ -56,7 +57,7 @@ export default function EditTransactionModal({
             setAmount(transaction.amount.toString());
             setNote(transaction.note || '');
             setCurrency(transaction.currency || 'TWD');
-            
+
             try {
                 // 確保日期格式正確
                 const d = transaction.date ? new Date(transaction.date) : new Date();
@@ -67,7 +68,7 @@ export default function EditTransactionModal({
 
             setPayer(transaction.payer);
             setSplitType(transaction.splitType || 'even');
-            
+
             // Category Fallback
             const catId = transaction.category?.id;
             const fullCat = (ledgerData.customCategories || DEFAULT_CATEGORIES).find(c => c.id === catId) || transaction.category || DEFAULT_CATEGORIES[0];
@@ -80,7 +81,11 @@ export default function EditTransactionModal({
                 setCustomSplitHost('');
                 setCustomSplitGuest('');
             }
+            setCustomSplitHost('');
+            setCustomSplitGuest('');
         }
+
+        setPaymentMethod(transaction.paymentMethod || ''); // [New Feature] Init
     }, [transaction, hostId, guestId, ledgerData.customCategories]);
 
     // Force Private Logic
@@ -94,7 +99,7 @@ export default function EditTransactionModal({
     const handleSave = async () => {
         if (!amount || parseFloat(amount) <= 0 || isSubmitting) return;
         setIsSubmitting(true);
-        
+
         try {
             const amountFloat = parseFloat(amount);
             let customSplitData = null;
@@ -103,13 +108,13 @@ export default function EditTransactionModal({
                 const hostAmt = parseFloat(customSplitHost) || 0;
                 const guestAmt = parseFloat(customSplitGuest) || 0;
                 if (Math.abs((hostAmt + guestAmt) - amountFloat) > 0.1) {
-                    alert(`金額不符：分攤總和 (${hostAmt+guestAmt}) 必須等於總金額 (${amountFloat})`);
+                    alert(`金額不符：分攤總和 (${hostAmt + guestAmt}) 必須等於總金額 (${amountFloat})`);
                     setIsSubmitting(false);
                     return;
                 }
                 customSplitData = {};
-                if(hostId) customSplitData[hostId] = hostAmt;
-                if(guestId) customSplitData[guestId] = guestAmt;
+                if (hostId) customSplitData[hostId] = hostAmt;
+                if (guestId) customSplitData[guestId] = guestAmt;
             }
 
             await updateTransaction({
@@ -121,7 +126,8 @@ export default function EditTransactionModal({
                 date: new Date(date).toISOString(),
                 payer: isPrivateProject ? user.uid : payer,
                 splitType: isPrivateProject ? 'self' : splitType,
-                customSplit: isPrivateProject ? null : customSplitData
+                customSplit: isPrivateProject ? null : customSplitData,
+                paymentMethod // [New Feature] Save
             });
             onClose();
         } catch (e) {
@@ -133,11 +139,11 @@ export default function EditTransactionModal({
     };
 
     const handleDelete = async () => {
-        if(!window.confirm("確定要刪除這筆紀錄嗎？")) return;
+        if (!window.confirm("確定要刪除這筆紀錄嗎？")) return;
         try {
             await deleteTransaction(transaction.id);
             onClose();
-        } catch(e) { console.error(e); }
+        } catch (e) { console.error(e); }
     };
 
     const handleSplitChange = (field, value) => {
@@ -154,7 +160,7 @@ export default function EditTransactionModal({
                 setCustomSplitHost(hostCalc >= 0 ? hostCalc.toString() : '0');
             }
         } else {
-            if (field === 'host') setCustomSplitHost(value); 
+            if (field === 'host') setCustomSplitHost(value);
             else setCustomSplitGuest(value);
         }
     };
@@ -166,7 +172,7 @@ export default function EditTransactionModal({
     };
 
     // Currency Logic
-    const filteredCurrencies = currencySearch 
+    const filteredCurrencies = currencySearch
         ? CURRENCY_OPTIONS.filter(c => c.code.includes(currencySearch.toUpperCase()) || c.name.includes(currencySearch))
         : CURRENCY_OPTIONS;
 
@@ -184,11 +190,11 @@ export default function EditTransactionModal({
         <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center sm:px-4">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={onClose} />
             <div className="bg-white w-full sm:w-[400px] sm:rounded-2xl rounded-t-3xl p-5 pb-8 max-h-[90vh] overflow-y-auto relative z-10 animate-slide-up">
-                
+
                 {/* Header */}
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-bold text-gray-800">編輯紀錄</h3>
-                    <button onClick={onClose} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200"><X size={20}/></button>
+                    <button onClick={onClose} className="p-2 bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200"><X size={20} /></button>
                 </div>
 
                 {/* Amount & Currency (修復：使用 Bottom Sheet Trigger) */}
@@ -197,19 +203,19 @@ export default function EditTransactionModal({
                         <span className="text-2xl text-gray-300">
                             {CURRENCY_OPTIONS.find(c => c.code === currency)?.symbol || '$'}
                         </span>
-                        <input 
-                            type="number" 
-                            value={amount} 
-                            onChange={e => setAmount(e.target.value)} 
-                            className="w-32 text-center outline-none bg-transparent placeholder-gray-200" 
-                            placeholder="0" 
+                        <input
+                            type="number"
+                            value={amount}
+                            onChange={e => setAmount(e.target.value)}
+                            className="w-32 text-center outline-none bg-transparent placeholder-gray-200"
+                            placeholder="0"
                         />
                         {/* Currency Button */}
-                        <button 
+                        <button
                             onClick={() => setIsCurrencySheetOpen(true)}
                             className="flex items-center gap-1 text-sm font-bold bg-gray-100 rounded-lg px-3 py-1.5 text-gray-700 hover:bg-gray-200 transition-colors"
                         >
-                            {currency} <ChevronDown size={14}/>
+                            {currency} <ChevronDown size={14} />
                         </button>
                     </div>
                 </div>
@@ -219,29 +225,29 @@ export default function EditTransactionModal({
                     {/* Category & Note */}
                     <div className="flex gap-3">
                         <div className="relative">
-                             <select 
-                                value={selectedCategory?.id} 
+                            <select
+                                value={selectedCategory?.id}
                                 onChange={(e) => {
                                     const cat = currentCats.find(c => c.id === e.target.value);
-                                    if(cat) setSelectedCategory(cat);
+                                    if (cat) setSelectedCategory(cat);
                                 }}
                                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                             >
+                            >
                                 {currentCats.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                             </select>
-                             <div className={`flex items-center gap-2 px-3 py-3 rounded-xl border ${catStyle.activeClass} border-transparent flex-none min-w-[100px]`}>
-                                <CatIcon size={20}/>
+                            </select>
+                            <div className={`flex items-center gap-2 px-3 py-3 rounded-xl border ${catStyle.activeClass} border-transparent flex-none min-w-[100px]`}>
+                                <CatIcon size={20} />
                                 <span className="font-bold text-sm truncate max-w-[60px]">{selectedCategory?.name}</span>
                             </div>
                         </div>
-                        
-                        <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="備註..." className="flex-1 bg-gray-50 px-4 rounded-xl border border-gray-100 outline-none text-sm font-medium focus:border-rose-200"/>
+
+                        <input type="text" value={note} onChange={e => setNote(e.target.value)} placeholder="備註..." className="flex-1 bg-gray-50 px-4 rounded-xl border border-gray-100 outline-none text-sm font-medium focus:border-rose-200" />
                     </div>
 
                     {/* Date */}
                     <div className="flex items-center bg-gray-50 px-4 py-3 rounded-xl border border-gray-100">
-                        <Calendar size={18} className="text-gray-400 mr-3"/>
-                        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-transparent font-bold text-gray-700 outline-none w-full text-sm"/>
+                        <Calendar size={18} className="text-gray-400 mr-3" />
+                        <input type="date" value={date} onChange={e => setDate(e.target.value)} className="bg-transparent font-bold text-gray-700 outline-none w-full text-sm" />
                     </div>
 
                     {/* Split & Payer */}
@@ -249,35 +255,39 @@ export default function EditTransactionModal({
                         <div className="bg-gray-50 rounded-xl p-3 border border-gray-100 space-y-3">
                             <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2 text-gray-500">
-                                    <Users size={16}/>
+                                    <Users size={16} />
                                     <span className="text-xs font-bold">分攤模式</span>
                                 </div>
                                 <select value={splitType} onChange={e => setSplitType(e.target.value)} className="bg-white border border-gray-200 text-xs font-bold py-1 px-2 rounded-lg outline-none">
                                     <option value="even">平均分攤</option>
                                     <option value="multi_payer">混合出資</option>
-                                    <option value="self">{getLabelForRole('host')}</option>
-                                    <option value="partner">{getLabelForRole('guest')}</option>
+                                    <option value="self">
+                                        {users[payer]?.role === 'host' ? getLabelForRole('host') : getLabelForRole('guest')}
+                                    </option>
+                                    <option value="partner">
+                                        {users[payer]?.role === 'host' ? getLabelForRole('guest') : getLabelForRole('host')}
+                                    </option>
                                 </select>
                             </div>
-                            
+
                             {(splitType === 'multi_payer' || splitType === 'custom') && (
                                 <div className="flex gap-2 animate-fade-in">
                                     <div className="relative flex-1">
                                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">{hostName}</span>
-                                        <input type="number" value={customSplitHost} onChange={e => handleSplitChange('host', e.target.value)} className="w-full pl-10 pr-2 py-2 text-xs rounded border border-gray-200 text-right outline-none"/>
+                                        <input type="number" value={customSplitHost} onChange={e => handleSplitChange('host', e.target.value)} className="w-full pl-10 pr-2 py-2 text-xs rounded border border-gray-200 text-right outline-none" />
                                     </div>
                                     <div className="relative flex-1">
                                         <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-gray-400">{guestName}</span>
-                                        <input type="number" value={customSplitGuest} onChange={e => handleSplitChange('guest', e.target.value)} className="w-full pl-10 pr-2 py-2 text-xs rounded border border-gray-200 text-right outline-none"/>
+                                        <input type="number" value={customSplitGuest} onChange={e => handleSplitChange('guest', e.target.value)} className="w-full pl-10 pr-2 py-2 text-xs rounded border border-gray-200 text-right outline-none" />
                                     </div>
                                 </div>
                             )}
 
                             <div className="h-[1px] bg-gray-200 w-full"></div>
-                            
+
                             <div className="flex justify-between items-center">
                                 <div className="flex items-center gap-2 text-gray-500">
-                                    <User size={16}/>
+                                    <User size={16} />
                                     <span className="text-xs font-bold">付款人</span>
                                 </div>
                                 <div className="flex gap-2 overflow-x-auto no-scrollbar max-w-[200px]">
@@ -290,11 +300,37 @@ export default function EditTransactionModal({
                             </div>
                         </div>
                     )}
-                    
+
+                    {/* [New Feature] Payment Method Selector */}
+                    {splitType !== 'multi_payer' && !isPrivateProject && (
+                        <>
+                            <div className="h-[1px] bg-gray-200 w-full"></div>
+                            <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2 text-gray-500">
+                                    <CreditCard size={16} />
+                                    <span className="text-xs font-bold">支付方式</span>
+                                </div>
+                                <div className="relative w-40">
+                                    <select
+                                        value={paymentMethod}
+                                        onChange={(e) => setPaymentMethod(e.target.value)}
+                                        className={`w-full appearance-none bg-white border border-gray-200 text-xs font-bold py-1 pl-2 pr-8 rounded-lg outline-none text-right ${!paymentMethod ? 'text-gray-400' : 'text-gray-700'}`}
+                                    >
+                                        <option value="">未指定</option>
+                                        {(ledgerData.paymentMethods || []).map(m => (
+                                            <option key={m.id} value={m.id}>{m.name}</option>
+                                        ))}
+                                    </select>
+                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400"><ChevronDown size={14} /></div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+
                     {isPrivateProject && (
                         <div className="flex items-center justify-center gap-2 p-3 bg-slate-50 rounded-xl text-slate-400 border border-slate-100">
-                             <Lock size={12}/>
-                             <span className="text-xs font-bold">私人帳本模式 (不進行分攤)</span>
+                            <Lock size={12} />
+                            <span className="text-xs font-bold">私人帳本模式 (不進行分攤)</span>
                         </div>
                     )}
                 </div>
@@ -302,10 +338,10 @@ export default function EditTransactionModal({
                 {/* Actions */}
                 <div className="flex gap-3 mt-8">
                     <button onClick={handleDelete} className="p-4 rounded-2xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
-                        <Trash2 size={24}/>
+                        <Trash2 size={24} />
                     </button>
                     <button onClick={handleSave} disabled={isSubmitting} className="flex-1 bg-gray-900 text-white font-bold rounded-2xl py-4 flex items-center justify-center gap-2 active:scale-95 transition-transform disabled:opacity-50">
-                        {isSubmitting ? <RefreshCw className="animate-spin"/> : <Check size={24}/>}
+                        {isSubmitting ? <RefreshCw className="animate-spin" /> : <Check size={24} />}
                         儲存變更
                     </button>
                 </div>
@@ -313,18 +349,18 @@ export default function EditTransactionModal({
                 {/* --- Currency Bottom Sheet (Batch 2 Feature) --- */}
                 {isCurrencySheetOpen && (
                     <div className="absolute inset-0 z-[70] flex flex-col justify-end">
-                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsCurrencySheetOpen(false)}/>
+                        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity" onClick={() => setIsCurrencySheetOpen(false)} />
                         <div className="bg-white rounded-t-3xl p-6 relative z-10 max-h-[80vh] flex flex-col animate-slide-up shadow-2xl">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-lg font-bold text-gray-800">選擇幣別</h3>
-                                <button onClick={() => setIsCurrencySheetOpen(false)} className="p-2 bg-gray-50 rounded-full"><X size={20}/></button>
+                                <button onClick={() => setIsCurrencySheetOpen(false)} className="p-2 bg-gray-50 rounded-full"><X size={20} /></button>
                             </div>
 
                             <div className="relative mb-4">
-                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-                                <input 
-                                    type="text" 
-                                    placeholder="搜尋貨幣..." 
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                <input
+                                    type="text"
+                                    placeholder="搜尋貨幣..."
                                     value={currencySearch}
                                     onChange={(e) => setCurrencySearch(e.target.value)}
                                     className="w-full bg-gray-50 pl-10 pr-4 py-3 rounded-xl font-bold text-sm outline-none border border-transparent focus:bg-white focus:border-rose-200 transition-all"
@@ -340,7 +376,7 @@ export default function EditTransactionModal({
                                                 const opt = CURRENCY_OPTIONS.find(o => o.code === code);
                                                 if (!opt) return null;
                                                 return (
-                                                    <button 
+                                                    <button
                                                         key={code}
                                                         onClick={() => selectCurrency(code)}
                                                         className={`flex flex-col items-center justify-center gap-1 p-4 rounded-2xl border transition-all ${currency === code ? 'bg-rose-50 border-rose-500 text-rose-600 ring-1 ring-rose-500' : 'bg-white border-gray-100 hover:border-gray-300'}`}
@@ -358,8 +394,8 @@ export default function EditTransactionModal({
                                     <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">所有貨幣</h4>
                                     <div className="space-y-2">
                                         {filteredCurrencies.map(opt => (
-                                            <button 
-                                                key={opt.code} 
+                                            <button
+                                                key={opt.code}
                                                 onClick={() => selectCurrency(opt.code)}
                                                 className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 rounded-xl transition-colors text-left"
                                             >
@@ -368,7 +404,7 @@ export default function EditTransactionModal({
                                                     <div className="font-bold text-gray-800">{opt.code}</div>
                                                     <div className="text-xs text-gray-400">{opt.name}</div>
                                                 </div>
-                                                {currency === opt.code && <CheckCircle size={18} className="text-rose-500"/>}
+                                                {currency === opt.code && <CheckCircle size={18} className="text-rose-500" />}
                                             </button>
                                         ))}
                                     </div>

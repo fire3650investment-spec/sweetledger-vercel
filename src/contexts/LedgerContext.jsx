@@ -560,17 +560,42 @@ export const LedgerProvider = ({ children }) => {
 
     const updateTransaction = useCallback(async (updatedTx) => {
         if (!ledgerCode || !ledgerData || !db) return;
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const cleanTx = { ...updatedTx };
-        cleanTx.amount = parseFloat(cleanTx.amount);
-        if (cleanTx.customSplit) {
-            const cleanSplit = {};
-            Object.keys(cleanTx.customSplit).forEach(uid => {
-                cleanSplit[uid] = parseFloat(cleanTx.customSplit[uid]) || 0;
-            });
-            cleanTx.customSplit = cleanSplit;
+
+        let finalTx = { ...updatedTx };
+        const cleanAmount = parseFloat(finalTx.amount);
+        finalTx.amount = cleanAmount;
+
+        // [Fix] Normalize 'self' and 'partner' shortcuts to 'custom'
+        if (finalTx.splitType === 'self') {
+            finalTx.splitType = 'custom';
+            finalTx.customSplit = { [finalTx.payer]: cleanAmount };
+        } else if (finalTx.splitType === 'partner') {
+            finalTx.splitType = 'custom';
+            const allUsers = Object.keys(ledgerData.users || {});
+            const partners = allUsers.filter(u => u !== finalTx.payer);
+
+            if (partners.length === 1) {
+                finalTx.customSplit = { [partners[0]]: cleanAmount };
+            } else if (partners.length > 1) {
+                const share = cleanAmount / partners.length;
+                const split = {};
+                partners.forEach(p => split[p] = share);
+                finalTx.customSplit = split;
+            } else {
+                finalTx.customSplit = { [finalTx.payer]: cleanAmount };
+            }
         }
-        const updatedTxs = ledgerData.transactions.map(tx => tx.id === cleanTx.id ? cleanTx : tx);
+
+        if (finalTx.customSplit) {
+            const cleanSplit = {};
+            Object.keys(finalTx.customSplit).forEach(uid => {
+                cleanSplit[uid] = parseFloat(finalTx.customSplit[uid]) || 0;
+            });
+            finalTx.customSplit = cleanSplit;
+        }
+
+        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        const updatedTxs = ledgerData.transactions.map(tx => tx.id === finalTx.id ? finalTx : tx);
         await updateDoc(docRef, { transactions: updatedTxs });
     }, [ledgerCode, ledgerData]);
 

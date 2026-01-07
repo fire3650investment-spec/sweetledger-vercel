@@ -5,35 +5,51 @@ import { getIconComponent, fetchExchangeRate } from '../utils/helpers';
 import { CURRENCY_OPTIONS } from '../utils/constants';
 
 export default function ProjectsView({
-  ledgerData,
-  user,
-  isEditingProject,
-  setIsEditingProject,
-  editingProjectData,
-  setEditingProjectData,
-  handleSaveProject,
-  handleDeleteProject,
-  handleReorderProjects
+    ledgerData,
+    user,
+    isEditingProject,
+    setIsEditingProject,
+    editingProjectData,
+    setEditingProjectData,
+    handleSaveProject,
+    handleDeleteProject,
+    handleReorderProjects
 }) {
     // [Local State for Currency Picker in Edit Mode]
     const [isCurrencyPickerOpen, setIsCurrencyPickerOpen] = useState(false);
 
     if (!ledgerData) return null;
-    
+
     // [Filter Logic]
     const visibleProjects = (ledgerData.projects || []).filter(p => {
         if (p.type === 'private') {
             return p.owner === user?.uid;
         }
-        return true; 
+        return true;
     });
 
     // [Sort Logic]
+    // [Sort Logic]
     const moveProject = (index, direction) => {
-        const newProjects = [...(ledgerData.projects || [])];
         const targetIndex = direction === 'up' ? index - 1 : index + 1;
-        if (targetIndex < 0 || targetIndex >= newProjects.length) return;
-        [newProjects[index], newProjects[targetIndex]] = [newProjects[targetIndex], newProjects[index]];
+
+        // 1. Boundary check on VISIBLE list
+        if (targetIndex < 0 || targetIndex >= visibleProjects.length) return;
+
+        // 2. Identify the actual objects to swap using IDs
+        const currentProjId = visibleProjects[index].id;
+        const targetProjId = visibleProjects[targetIndex].id;
+
+        // 3. Find their positions in the GLOBAL list
+        const newProjects = [...(ledgerData.projects || [])];
+        const globalIndex = newProjects.findIndex(p => p.id === currentProjId);
+        const globalTargetIndex = newProjects.findIndex(p => p.id === targetProjId);
+
+        if (globalIndex === -1 || globalTargetIndex === -1) return;
+
+        // 4. Swap strictly in the Global List
+        [newProjects[globalIndex], newProjects[globalTargetIndex]] = [newProjects[globalTargetIndex], newProjects[globalIndex]];
+
         handleReorderProjects(newProjects);
     };
 
@@ -46,7 +62,7 @@ export default function ProjectsView({
             });
             editingProjectData.rates = cleanRates;
         }
-        
+
         if (editingProjectData.id === 'daily') {
             editingProjectData.type = 'public';
         }
@@ -56,7 +72,7 @@ export default function ProjectsView({
     // [New] Handle Default Currency Change
     const handleDefaultCurrencyChange = async (code) => {
         setIsCurrencyPickerOpen(false);
-        
+
         // Update default currency
         setEditingProjectData(prev => ({ ...prev, defaultCurrency: code }));
 
@@ -74,9 +90,9 @@ export default function ProjectsView({
             }
         }
     };
-    
+
     // --- Edit View (Full Page) ---
-    if (isEditingProject) { 
+    if (isEditingProject) {
         // [Safety] Ensure defaultCurrency exists
         const currentDefaultCurrency = editingProjectData.defaultCurrency || 'TWD';
         const currentCurrencyInfo = CURRENCY_OPTIONS.find(c => c.code === currentDefaultCurrency);
@@ -84,16 +100,16 @@ export default function ProjectsView({
         return (
             <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 animate-in fade-in slide-in-from-bottom-4">
                 <h2 className="text-2xl font-bold text-gray-800 mb-6">{editingProjectData.id ? '編輯專案' : '新增專案'}</h2>
-                
+
                 <div className="space-y-6">
                     {/* Name Input */}
                     <div>
                         <label className="block text-xs font-bold text-gray-400 uppercase mb-2">專案名稱</label>
-                        <input 
-                            type="text" 
-                            value={editingProjectData.name} 
-                            onChange={(e) => setEditingProjectData({...editingProjectData, name: e.target.value})} 
-                            placeholder="例如：2024 日本行" 
+                        <input
+                            type="text"
+                            value={editingProjectData.name}
+                            onChange={(e) => setEditingProjectData({ ...editingProjectData, name: e.target.value })}
+                            placeholder="例如：2024 日本行"
                             className="w-full p-4 bg-gray-50 rounded-xl outline-none font-bold text-gray-800 focus:ring-2 focus:ring-gray-200 transition-all"
                         />
                     </div>
@@ -102,7 +118,7 @@ export default function ProjectsView({
                     <div>
                         <label className="block text-xs font-bold text-gray-400 uppercase mb-2">預設幣別</label>
                         <div className="relative">
-                            <button 
+                            <button
                                 onClick={() => setIsCurrencyPickerOpen(!isCurrencyPickerOpen)}
                                 className="w-full p-4 bg-white border border-gray-200 rounded-xl flex items-center justify-between shadow-sm active:bg-gray-50 transition-colors"
                             >
@@ -113,14 +129,14 @@ export default function ProjectsView({
                                         <span className="text-xs text-gray-400">{currentCurrencyInfo?.name}</span>
                                     </div>
                                 </div>
-                                <ChevronDown size={16} className={`text-gray-400 transition-transform ${isCurrencyPickerOpen ? 'rotate-180' : ''}`}/>
+                                <ChevronDown size={16} className={`text-gray-400 transition-transform ${isCurrencyPickerOpen ? 'rotate-180' : ''}`} />
                             </button>
 
                             {isCurrencyPickerOpen && (
                                 <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-100 z-20 max-h-60 overflow-y-auto p-2">
                                     {CURRENCY_OPTIONS.map(opt => (
-                                        <button 
-                                            key={opt.code} 
+                                        <button
+                                            key={opt.code}
                                             onClick={() => handleDefaultCurrencyChange(opt.code)}
                                             className={`w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors ${currentDefaultCurrency === opt.code ? 'bg-rose-50' : ''}`}
                                         >
@@ -129,7 +145,7 @@ export default function ProjectsView({
                                                 <span className={`font-bold text-sm ${currentDefaultCurrency === opt.code ? 'text-rose-600' : 'text-gray-700'}`}>{opt.code}</span>
                                                 <span className="text-xs text-gray-400 ml-2">{opt.name}</span>
                                             </div>
-                                            {currentDefaultCurrency === opt.code && <Check size={16} className="text-rose-500"/>}
+                                            {currentDefaultCurrency === opt.code && <Check size={16} className="text-rose-500" />}
                                         </button>
                                     ))}
                                 </div>
@@ -137,19 +153,19 @@ export default function ProjectsView({
                         </div>
                         <p className="text-[10px] text-gray-400 mt-2 ml-1">在此專案記帳時，將自動預選此幣別。</p>
                     </div>
-                    
+
                     {/* Private Toggle */}
                     {editingProjectData.id !== 'daily' && (
-                        <div 
+                        <div
                             onClick={() => setEditingProjectData({
-                                ...editingProjectData, 
+                                ...editingProjectData,
                                 type: editingProjectData.type === 'private' ? 'public' : 'private'
                             })}
                             className={`p-4 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${editingProjectData.type === 'private' ? 'bg-slate-50 border-dashed border-2 border-slate-300 text-slate-600' : 'bg-white border-gray-200 text-gray-600'}`}
                         >
                             <div className="flex items-center gap-3">
                                 <div className={`p-2 rounded-full ${editingProjectData.type === 'private' ? 'bg-white text-slate-400 shadow-sm' : 'bg-gray-100 text-gray-500'}`}>
-                                    {editingProjectData.type === 'private' ? <Lock size={18}/> : <Unlock size={18}/>}
+                                    {editingProjectData.type === 'private' ? <Lock size={18} /> : <Unlock size={18} />}
                                 </div>
                                 <div className="flex flex-col">
                                     <span className="font-bold text-sm">私人專案</span>
@@ -168,12 +184,12 @@ export default function ProjectsView({
                     <div>
                         <label className="block text-xs font-bold text-gray-400 uppercase mb-2">圖示</label>
                         <div className="grid grid-cols-4 gap-2">
-                            {['project_daily', 'project_travel', 'project_house', 'heart'].map(icon => { 
-                                const IconCmp = getIconComponent(icon); 
+                            {['project_daily', 'project_travel', 'project_house', 'heart'].map(icon => {
+                                const IconCmp = getIconComponent(icon);
                                 return (
-                                    <button 
-                                        key={icon} 
-                                        onClick={() => setEditingProjectData({...editingProjectData, icon})} 
+                                    <button
+                                        key={icon}
+                                        onClick={() => setEditingProjectData({ ...editingProjectData, icon })}
                                         className={`p-4 rounded-xl flex justify-center transition-all ${editingProjectData.icon === icon ? 'bg-gray-900 text-white shadow-lg scale-105' : 'bg-gray-50 text-gray-400'}`}
                                     >
                                         <IconCmp size={24} />
@@ -187,8 +203,8 @@ export default function ProjectsView({
                     {/* [Updated Logic] Show rates for Default Currency OR any existing rates */}
                     {(currentDefaultCurrency !== 'TWD' || (editingProjectData.rates && Object.keys(editingProjectData.rates).filter(k => k !== 'TWD').length > 0)) && editingProjectData.id !== 'daily' && (
                         <div className="bg-blue-50 p-5 rounded-2xl border border-blue-100 animate-fade-in">
-                            <h4 className="text-xs font-bold text-blue-500 mb-4 flex items-center gap-2 uppercase tracking-wider"><Globe size={14}/> 匯率設定 (TWD)</h4>
-                            
+                            <h4 className="text-xs font-bold text-blue-500 mb-4 flex items-center gap-2 uppercase tracking-wider"><Globe size={14} /> 匯率設定 (TWD)</h4>
+
                             <div className="grid grid-cols-1 gap-4">
                                 {/* Always show input for Default Currency if foreign */}
                                 {currentDefaultCurrency !== 'TWD' && (
@@ -198,11 +214,11 @@ export default function ProjectsView({
                                             <span className="text-blue-500 bg-blue-50 px-1.5 py-0.5 rounded text-[8px]">主幣別</span>
                                         </label>
                                         <div className="flex items-center gap-2">
-                                            <input 
-                                                type="number" 
-                                                value={editingProjectData.rates?.[currentDefaultCurrency] || ''} 
+                                            <input
+                                                type="number"
+                                                value={editingProjectData.rates?.[currentDefaultCurrency] || ''}
                                                 onChange={(e) => setEditingProjectData({
-                                                    ...editingProjectData, 
+                                                    ...editingProjectData,
                                                     rates: { ...editingProjectData.rates, [currentDefaultCurrency]: e.target.value }
                                                 })}
                                                 className="w-full bg-transparent font-bold text-gray-800 outline-none text-lg"
@@ -222,11 +238,11 @@ export default function ProjectsView({
                                                 {currencyInfo?.flag || '🌐'} {currencyCode}
                                             </label>
                                             <div className="flex items-center gap-2">
-                                                <input 
-                                                    type="number" 
-                                                    value={editingProjectData.rates[currencyCode]} 
+                                                <input
+                                                    type="number"
+                                                    value={editingProjectData.rates[currencyCode]}
                                                     onChange={(e) => setEditingProjectData({
-                                                        ...editingProjectData, 
+                                                        ...editingProjectData,
                                                         rates: { ...editingProjectData.rates, [currencyCode]: e.target.value }
                                                     })}
                                                     className="w-full bg-transparent font-bold text-gray-600 outline-none"
@@ -248,22 +264,22 @@ export default function ProjectsView({
                     </div>
                 </div>
             </div>
-        ) 
+        )
     }
-    
+
     // --- Main List View ---
     return (
         <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 animate-in fade-in">
             {/* Header */}
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-gray-800">專案管理</h2>
-                <button 
-                    onClick={() => { 
+                <button
+                    onClick={() => {
                         // [Updated] Smart Init: Default to TWD
-                        const initData = {id:'', name:'', icon:'project_daily', rates: {}, type: 'public', defaultCurrency: 'TWD'};
-                        setEditingProjectData(initData); 
-                        setIsEditingProject(true); 
-                    }} 
+                        const initData = { id: '', name: '', icon: 'project_daily', rates: {}, type: 'public', defaultCurrency: 'TWD' };
+                        setEditingProjectData(initData);
+                        setIsEditingProject(true);
+                    }}
                     className="bg-gray-900 text-white p-2 rounded-xl shadow-lg shadow-gray-300 active:scale-90 transition-transform"
                 >
                     <Plus size={20} />
@@ -272,19 +288,19 @@ export default function ProjectsView({
 
             {/* List */}
             <div className="grid grid-cols-1 gap-4">
-                {visibleProjects.map((p, idx) => { 
-                    const ProjIcon = getIconComponent(p.icon); 
+                {visibleProjects.map((p, idx) => {
+                    const ProjIcon = getIconComponent(p.icon);
                     const isLast = idx === (visibleProjects.length - 1);
                     const isFirst = idx === 0;
                     const isPrivate = p.type === 'private';
-                    
+
                     return (
-                        <div 
-                            key={p.id} 
+                        <div
+                            key={p.id}
                             className={`
                                 p-4 rounded-2xl flex items-center justify-between group transition-colors
-                                ${isPrivate 
-                                    ? 'bg-slate-50 border-2 border-dashed border-slate-200' 
+                                ${isPrivate
+                                    ? 'bg-slate-50 border-2 border-dashed border-slate-200'
                                     : 'bg-white border border-gray-100 shadow-sm'
                                 }
                             `}
@@ -292,8 +308,8 @@ export default function ProjectsView({
                             <div className="flex items-center gap-4">
                                 <div className={`
                                     w-12 h-12 rounded-2xl flex items-center justify-center transition-colors
-                                    ${isPrivate 
-                                        ? 'bg-white text-slate-400 shadow-sm' 
+                                    ${isPrivate
+                                        ? 'bg-white text-slate-400 shadow-sm'
                                         : 'bg-gray-50 text-gray-500 group-hover:bg-rose-50 group-hover:text-rose-500'
                                     }
                                 `}>
@@ -302,9 +318,9 @@ export default function ProjectsView({
                                 <div>
                                     <h3 className={`font-bold flex items-center gap-2 ${isPrivate ? 'text-slate-500' : 'text-gray-600'}`}>
                                         {p.name}
-                                        {isPrivate && <Lock size={14} className="text-slate-400"/>}
+                                        {isPrivate && <Lock size={14} className="text-slate-400" />}
                                     </h3>
-                                    
+
                                     {/* [Updated] Show Default Currency Tag */}
                                     <div className="mt-1 flex gap-2">
                                         {p.id === 'daily' ? (
@@ -312,44 +328,44 @@ export default function ProjectsView({
                                         ) : (
                                             p.defaultCurrency && p.defaultCurrency !== 'TWD' && (
                                                 <span className="bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1">
-                                                    {CURRENCY_OPTIONS.find(c=>c.code===p.defaultCurrency)?.flag} {p.defaultCurrency}
+                                                    {CURRENCY_OPTIONS.find(c => c.code === p.defaultCurrency)?.flag} {p.defaultCurrency}
                                                 </span>
                                             )
                                         )}
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <div className="flex items-center gap-2">
                                 {/* Sort Buttons */}
                                 <div className={`flex flex-col gap-1 mr-2 p-1 rounded-lg ${isPrivate ? 'bg-slate-200/50' : 'bg-gray-50'}`}>
-                                    <button 
-                                        onClick={() => moveProject(idx, 'up')} 
+                                    <button
+                                        onClick={() => moveProject(idx, 'up')}
                                         disabled={isFirst}
                                         className={`p-1 rounded disabled:opacity-30 transition-all shadow-sm ${isPrivate ? 'hover:bg-white text-slate-400' : 'hover:bg-white text-gray-500 hover:text-gray-900'}`}
                                     >
-                                        <ChevronUp size={14}/>
+                                        <ChevronUp size={14} />
                                     </button>
-                                    <button 
-                                        onClick={() => moveProject(idx, 'down')} 
+                                    <button
+                                        onClick={() => moveProject(idx, 'down')}
                                         disabled={isLast}
                                         className={`p-1 rounded disabled:opacity-30 transition-all shadow-sm ${isPrivate ? 'hover:bg-white text-slate-400' : 'hover:bg-white text-gray-500 hover:text-gray-900'}`}
                                     >
-                                        <ChevronDown size={14}/>
+                                        <ChevronDown size={14} />
                                     </button>
                                 </div>
 
                                 {p.id !== 'daily' && (
                                     <>
                                         <div className={`w-[1px] h-8 mx-1 ${isPrivate ? 'bg-slate-200' : 'bg-gray-100'}`}></div>
-                                        <button 
-                                            onClick={() => { setEditingProjectData(p); setIsEditingProject(true); }} 
+                                        <button
+                                            onClick={() => { setEditingProjectData(p); setIsEditingProject(true); }}
                                             className={`p-2 rounded-full transition-colors ${isPrivate ? 'text-slate-400 hover:text-slate-600 hover:bg-slate-200' : 'text-gray-300 hover:text-gray-600 hover:bg-gray-50'}`}
                                         >
                                             <Edit2 size={18} />
                                         </button>
-                                        <button 
-                                            onClick={() => handleDeleteProject(p.id)} 
+                                        <button
+                                            onClick={() => handleDeleteProject(p.id)}
                                             className={`p-2 rounded-full transition-colors ${isPrivate ? 'text-slate-300 hover:text-red-500 hover:bg-red-50' : 'text-red-200 hover:text-red-500 hover:bg-red-50'}`}
                                         >
                                             <Trash2 size={18} />
