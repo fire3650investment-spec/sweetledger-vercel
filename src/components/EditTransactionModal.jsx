@@ -67,7 +67,24 @@ export default function EditTransactionModal({
             }
 
             setPayer(transaction.payer);
-            setSplitType(transaction.splitType || 'even');
+
+            // [Fix] Reverse-engineer splitType from customSplit for UI
+            let initSplitType = transaction.splitType || 'even';
+            if (initSplitType === 'custom' && transaction.customSplit) {
+                const keys = Object.keys(transaction.customSplit);
+                const payerId = transaction.payer;
+
+                if (keys.length === 1) {
+                    if (keys[0] === payerId) {
+                        initSplitType = 'self';
+                    } else {
+                        initSplitType = 'partner';
+                    }
+                } else if (keys.length > 1) {
+                    initSplitType = 'multi_payer';
+                }
+            }
+            setSplitType(initSplitType);
 
             // Category Fallback
             const catId = transaction.category?.id;
