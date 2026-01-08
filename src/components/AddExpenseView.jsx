@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
     X, Camera, Image, RefreshCw, ChevronDown, Check, Lock, Users,
-    AlertCircle, Sparkles, Mic, StopCircle, Calendar, Plus, User, Repeat,
+    AlertCircle, Sparkles, Calendar, Plus, User, Repeat,
     Search, CheckCircle, HelpCircle, CreditCard
 } from 'lucide-react';
 import { getIconComponent, callGemini, getLocalISODate, fetchExchangeRate, getCategoryStyle } from '../utils/helpers';
@@ -16,6 +16,8 @@ import SmartTagBar from './add-expense/SmartTagBar';
 // Hooks
 import useCalculator from '../hooks/useCalculator';
 import useReceiptScanner from '../hooks/useReceiptScanner';
+import useAiInput from '../hooks/useAiInput';
+import AiInputModal from './add-expense/AiInputModal';
 
 export default function AddExpenseView({
     ledgerData,
@@ -58,11 +60,6 @@ export default function AddExpenseView({
     const [subCycle, setSubCycle] = useState('monthly');
     const [subPayDay, setSubPayDay] = useState('');
 
-    const [isAiModalOpen, setIsAiModalOpen] = useState(false);
-    const [aiModalInput, setAiModalInput] = useState('');
-    const [isAiProcessing, setIsAiProcessing] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
-
     const [isRateLoading, setIsRateLoading] = useState(false);
 
     // Currency Sheet State
@@ -70,7 +67,6 @@ export default function AddExpenseView({
     const [currencySearch, setCurrencySearch] = useState('');
 
     const noteInputRef = useRef(null);
-    const recognitionRef = useRef(null);
 
     const currentCats = useMemo(() => ledgerData.customCategories || DEFAULT_CATEGORIES, [ledgerData.customCategories]);
 
@@ -121,6 +117,24 @@ export default function AddExpenseView({
         guestId
     });
 
+    const {
+        isAiModalOpen,
+        setIsAiModalOpen,
+        aiModalInput,
+        setAiModalInput,
+        isAiProcessing,
+        isRecording,
+        toggleVoiceRecording,
+        handleAiModalSubmit
+    } = useAiInput({
+        setLocalAmount,
+        setNote,
+        setCurrency,
+        setSelectedCategory,
+        currentCats,
+        isPrivateProject
+    });
+
     const recentNotes = useMemo(() => {
         if (!ledgerData.transactions || !selectedCategory) return [];
         const recentTxs = ledgerData.transactions.slice(-50).reverse();
@@ -154,72 +168,7 @@ export default function AddExpenseView({
         setTimeout(() => { noteInputRef.current?.focus(); }, 100);
     };
 
-    const handleAiModalSubmit = async () => {
-        if (!aiModalInput) return;
-        setIsAiModalOpen(false);
-        setIsAiProcessing(true);
-        let prompt = `你是一個記帳助手。請分析使用者的輸入，並回傳一個 JSON 物件。
-目前的日期是：${new Date().toLocaleString('zh-TW')}。
-        可用的分類 ID: ${currentCats.map(c => c.id).join(', ')}
-請解析：1. 金額(amount) 2. 類別 ID(categoryId) 3. 備註(note) 4. 幣別(currency, 預設 TWD)
-        只回傳 JSON。`;
 
-        if (isPrivateProject) {
-            prompt += `\n[重要指令] 此為「私人帳本」模式。請將所有交易視為使用者個人支出，不需要考慮分帳、代墊或AA制邏輯。`;
-        }
-
-        if (aiModalInput) prompt += `\n使用者文字: "${aiModalInput}"`;
-
-        const result = await callGemini(prompt, null);
-        setIsAiProcessing(false);
-        setAiModalInput('');
-
-        if (!result) { alert("AI 無法解析"); return; }
-        try {
-            const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim();
-            const parsed = JSON.parse(cleanJson);
-            if (parsed.amount) {
-                setLocalAmount(parsed.amount.toString());
-            }
-            if (parsed.note) setNote(parsed.note);
-            if (parsed.currency) setCurrency(parsed.currency);
-            if (parsed.categoryId) {
-                const cat = currentCats.find(c => c.id === parsed.categoryId);
-                if (cat) setSelectedCategory(cat);
-            }
-        } catch (e) {
-            console.error("AI Parse Error", e);
-            alert("AI 解析失敗");
-        }
-    };
-
-    const toggleVoiceRecording = () => {
-        if (isRecording) {
-            recognitionRef.current?.stop();
-            setIsRecording(false);
-        } else {
-            if (!window.webkitSpeechRecognition && !window.SpeechRecognition) {
-                alert("您的瀏覽器不支援語音辨識");
-                return;
-            }
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            const recognition = new SpeechRecognition();
-            recognition.lang = 'zh-TW';
-            recognition.continuous = true;
-            recognition.interimResults = true;
-            recognition.onresult = (event) => {
-                let finalTranscript = '';
-                for (let i = event.resultIndex; i < event.results.length; ++i) {
-                    if (event.results[i].isFinal) finalTranscript += event.results[i][0].transcript;
-                }
-                if (finalTranscript) setAiModalInput(prev => prev + finalTranscript);
-            };
-            recognition.onerror = (event) => { console.error("Speech error", event.error); setIsRecording(false); };
-            recognitionRef.current = recognition;
-            recognition.start();
-            setIsRecording(true);
-        }
-    };
 
     // Optimistic UI Implementation
     const handleSubmit = async () => {
@@ -346,8 +295,9 @@ export default function AddExpenseView({
                         <button onClick={handleCameraClick} disabled={isScanning} className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-blue-50 hover:text-blue-500 active:scale-95'}`}>
                             {isScanning ? <RefreshCw className="animate-spin" size={18} /> : <Camera size={18} strokeWidth={2.5} />}
                         </button>
-                        <button onClick={() => setIsAiModalOpen(true)} className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-500 hover:bg-purple-50 hover:text-purple-500 active:scale-95'}`}>
-                            {isAiProcessing ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} strokeWidth={2.5} />}
+                        <button onClick={() => setIsAiModalOpen(true)} className={`h-9 px-3 rounded-full flex items-center justify-center gap-1.5 transition-all ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'bg-purple-50 text-purple-600 hover:bg-purple-100 active:scale-95'}`}>
+                            {isAiProcessing ? <RefreshCw className="animate-spin" size={16} /> : <Sparkles size={16} strokeWidth={2.5} />}
+                            <span className="text-xs font-bold whitespace-nowrap">AI 記帳</span>
                         </button>
                     </div>
                 </div>
@@ -540,16 +490,16 @@ export default function AddExpenseView({
             {activeOverlay === 'category' && <CategorySelector categories={filteredCategories} selectedCategory={selectedCategory} onSelect={handleCategorySelect} />}
 
             {/* AI Modal */}
-            {isAiModalOpen && (
-                <div className="absolute inset-0 z-[60] bg-white/95 backdrop-blur-sm flex flex-col px-6 pb-6 pt-[calc(env(safe-area-inset-top)+3rem)] animate-fade-in">
-                    <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-gray-800">AI 智慧輸入</h3><button onClick={() => { setIsAiModalOpen(false); }} className="p-2 bg-gray-100 rounded-full"><X size={20} /></button></div>
-                    <div className="flex-1 flex flex-col gap-4">
-                        <textarea value={aiModalInput} onChange={(e) => setAiModalInput(e.target.value)} placeholder="例如：午餐吃拉麵 250元..." className="w-full h-40 p-4 bg-gray-50 rounded-2xl text-lg outline-none resize-none border border-gray-200 focus:border-purple-500 transition-colors" />
-                        <div className="flex justify-center gap-4 mt-auto mb-8"><button onClick={toggleVoiceRecording} className={`p-6 rounded-full transition-all ${isRecording ? 'bg-red-50 text-red-500 scale-110 shadow-red-200' : 'bg-purple-50 text-purple-600 shadow-purple-200'} shadow-lg`}>{isRecording ? <StopCircle size={32} /> : <Mic size={32} />}</button></div>
-                        <button onClick={handleAiModalSubmit} disabled={!aiModalInput} className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold text-lg mb-4">開始分析</button>
-                    </div>
-                </div>
-            )}
+            {/* AI Modal */}
+            <AiInputModal
+                isOpen={isAiModalOpen}
+                onClose={() => setIsAiModalOpen(false)}
+                inputValue={aiModalInput}
+                onInputChange={setAiModalInput}
+                isRecording={isRecording}
+                onToggleRecording={toggleVoiceRecording}
+                onSubmit={handleAiModalSubmit}
+            />
 
             {/* Currency Sheet */}
             {isCurrencySheetOpen && (
