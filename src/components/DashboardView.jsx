@@ -249,7 +249,7 @@ export default function DashboardView({
                     </div>
                 </div>
             ) : (
-                <div className={`rounded-3xl p-6 text-white shadow-lg shadow-rose-200 mb-8 relative overflow-hidden transition-colors ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 'bg-gradient-to-br from-rose-500 to-pink-600'}`}>
+                <div className={`rounded-3xl p-6 text-white shadow-lg mb-8 relative overflow-hidden transition-colors ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-200' : 'bg-gradient-to-br from-rose-500 to-pink-600 shadow-rose-200'}`}>
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
                     <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14} /> 總結算狀態 ({currentProjectName})</p>
                     <div className="flex justify-between items-end mb-2">
@@ -304,7 +304,7 @@ export default function DashboardView({
                                         <div className="flex flex-col items-end ml-4">
                                             <span className={`font-bold whitespace-nowrap flex items-center gap-1 max-w-[120px] justify-end ${tx.isSettlement ? 'text-emerald-500' : 'text-gray-800'}`}>
                                                 {/* [Batch 3 New] 若為外幣，顯示國旗與原幣金額 */}
-                                                {isForeign && <span className="text-[10px] grayscale opacity-80 mr-0.5 shrink-0">{currencyInfo?.flag || txCurrency}</span>}
+                                                {isForeign && <span className="text-[10px] saturate-50 opacity-80 mr-0.5 shrink-0">{currencyInfo?.flag || txCurrency}</span>}
                                                 <span className="truncate">{formatCurrency(tx.amount || 0, txCurrency, privacyMode)}</span>
                                             </span>
                                             {/* [Batch 3 New] 若為外幣，顯示換算回台幣的估計值 */}

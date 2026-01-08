@@ -67,8 +67,10 @@ export default function useAiInput({
 
         if (!result) { alert("AI 無法解析"); return; }
         try {
-            const cleanJson = result.replace(/```json/g, '').replace(/```/g, '').trim();
-            const parsed = JSON.parse(cleanJson);
+            // Robust JSON extraction: look for the first '{' and the last '}'
+            const jsonMatch = result.match(/\{[\s\S]*\}/);
+            const jsonString = jsonMatch ? jsonMatch[0] : result;
+            const parsed = JSON.parse(jsonString);
 
             if (parsed.amount) {
                 setLocalAmount(parsed.amount.toString());
