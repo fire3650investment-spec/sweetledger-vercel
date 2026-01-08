@@ -326,7 +326,7 @@ export default function ProjectsView({
                                         {p.id === 'daily' ? (
                                             <span className="bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-md text-[10px] font-bold">預設</span>
                                         ) : (
-                                            p.defaultCurrency && p.defaultCurrency !== 'TWD' && (
+                                            p.defaultCurrency && p.defaultCurrency !== 'TWD' && Array.isArray(CURRENCY_OPTIONS) && (
                                                 <span className="bg-gray-50 text-gray-400 px-1.5 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1">
                                                     {CURRENCY_OPTIONS.find(c => c.code === p.defaultCurrency)?.flag} {p.defaultCurrency}
                                                 </span>
