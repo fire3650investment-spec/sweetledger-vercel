@@ -34,7 +34,7 @@ const CategoryPieChart = memo(({ categoryStats, totalExpense }) => {
             <h3 className="text-gray-600 font-bold mb-6 w-full text-left">分類支出佔比 (TWD)</h3>
 
             <div className="relative w-48 h-48 mb-6">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <PieChart>
                         <Pie
                             data={categoryStats}

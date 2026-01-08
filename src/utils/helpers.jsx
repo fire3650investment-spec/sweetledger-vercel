@@ -8,8 +8,6 @@ import {
     Tv, Music, Smartphone, Baby, AlertCircle,
     User, Coins
 } from 'lucide-react';
-// 引入 SDK
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ICON_MAP, CHARACTERS, PALETTE } from './constants';
 
 // --- Formatters & Helpers ---
@@ -71,51 +69,23 @@ export const fetchExchangeRate = async (currencyCode) => {
         }
     }
 
-    // 2. Prepare API URL (Architecture Switch)
-    // 未來若啟用 Firebase Functions，將此設為 true 並填入 Function URL
-    const USE_PROXY = false;
-    const PROXY_URL = 'https://us-central1-YOUR-PROJECT.cloudfunctions.net/getExchangeRate';
-
-    let url;
-    if (USE_PROXY) {
-        url = `${PROXY_URL}?currency=${currencyCode}`;
-    } else {
-        const API_KEY = import.meta.env.VITE_EXCHANGE_RATE_API_KEY;
-        if (!API_KEY) {
-            console.warn("⚠️ Missing Exchange Rate API Key");
-            return null;
-        }
-        url = `https://v6.exchangerate-api.com/v6/${API_KEY}/latest/${currencyCode}`;
-    }
-
-    // 3. Fetch & Update Cache
+    // 2. Fetch from Vercel Serverless Function
+    // 我們使用 /api/exchange-rates?currency=USD 來隱藏金鑰
     try {
-        const response = await fetch(url);
+        const response = await fetch(`/api/exchange-rates?currency=${currencyCode}`);
         const data = await response.json();
 
-        let rate = null;
-
-        if (USE_PROXY) {
-            // 假設 Proxy 直接回傳 { rate: 0.23 }
-            rate = data.rate;
-        } else {
-            // 直接呼叫 ExchangeRate-API 的結構
-            if (data && data.result === 'success' && data.conversion_rates) {
-                rate = data.conversion_rates.TWD;
-            }
-        }
-
-        if (rate) {
+        if (data && data.rate) {
             // Write to Cache
             const cachePayload = JSON.stringify({
-                rate: rate,
+                rate: data.rate,
                 timestamp: Date.now()
             });
             localStorage.setItem(cacheKey, cachePayload);
-            return rate;
+            return data.rate;
         }
 
-        console.warn(`Exchange Rate API: No TWD rate found for ${currencyCode}`);
+        console.warn(`Exchange Rate API: No rate returned for ${currencyCode}`);
         return null;
     } catch (e) {
         console.error("Exchange Rate API Error:", e);
@@ -228,34 +198,31 @@ export const renderAvatar = (avatarKeyOrUrl, className = "w-10 h-10") => {
     );
 };
 
-// --- AI / Gemini Functions (Using SDK) ---
+// --- AI / Gemini Functions (Using Proxy) ---
 
 export const callGemini = async (prompt, imageBase64 = null) => {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) {
-        console.warn("系統錯誤：缺少 AI 金鑰 (VITE_GEMINI_API_KEY)");
-        return null;
-    }
-
     try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const response = await fetch('/api/gemini', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                prompt: prompt,
+                imageBase64: imageBase64
+            })
+        });
 
-        let result;
-        if (imageBase64) {
-            const imagePart = {
-                inlineData: {
-                    data: imageBase64,
-                    mimeType: "image/jpeg"
-                }
-            };
-            result = await model.generateContent([prompt, imagePart]);
+        const data = await response.json();
+
+        if (response.ok) {
+            return data.text;
         } else {
-            result = await model.generateContent(prompt);
+            console.error("Gemini API Error:", data.error);
+            return null;
         }
-        return result.response.text();
     } catch (e) {
-        console.error("Gemini SDK Error:", e);
+        console.error("Gemini Fetch Error:", e);
         return null;
     }
 };

@@ -1,184 +1,219 @@
 <!doctype html>
 <html lang="zh-TW">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    
-    <link rel="apple-touch-icon" href="/pwa-192x192.png" />
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#ffffff" />
-    <title>AA 記帳｜伴侶、朋友共用帳本</title>
- 
-    <style>
-      :root {
-        --sk-bg: #f3f4f6; /* 淺灰色骨架 */
-        --sk-bg-dark: #e5e7eb; /* 深一點的灰色 */
-      }
-      
-      html, body {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        min-height: 100dvh;
-        background-color: #ffffff;
-        font-family: 'Inter', system-ui, -apple-system, sans-serif;
-        -webkit-tap-highlight-color: transparent;
-      }
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
 
-      #root {
-        width: 100%;
-        min-height: 100dvh;
-      }
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
 
-      /* --- Skeleton UI Styles --- */
-      .sk-container {
-        padding-top: calc(env(safe-area-inset-top) + 1rem);
-        padding-left: 1rem;
-        padding-right: 1rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-        opacity: 1; /* 確保不透明，立即顯示 */
-      }
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-      /* 1. Top Bar 模擬 */
-      .sk-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 0.5rem;
-      }
-      .sk-capsule {
-        width: 100px;
-        height: 32px;
-        background-color: var(--sk-bg-dark); /* 模擬專案選單 */
-        border-radius: 9999px;
-      }
-      .sk-circle-sm {
-        width: 32px;
-        height: 32px;
-        background-color: var(--sk-bg); /* 模擬隱私按鈕 */
-        border-radius: 50%;
-      }
+  <link rel="apple-touch-icon" href="/pwa-192x192.png" />
 
-      /* 2. Hero Card 模擬 */
-      .sk-hero-card {
-        width: 100%;
-        height: 180px;
-        background-color: var(--sk-bg);
-        border-radius: 24px;
-      }
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>AA 記帳｜伴侶、朋友共用帳本</title>
 
-      /* 3. List 模擬 */
-      .sk-list-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-      }
-      .sk-date-label {
-        width: 60px;
-        height: 16px;
-        background-color: var(--sk-bg);
-        border-radius: 4px;
-        margin-left: 4px;
-        margin-bottom: 0.25rem;
-      }
-      .sk-list-item {
-        width: 100%;
-        height: 72px;
-        background-color: var(--sk-bg); /* 稍微淡一點 */
-        border-radius: 16px;
-        opacity: 0.6;
-      }
+  <style>
+    :root {
+      --sk-bg: #f3f4f6;
+      /* 淺灰色骨架 */
+      --sk-bg-dark: #e5e7eb;
+      /* 深一點的灰色 */
+    }
 
-      /* 4. Bottom Bar 模擬 */
-      .sk-bottom-bar {
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        height: 80px; /* 約等於 pb + pt */
-        background-color: rgba(255, 255, 255, 0.9);
-        border-top: 1px solid #f3f4f6;
-        padding-bottom: env(safe-area-inset-bottom);
-        display: flex;
-        justify-content: space-around;
-        align-items: flex-start;
-        padding-top: 10px;
-        z-index: 100;
-      }
-      .sk-nav-item {
-        width: 40px;
-        height: 40px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-      }
-      .sk-nav-icon {
-        width: 24px;
-        height: 24px;
-        background-color: var(--sk-bg-dark);
-        border-radius: 6px;
-      }
-      .sk-nav-text {
-        width: 20px;
-        height: 8px;
-        background-color: var(--sk-bg);
-        border-radius: 2px;
-      }
-      /* 中間那顆大的 Plus 按鈕 */
-      .sk-fab-wrapper {
-        position: relative;
-        top: -24px; /* 模擬 -top-6 */
-      }
-      .sk-fab {
-        width: 64px;
-        height: 64px;
-        background-color: var(--sk-bg-dark);
-        border-radius: 50%;
-        border: 4px solid white; /* 模擬邊距感 */
-      }
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100dvh;
+      background-color: #ffffff;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
 
-    </style>
-    <script type="module" crossorigin src="/assets/index-Fn_WI2WH.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-DajXh5fm.css">
-  <link rel="manifest" href="/manifest.webmanifest"></head>
-  <body>
-    <div id="root">
-      <div class="sk-container">
-        <div class="sk-header">
-          <div class="sk-capsule"></div>
-          <div class="sk-circle-sm"></div>
-        </div>
+    #root {
+      width: 100%;
+      min-height: 100dvh;
+    }
 
-        <div class="sk-hero-card"></div>
+    /* --- Skeleton UI Styles --- */
+    .sk-container {
+      padding-top: calc(env(safe-area-inset-top) + 1rem);
+      padding-left: 1rem;
+      padding-right: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      opacity: 1;
+      /* 確保不透明，立即顯示 */
+    }
 
-        <div class="sk-list-group">
-          <div class="sk-date-label"></div>
-          <div class="sk-list-item"></div>
-          <div class="sk-list-item"></div>
-          <div class="sk-list-item"></div>
-        </div>
+    /* 1. Top Bar 模擬 */
+    .sk-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+
+    .sk-capsule {
+      width: 100px;
+      height: 32px;
+      background-color: var(--sk-bg-dark);
+      /* 模擬專案選單 */
+      border-radius: 9999px;
+    }
+
+    .sk-circle-sm {
+      width: 32px;
+      height: 32px;
+      background-color: var(--sk-bg);
+      /* 模擬隱私按鈕 */
+      border-radius: 50%;
+    }
+
+    /* 2. Hero Card 模擬 */
+    .sk-hero-card {
+      width: 100%;
+      height: 180px;
+      background-color: var(--sk-bg);
+      border-radius: 24px;
+    }
+
+    /* 3. List 模擬 */
+    .sk-list-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .sk-date-label {
+      width: 60px;
+      height: 16px;
+      background-color: var(--sk-bg);
+      border-radius: 4px;
+      margin-left: 4px;
+      margin-bottom: 0.25rem;
+    }
+
+    .sk-list-item {
+      width: 100%;
+      height: 72px;
+      background-color: var(--sk-bg);
+      /* 稍微淡一點 */
+      border-radius: 16px;
+      opacity: 0.6;
+    }
+
+    /* 4. Bottom Bar 模擬 */
+    .sk-bottom-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 80px;
+      /* 約等於 pb + pt */
+      background-color: rgba(255, 255, 255, 0.9);
+      border-top: 1px solid #f3f4f6;
+      padding-bottom: env(safe-area-inset-bottom);
+      display: flex;
+      justify-content: space-around;
+      align-items: flex-start;
+      padding-top: 10px;
+      z-index: 100;
+    }
+
+    .sk-nav-item {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .sk-nav-icon {
+      width: 24px;
+      height: 24px;
+      background-color: var(--sk-bg-dark);
+      border-radius: 6px;
+    }
+
+    .sk-nav-text {
+      width: 20px;
+      height: 8px;
+      background-color: var(--sk-bg);
+      border-radius: 2px;
+    }
+
+    /* 中間那顆大的 Plus 按鈕 */
+    .sk-fab-wrapper {
+      position: relative;
+      top: -24px;
+      /* 模擬 -top-6 */
+    }
+
+    .sk-fab {
+      width: 64px;
+      height: 64px;
+      background-color: var(--sk-bg-dark);
+      border-radius: 50%;
+      border: 4px solid white;
+      /* 模擬邊距感 */
+    }
+  </style>
+  <script type="module" crossorigin src="/assets/index-Dtw_p8OJ.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-C26zPWn_.css">
+<link rel="manifest" href="/manifest.webmanifest"></head>
+
+<body>
+  <div id="root">
+    <div class="sk-container">
+      <div class="sk-header">
+        <div class="sk-capsule"></div>
+        <div class="sk-circle-sm"></div>
       </div>
 
-      <div class="sk-bottom-bar">
-        <div class="sk-nav-item"><div class="sk-nav-icon"></div><div class="sk-nav-text"></div></div>
-        <div class="sk-nav-item"><div class="sk-nav-icon"></div><div class="sk-nav-text"></div></div>
-        
-        <div class="sk-fab-wrapper">
-            <div class="sk-fab"></div>
-        </div>
+      <div class="sk-hero-card"></div>
 
-        <div class="sk-nav-item"><div class="sk-nav-icon"></div><div class="sk-nav-text"></div></div>
-        <div class="sk-nav-item"><div class="sk-nav-icon"></div><div class="sk-nav-text"></div></div>
+      <div class="sk-list-group">
+        <div class="sk-date-label"></div>
+        <div class="sk-list-item"></div>
+        <div class="sk-list-item"></div>
+        <div class="sk-list-item"></div>
       </div>
-
     </div>
-  </body>
+
+    <div class="sk-bottom-bar">
+      <div class="sk-nav-item">
+        <div class="sk-nav-icon"></div>
+        <div class="sk-nav-text"></div>
+      </div>
+      <div class="sk-nav-item">
+        <div class="sk-nav-icon"></div>
+        <div class="sk-nav-text"></div>
+      </div>
+
+      <div class="sk-fab-wrapper">
+        <div class="sk-fab"></div>
+      </div>
+
+      <div class="sk-nav-item">
+        <div class="sk-nav-icon"></div>
+        <div class="sk-nav-text"></div>
+      </div>
+      <div class="sk-nav-item">
+        <div class="sk-nav-icon"></div>
+        <div class="sk-nav-text"></div>
+      </div>
+    </div>
+
+  </div>
+</body>
+
 </html>

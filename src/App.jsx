@@ -13,15 +13,24 @@ import { formatCurrency, callGemini } from './utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS } from './utils/constants';
 
 // Components
-import DashboardView from './components/DashboardView';
-import AddExpenseView from './components/AddExpenseView';
-import StatsView from './components/StatsView';
-import ProjectsView from './components/ProjectsView';
-import SettingsView from './components/SettingsView';
-import OnboardingView from './components/OnboardingView';
-import DecisionView from './components/DecisionView';
+// Components - Lazy Load for Performance
+const DashboardView = React.lazy(() => import('./components/DashboardView'));
+const AddExpenseView = React.lazy(() => import('./components/AddExpenseView'));
+const StatsView = React.lazy(() => import('./components/StatsView'));
+const ProjectsView = React.lazy(() => import('./components/ProjectsView'));
+const SettingsView = React.lazy(() => import('./components/SettingsView'));
+const OnboardingView = React.lazy(() => import('./components/OnboardingView'));
+const DecisionView = React.lazy(() => import('./components/DecisionView'));
+// const EditTransactionModal = React.lazy(() => import('./components/EditTransactionModal')); // Modals are tricky with lazy if used in same render cycle, keep eager for now or refactor later
 import EditTransactionModal from './components/EditTransactionModal';
-import SubscriptionsView from './components/SubscriptionsView';
+const SubscriptionsView = React.lazy(() => import('./components/SubscriptionsView'));
+
+// Loading Component
+const PageLoading = () => (
+    <div className="flex h-full items-center justify-center p-10">
+        <div className="w-8 h-8 border-4 border-rose-100 border-t-rose-500 rounded-full animate-spin"></div>
+    </div>
+);
 
 export default function SweetLedger() {
     const { user, loading: authLoading, loginWithGoogle, logout } = useAuth();
@@ -272,79 +281,84 @@ export default function SweetLedger() {
 
     return (
         <div className="min-h-screen bg-white text-gray-900 font-sans pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500 relative">
-            {view === 'onboarding' && <OnboardingView handleGoogleLogin={handleGoogleLogin} loading={loading} onJoinWithCode={handleJoinWithCode} />}
-            {view === 'decision' && <DecisionView user={user} onCreate={handleCreateLedgerFn} onJoin={handleJoinLedgerFn} />}
+            <React.Suspense fallback={<div className="h-screen w-full flex items-center justify-center bg-white"><div className="text-4xl animate-bounce">🍰</div></div>}>
+                {view === 'onboarding' && <OnboardingView handleGoogleLogin={handleGoogleLogin} loading={loading} onJoinWithCode={handleJoinWithCode} />}
+                {view === 'decision' && <DecisionView user={user} onCreate={handleCreateLedgerFn} onJoin={handleJoinLedgerFn} />}
+            </React.Suspense>
 
             {view !== 'onboarding' && view !== 'decision' && ledgerData && user && (
                 <>
-                    <div className={view === 'add' ? 'block h-full' : 'hidden'}>
-                        <AddExpenseView
-                            key={addExpenseKey}
-                            ledgerData={ledgerData}
-                            user={user}
-                            currentProjectId={currentProjectId}
-                            setView={setView}
-                            addTransaction={addTransaction}
-                            updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
-                        />
-                    </div>
-                    <div className={view === 'subscriptions' ? 'block h-full' : 'hidden'}>
-                        <SubscriptionsView ledgerData={ledgerData} user={user} setView={setView} handleDeleteSubscription={deleteSubscription} />
-                    </div>
-
-                    <div className={['dashboard', 'stats', 'projects', 'settings'].includes(view) ? 'block h-full' : 'hidden'}>
-                        <div className={view === 'dashboard' ? 'block' : 'hidden'}>
-                            <DashboardView
-                                ledgerData={ledgerData} currentProjectId={currentProjectId} setCurrentProjectId={setCurrentProjectId}
-                                privacyMode={privacyMode} setPrivacyMode={setPrivacyMode}
-                                setIsEditTxModalOpen={setIsEditTxModalOpen} setEditingTx={setEditingTx}
-                                user={user} handleSettleUp={handleSettleUpFn} handleOpenAddExpense={handleOpenAddExpense} setView={setView}
+                    <React.Suspense fallback={<PageLoading />}>
+                        <div className={view === 'add' ? 'block h-full' : 'hidden'}>
+                            <AddExpenseView
+                                key={addExpenseKey}
+                                ledgerData={ledgerData}
+                                user={user}
+                                currentProjectId={currentProjectId}
+                                setView={setView}
+                                addTransaction={addTransaction}
+                                updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
                             />
                         </div>
-                        <div className={view === 'stats' ? 'block' : 'hidden'}>
-                            <StatsView
-                                ledgerData={ledgerData} currentProjectId={currentProjectId}
-                                statsMonth={statsMonth} setStatsMonth={setStatsMonth} privacyMode={privacyMode}
-                                setEditingTx={setEditingTx} setIsEditTxModalOpen={setIsEditTxModalOpen}
-                            />
-                        </div>
-                        <div className={view === 'projects' ? 'block' : 'hidden'}>
-                            <ProjectsView
-                                ledgerData={ledgerData} user={user}
-                                isEditingProject={isEditingProject} setIsEditingProject={setIsEditingProject}
-                                editingProjectData={editingProjectData} setEditingProjectData={setEditingProjectData}
-                                handleSaveProject={handleSaveProjectFn} handleDeleteProject={handleDeleteProjectFn}
-                                handleReorderProjects={reorderProjects}
-                            />
-                        </div>
-                        <div className={view === 'settings' ? 'block' : 'hidden'}>
-                            <SettingsView
-                                ledgerData={ledgerData} user={user} setView={setView}
-                                isEditingCategory={isEditingCategory} setIsEditingCategory={setIsEditingCategory}
-                                editingCategoryData={editingCategoryData} setEditingCategoryData={setEditingCategoryData}
-                                handleSaveCategory={handleSaveCategoryFn} handleDeleteCategory={handleDeleteCategoryFn}
-                                handleExport={handleExport} handleResetAccount={handleResetAccountFn} handleLogout={handleLogout}
-                                isAvatarModalOpen={isAvatarModalOpen} setIsAvatarModalOpen={setIsAvatarModalOpen}
-                                myNickname={myNickname} setMyNickname={setMyNickname} updateNickname={handleUpdateNickname}
-                                tempAvatar={tempAvatar} handleAvatarSelect={setTempAvatar} confirmAvatarUpdate={confirmAvatarUpdate}
-                                handleFixIdentity={handleFixIdentityFn} ledgerCode={ledgerCode} updateLedgerCurrency={handleUpdateLedgerCurrency}
-                                currentProjectId={currentProjectId} handleReorderCategories={reorderCategories}
-                                updateUserSetting={updateUserSetting} // [Batch 2] 串接常用貨幣儲存
-                            />
+                        <div className={view === 'subscriptions' ? 'block h-full' : 'hidden'}>
+                            <SubscriptionsView ledgerData={ledgerData} user={user} setView={setView} handleDeleteSubscription={deleteSubscription} />
                         </div>
 
-                        <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
-                            <div className="flex justify-between items-center max-w-md mx-auto">
-                                <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
-                                <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
-                                <div className="relative -top-6">
-                                    <button onClick={() => handleOpenAddExpense()} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>
+                        <div className={['dashboard', 'stats', 'projects', 'settings'].includes(view) ? 'block h-full' : 'hidden'}>
+                            <div className={view === 'dashboard' ? 'block' : 'hidden'}>
+                                <DashboardView
+                                    ledgerData={ledgerData} currentProjectId={currentProjectId} setCurrentProjectId={setCurrentProjectId}
+                                    privacyMode={privacyMode} setPrivacyMode={setPrivacyMode}
+                                    setIsEditTxModalOpen={setIsEditTxModalOpen} setEditingTx={setEditingTx}
+                                    user={user} handleSettleUp={handleSettleUpFn} handleOpenAddExpense={handleOpenAddExpense} setView={setView}
+                                />
+                            </div>
+                            <div className={view === 'stats' ? 'block' : 'hidden'}>
+                                <StatsView
+                                    ledgerData={ledgerData} currentProjectId={currentProjectId}
+                                    statsMonth={statsMonth} setStatsMonth={setStatsMonth} privacyMode={privacyMode}
+                                    setEditingTx={setEditingTx} setIsEditTxModalOpen={setIsEditTxModalOpen}
+                                />
+                            </div>
+                            <div className={view === 'projects' ? 'block' : 'hidden'}>
+                                <ProjectsView
+                                    ledgerData={ledgerData} user={user}
+                                    isEditingProject={isEditingProject} setIsEditingProject={setIsEditingProject}
+                                    editingProjectData={editingProjectData} setEditingProjectData={setEditingProjectData}
+                                    handleSaveProject={handleSaveProjectFn} handleDeleteProject={handleDeleteProjectFn}
+                                    handleReorderProjects={reorderProjects}
+                                    updateProjectRates={updateProjectRates} // Pass to ProjectsView too just in case
+                                />
+                            </div>
+                            <div className={view === 'settings' ? 'block' : 'hidden'}>
+                                <SettingsView
+                                    ledgerData={ledgerData} user={user} setView={setView}
+                                    isEditingCategory={isEditingCategory} setIsEditingCategory={setIsEditingCategory}
+                                    editingCategoryData={editingCategoryData} setEditingCategoryData={setEditingCategoryData}
+                                    handleSaveCategory={handleSaveCategoryFn} handleDeleteCategory={handleDeleteCategoryFn}
+                                    handleExport={handleExport} handleResetAccount={handleResetAccountFn} handleLogout={handleLogout}
+                                    isAvatarModalOpen={isAvatarModalOpen} setIsAvatarModalOpen={setIsAvatarModalOpen}
+                                    myNickname={myNickname} setMyNickname={setMyNickname} updateNickname={handleUpdateNickname}
+                                    tempAvatar={tempAvatar} handleAvatarSelect={setTempAvatar} confirmAvatarUpdate={confirmAvatarUpdate}
+                                    handleFixIdentity={handleFixIdentityFn} ledgerCode={ledgerCode} updateLedgerCurrency={handleUpdateLedgerCurrency}
+                                    currentProjectId={currentProjectId} handleReorderCategories={reorderCategories}
+                                    updateUserSetting={updateUserSetting} // [Batch 2] 串接常用貨幣儲存
+                                />
+                            </div>
+
+                            <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
+                                <div className="flex justify-between items-center max-w-md mx-auto">
+                                    <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
+                                    <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
+                                    <div className="relative -top-6">
+                                        <button onClick={() => handleOpenAddExpense()} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>
+                                    </div>
+                                    <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
+                                    <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
                                 </div>
-                                <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
-                                <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
                             </div>
                         </div>
-                    </div>
+                    </React.Suspense>
 
                     <EditTransactionModal
                         isOpen={isEditTxModalOpen}

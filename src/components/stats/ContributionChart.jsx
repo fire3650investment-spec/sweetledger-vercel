@@ -62,7 +62,7 @@ const ContributionChart = memo(({ hostName, guestName, hostTotal, guestTotal, ho
 
             {/* Recharts Bar (Visual Only) */}
             <div className="h-6 w-full">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                     <BarChart layout="vertical" data={data} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
                         <XAxis type="number" hide />
                         <YAxis type="category" dataKey="name" hide />
