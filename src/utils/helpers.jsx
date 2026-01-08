@@ -45,6 +45,18 @@ export const calculateTwdValue = (amount, currency, rates) => {
     return numAmount * rate;
 };
 
+import { auth } from './firebase'; // Ensure auth is imported if not already, or pass it in. 
+// Wait, 'auth' export might need checking. Usually it's in ./firebase. 
+// However, helpers.jsx imports constants. Let's assume we need to import auth from 'firebase/auth' or '../utils/firebase'
+import { getAuth } from 'firebase/auth';
+
+const getAuthToken = async () => {
+    const auth = getAuth();
+    const user = auth.currentUser;
+    if (!user) return null;
+    return await user.getIdToken();
+};
+
 // [Batch 5 Updated] 匯率 API 串接 (含 Cache 機制與架構預留)
 export const fetchExchangeRate = async (currencyCode) => {
     if (!currencyCode || currencyCode === 'TWD') return 1;
@@ -72,7 +84,12 @@ export const fetchExchangeRate = async (currencyCode) => {
     // 2. Fetch from Vercel Serverless Function
     // 我們使用 /api/exchange-rates?currency=USD 來隱藏金鑰
     try {
-        const response = await fetch(`/api/exchange-rates?currency=${currencyCode}`);
+        const token = await getAuthToken(); // Get Token
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+        const response = await fetch(`/api/exchange-rates?currency=${currencyCode}`, {
+            headers: headers
+        });
         const data = await response.json();
 
         if (data && data.rate) {
@@ -202,10 +219,12 @@ export const renderAvatar = (avatarKeyOrUrl, className = "w-10 h-10") => {
 
 export const callGemini = async (prompt, imageBase64 = null) => {
     try {
+        const token = await getAuthToken(); // Get Token
         const response = await fetch('/api/gemini', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
             },
             body: JSON.stringify({
                 prompt: prompt,

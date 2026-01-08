@@ -1,5 +1,5 @@
-// api/gemini.js
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { verifyAuth } from './_auth.js';
 
 export default async function handler(req, res) {
     // CORS Support for local dev
@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
     res.setHeader(
         'Access-Control-Allow-Headers',
-        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
+        'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
     );
 
     if (req.method === 'OPTIONS') {
@@ -18,6 +18,13 @@ export default async function handler(req, res) {
 
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
+    }
+
+    // [Security] Verify Firebase ID Token
+    try {
+        await verifyAuth(req);
+    } catch (error) {
+        return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const { prompt, imageBase64 } = req.body;

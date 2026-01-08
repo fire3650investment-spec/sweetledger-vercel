@@ -97,9 +97,22 @@ service cloud.firestore {
           return isLoggedIn() && (request.auth.uid in getLedger().users);
         }
 
+        function isValidTransaction() {
+          let data = request.resource.data;
+          // 1. Amount Limit (Max 100,000,000)
+          // Ensure amount is a number and below the limit
+          let validAmount = data.amount is number && data.amount < 100000000;
+          
+          // 2. Note Limit (Max 100 chars)
+          // Note is optional, but if present must be string and within limit
+          let validNote = !("note" in data) || (data.note is string && data.note.size() <= 100);
+
+          return validAmount && validNote;
+        }
+
         allow read: if isLedgerMember();
-        allow create: if isLedgerMember();
-        allow update: if isLedgerMember();
+        allow create: if isLedgerMember() && isValidTransaction();
+        allow update: if isLedgerMember() && isValidTransaction();
         allow delete: if isLedgerMember();
       }
     }

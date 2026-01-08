@@ -1,13 +1,23 @@
 // api/exchange-rates.js
+import { verifyAuth } from './_auth.js';
+
 export default async function handler(req, res) {
     // CORS Support
     res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization'); // Allow Auth Header
 
     if (req.method === 'OPTIONS') {
         res.status(200).end();
         return;
+    }
+
+    // [Security] Verify Firebase ID Token
+    try {
+        await verifyAuth(req);
+    } catch (error) {
+        return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const { currency } = req.query;

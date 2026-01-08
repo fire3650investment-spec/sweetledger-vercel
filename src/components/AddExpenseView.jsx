@@ -339,15 +339,15 @@ export default function AddExpenseView({
                         {isPrivateProject && <Lock size={12} />}
                         {currentProject?.name || '日常'}
                     </div>
-                    <div className="flex gap-1 -mr-2">
-                        <button onClick={handleAlbumClick} disabled={isScanning} className={`p-2 rounded-full ${isScanning ? 'opacity-30' : 'text-slate-400 hover:bg-slate-50'}`}>
-                            <Image size={20} />
+                    <div className="flex gap-2 -mr-1">
+                        <button onClick={handleAlbumClick} disabled={isScanning} className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isScanning ? 'opacity-30' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 active:scale-95'}`}>
+                            <Image size={18} strokeWidth={2.5} />
                         </button>
-                        <button onClick={handleCameraClick} disabled={isScanning} className={`p-2 rounded-full ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'text-blue-500 hover:bg-blue-50'}`}>
-                            {isScanning ? <RefreshCw className="animate-spin" size={20} /> : <Camera size={20} />}
+                        <button onClick={handleCameraClick} disabled={isScanning} className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-blue-50 hover:text-blue-500 active:scale-95'}`}>
+                            {isScanning ? <RefreshCw className="animate-spin" size={18} /> : <Camera size={18} strokeWidth={2.5} />}
                         </button>
-                        <button onClick={() => setIsAiModalOpen(true)} className={`p-2 rounded-full ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'text-purple-400 hover:bg-purple-50'}`}>
-                            {isAiProcessing ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={20} />}
+                        <button onClick={() => setIsAiModalOpen(true)} className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-500 hover:bg-purple-50 hover:text-purple-500 active:scale-95'}`}>
+                            {isAiProcessing ? <RefreshCw className="animate-spin" size={18} /> : <Sparkles size={18} strokeWidth={2.5} />}
                         </button>
                     </div>
                 </div>
