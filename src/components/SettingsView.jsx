@@ -544,6 +544,7 @@ export default function SettingsView({
                         <div className="space-y-2 mb-6 max-h-[50vh] overflow-y-auto">
                             {getExportableProjects().map(p => {
                                 const isChecked = exportSelectedProjects.includes(p.id);
+                                const Icon = getIconComponent(p.icon || 'project_daily');
                                 return (
                                     <div
                                         key={p.id}
@@ -555,7 +556,7 @@ export default function SettingsView({
                                         className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${isChecked ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50'}`}
                                     >
                                         <div className="flex items-center gap-3">
-                                            {getIconComponent(p.icon || 'project_daily', isChecked ? 'text-white' : 'text-gray-400', 20)}
+                                            <Icon className={isChecked ? 'text-white' : 'text-gray-400'} size={20} />
                                             <span className="font-bold text-sm">{p.name}</span>
                                         </div>
                                         {isChecked && <Check size={16} />}
