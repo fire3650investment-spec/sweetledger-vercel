@@ -76,12 +76,17 @@ export default function SweetLedger() {
 
     // [Performance] Lazy Load on Demand (Keep-Alive States)
     // Only mount heavy components after the user has visited them once.
-    const [visitedViews, setVisitedViews] = useState({ stats: false, projects: false, settings: false });
+    const [visitedViews, setVisitedViews] = useState({
+        stats: false, projects: false, settings: false,
+        add: false, subscriptions: false
+    });
 
     useEffect(() => {
         if (view === 'stats' && !visitedViews.stats) setVisitedViews(prev => ({ ...prev, stats: true }));
         if (view === 'projects' && !visitedViews.projects) setVisitedViews(prev => ({ ...prev, projects: true }));
         if (view === 'settings' && !visitedViews.settings) setVisitedViews(prev => ({ ...prev, settings: true }));
+        if (view === 'add' && !visitedViews.add) setVisitedViews(prev => ({ ...prev, add: true }));
+        if (view === 'subscriptions' && !visitedViews.subscriptions) setVisitedViews(prev => ({ ...prev, subscriptions: true }));
     }, [view]);
 
     // --- Effects ---
@@ -331,18 +336,26 @@ export default function SweetLedger() {
                 <>
                     <React.Suspense fallback={<PageLoading />}>
                         <div className={view === 'add' ? 'block h-full' : 'hidden'}>
-                            <AddExpenseView
-                                key={addExpenseKey}
-                                ledgerData={ledgerData}
-                                user={user}
-                                currentProjectId={currentProjectId}
-                                setView={setView}
-                                addTransaction={addTransaction}
-                                updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
-                            />
+                            {visitedViews.add && (
+                                <React.Suspense fallback={<PageLoading />}>
+                                    <AddExpenseView
+                                        key={addExpenseKey}
+                                        ledgerData={ledgerData}
+                                        user={user}
+                                        currentProjectId={currentProjectId}
+                                        setView={setView}
+                                        addTransaction={addTransaction}
+                                        updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
+                                    />
+                                </React.Suspense>
+                            )}
                         </div>
                         <div className={view === 'subscriptions' ? 'block h-full' : 'hidden'}>
-                            <SubscriptionsView ledgerData={ledgerData} user={user} setView={setView} handleDeleteSubscription={deleteSubscription} />
+                            {visitedViews.subscriptions && (
+                                <React.Suspense fallback={<PageLoading />}>
+                                    <SubscriptionsView ledgerData={ledgerData} user={user} setView={setView} handleDeleteSubscription={deleteSubscription} />
+                                </React.Suspense>
+                            )}
                         </div>
 
                         {/* Dashboard is always loaded first */}
