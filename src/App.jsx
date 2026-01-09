@@ -245,12 +245,31 @@ export default function SweetLedger() {
             // [Security] Double check: even if selected, ensure user has permission
             if (project?.type === 'private' && project.owner !== user.uid) return;
 
+            // Format Payer Column
+            let payerDisplay = ledgerData.users[tx.payer]?.name || 'Unknown';
+            if (tx.splitType === 'multi_payer' && tx.customSplit) {
+                // Format: "Dad:100 | Mom:50"
+                payerDisplay = Object.entries(tx.customSplit)
+                    .map(([uid, amt]) => `${ledgerData.users[uid]?.name || 'Unknown'}:${amt}`)
+                    .join(' | ');
+            }
+
+            // Translate Split Type
+            const splitTypeMap = {
+                'even': '平均分攤',
+                'self': '自付 (不分攤)',
+                'partner': '代墊 (對方全額)',
+                'multi_payer': '混合出資'
+            };
+            const splitDisplay = splitTypeMap[tx.splitType] || tx.splitType;
+
             const row = [
                 new Date(tx.date).toLocaleDateString(),
                 project?.name || 'Unknown',
                 tx.category.name, `"${(tx.note || '').replace(/"/g, '""')}"`, // Escape quotes
                 tx.amount, tx.currency || 'TWD',
-                ledgerData.users[tx.payer]?.name || 'Unknown', tx.splitType
+                payerDisplay,
+                splitDisplay
             ].join(",");
             csvContent += row + "\n";
         });
@@ -384,17 +403,19 @@ export default function SweetLedger() {
                             )}
                         </div>
 
-                        <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
-                            <div className="flex justify-between items-center max-w-md mx-auto">
-                                <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
-                                <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
-                                <div className="relative -top-6">
-                                    <button onClick={() => handleOpenAddExpense()} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>
+                        {['dashboard', 'stats', 'projects', 'settings'].includes(view) && (
+                            <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
+                                <div className="flex justify-between items-center max-w-md mx-auto">
+                                    <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
+                                    <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
+                                    <div className="relative -top-6">
+                                        <button onClick={() => handleOpenAddExpense()} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>
+                                    </div>
+                                    <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
+                                    <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
                                 </div>
-                                <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
-                                <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
                             </div>
-                        </div>
+                        )}
                     </React.Suspense>
 
                     <EditTransactionModal
