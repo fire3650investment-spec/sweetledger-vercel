@@ -231,25 +231,35 @@ export default function SweetLedger() {
         }
     };
 
-    const handleExport = () => {
+    const handleExport = (selectedProjectIds = []) => {
         if (!ledgerData) return;
-        let csvContent = "data:text/csv;charset=utf-8,Date,Project,Category,Note,Amount,Currency,Payer,SplitType\n";
+        const BOM = "\uFEFF"; // Add BOM for Excel utf-8 compatibility
+        let csvContent = "data:text/csv;charset=utf-8," + BOM + "Date,Project,Category,Note,Amount,Currency,Payer,SplitType\n";
+
         ledgerData.transactions.forEach(tx => {
+            // [Filter] Check if project is in selected list (if provided)
+            if (selectedProjectIds.length > 0 && !selectedProjectIds.includes(tx.projectId)) return;
+
             const project = ledgerData.projects.find(p => p.id === tx.projectId);
+
+            // [Security] Double check: even if selected, ensure user has permission
             if (project?.type === 'private' && project.owner !== user.uid) return;
+
             const row = [
                 new Date(tx.date).toLocaleDateString(),
                 project?.name || 'Unknown',
-                tx.category.name, `"${tx.note || ''}"`, tx.amount, tx.currency || 'TWD',
+                tx.category.name, `"${(tx.note || '').replace(/"/g, '""')}"`, // Escape quotes
+                tx.amount, tx.currency || 'TWD',
                 ledgerData.users[tx.payer]?.name || 'Unknown', tx.splitType
             ].join(",");
             csvContent += row + "\n";
         });
         const link = document.createElement("a");
         link.setAttribute("href", encodeURI(csvContent));
-        link.setAttribute("download", `export_${new Date().toISOString().slice(0, 10)}.csv`);
+        link.setAttribute("download", `sweetledger_exp_${new Date().toISOString().slice(0, 10)}.csv`);
         document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
     };
 
     const hasCachedData = ledgerCode && ledgerData && user;
