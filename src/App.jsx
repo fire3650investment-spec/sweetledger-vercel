@@ -14,15 +14,17 @@ import { DEFAULT_CATEGORIES, COLORS } from './utils/constants';
 
 // Components
 // Components - Lazy Load for Performance
-const DashboardView = React.lazy(() => import('./components/DashboardView'));
+// Components - Lazy Load for Performance
+// [Optimization] Dashboard is LCP, eager load it!
+import DashboardView from './components/DashboardView';
 const AddExpenseView = React.lazy(() => import('./components/AddExpenseView'));
 const StatsView = React.lazy(() => import('./components/StatsView'));
 const ProjectsView = React.lazy(() => import('./components/ProjectsView'));
 const SettingsView = React.lazy(() => import('./components/SettingsView'));
 const OnboardingView = React.lazy(() => import('./components/OnboardingView'));
 const DecisionView = React.lazy(() => import('./components/DecisionView'));
-// const EditTransactionModal = React.lazy(() => import('./components/EditTransactionModal')); // Modals are tricky with lazy if used in same render cycle, keep eager for now or refactor later
-import EditTransactionModal from './components/EditTransactionModal';
+// [Optimization] Modal is heavy but not critical for first paint. Lazy load it.
+const EditTransactionModal = React.lazy(() => import('./components/EditTransactionModal'));
 const SubscriptionsView = React.lazy(() => import('./components/SubscriptionsView'));
 
 // Loading Component
@@ -418,25 +420,27 @@ export default function SweetLedger() {
                         )}
                     </React.Suspense>
 
-                    <EditTransactionModal
-                        isOpen={isEditTxModalOpen}
-                        onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
-                        editingTx={editingTx}
-                        ledgerData={ledgerData}
-                        user={user}
-                        currentProjectId={currentProjectId}
-                        updateTransaction={async (tx) => {
-                            setIsEditTxModalOpen(false);
-                            setEditingTx(null);
-                            await updateTransaction(tx);
-                        }}
-                        deleteTransaction={async (id) => {
-                            setIsEditTxModalOpen(false);
-                            setEditingTx(null);
-                            await deleteTransaction(id);
-                        }}
-                        updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
-                    />
+                    <React.Suspense fallback={null}>
+                        <EditTransactionModal
+                            isOpen={isEditTxModalOpen}
+                            onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
+                            editingTx={editingTx}
+                            ledgerData={ledgerData}
+                            user={user}
+                            currentProjectId={currentProjectId}
+                            updateTransaction={async (tx) => {
+                                setIsEditTxModalOpen(false);
+                                setEditingTx(null);
+                                await updateTransaction(tx);
+                            }}
+                            deleteTransaction={async (id) => {
+                                setIsEditTxModalOpen(false);
+                                setEditingTx(null);
+                                await deleteTransaction(id);
+                            }}
+                            updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
+                        />
+                    </React.Suspense>
                 </>
             )
             }
