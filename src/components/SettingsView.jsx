@@ -6,7 +6,7 @@ import {
     ChevronRight, Pencil, Copy, Globe,
     ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins, Share2, Database
 } from 'lucide-react';
-import { renderAvatar, fetchExchangeRate } from '../utils/helpers';
+import { renderAvatar, fetchExchangeRate, getIconComponent } from '../utils/helpers';
 import { DEFAULT_FAVORITE_CURRENCIES, CURRENCY_OPTIONS, CHARACTERS } from '../utils/constants';
 import { useLedger } from '../contexts/LedgerContext';
 import MemberManager from './settings/MemberManager';
@@ -57,6 +57,26 @@ export default function SettingsView({
     // Debug Mode State
     const [isDebugMode, setIsDebugMode] = useState(false);
     const [debugClickCount, setDebugClickCount] = useState(0);
+
+    // [New] Export Config State
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [exportSelectedProjects, setExportSelectedProjects] = useState([]);
+
+    // Helper: Filter projects user has access to
+    const getExportableProjects = () => {
+        if (!ledgerData || !ledgerData.projects) return [];
+        return ledgerData.projects.filter(p => !p.type || p.type !== 'private' || p.owner === user.uid);
+    };
+
+    // Initialize: Default check ONLY the first exportable project as requested
+    useEffect(() => {
+        if (isExportModalOpen) {
+            const list = getExportableProjects();
+            if (list.length > 0) {
+                setExportSelectedProjects([list[0].id]);
+            }
+        }
+    }, [isExportModalOpen, ledgerData]);
 
     const currentProject = ledgerData?.projects?.find(p => p.id === currentProjectId);
     const serverRates = currentProject?.rates || {};
@@ -286,7 +306,7 @@ export default function SettingsView({
                         updatePaymentMethods={updatePaymentMethods}
                     />
 
-                    <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleExport}>
+                    <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={() => setIsExportModalOpen(true)}>
                         <div className="flex items-center gap-3">
                             <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><FileText size={18} /></div>
                             <span className="font-bold text-gray-700 text-sm">匯出 CSV</span>
@@ -505,6 +525,70 @@ export default function SettingsView({
                         <div className="flex gap-3">
                             <button onClick={() => setIsAvatarModalOpen(false)} className="flex-1 py-3 font-bold text-gray-500 bg-gray-100 rounded-xl">取消</button>
                             <button onClick={confirmAvatarUpdate} className="flex-1 py-3 font-bold text-white bg-gray-900 rounded-xl shadow-lg shadow-gray-200">確認</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Export Config Modal */}
+            {isExportModalOpen && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsExportModalOpen(false)}>
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><FileText size={18} /> 匯出設定</h3>
+                            <button onClick={() => setIsExportModalOpen(false)} className="p-1.5 bg-gray-50 rounded-full text-gray-400 hover:bg-gray-100"><X size={18} /></button>
+                        </div>
+
+                        <p className="text-xs text-gray-400 mb-4">請選擇要匯出的專案帳本（私密帳本僅擁有者可見）。</p>
+
+                        <div className="space-y-2 mb-6 max-h-[50vh] overflow-y-auto">
+                            {getExportableProjects().map(p => {
+                                const isChecked = exportSelectedProjects.includes(p.id);
+                                return (
+                                    <div
+                                        key={p.id}
+                                        onClick={() => {
+                                            setExportSelectedProjects(prev =>
+                                                isChecked ? prev.filter(id => id !== p.id) : [...prev, p.id]
+                                            );
+                                        }}
+                                        className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all ${isChecked ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50'}`}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            {getIconComponent(p.icon || 'project_daily', isChecked ? 'text-white' : 'text-gray-400', 20)}
+                                            <span className="font-bold text-sm">{p.name}</span>
+                                        </div>
+                                        {isChecked && <Check size={16} />}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex gap-2">
+                            {/* Select All Helper */}
+                            <button
+                                onClick={() => {
+                                    const allIds = getExportableProjects().map(p => p.id);
+                                    if (exportSelectedProjects.length === allIds.length) {
+                                        setExportSelectedProjects([]); // Uncheck all
+                                    } else {
+                                        setExportSelectedProjects(allIds); // Check all
+                                    }
+                                }}
+                                className="px-4 py-3 font-bold text-gray-500 bg-gray-100 rounded-xl text-xs"
+                            >
+                                {exportSelectedProjects.length === getExportableProjects().length ? '取消全選' : '全選'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    handleExport(exportSelectedProjects);
+                                    setIsExportModalOpen(false);
+                                }}
+                                disabled={exportSelectedProjects.length === 0}
+                                className="flex-1 py-3 font-bold text-white bg-gray-900 rounded-xl shadow-lg shadow-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                確認匯出 ({exportSelectedProjects.length})
+                            </button>
                         </div>
                     </div>
                 </div>
