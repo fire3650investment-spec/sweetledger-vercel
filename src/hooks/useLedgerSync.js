@@ -7,9 +7,28 @@ export const useLedgerSync = (user) => {
     const [ledgerCode, setLedgerCode] = useState(() => {
         return localStorage.getItem('sweet_ledger_code') || '';
     });
-    const [ledgerDocData, setLedgerDocData] = useState(null);
-    const [transactions, setTransactions] = useState([]);
-    const [isLedgerInitializing, setIsLedgerInitializing] = useState(true);
+
+    // [Cache Strategy] Init from LocalStorage
+    const [ledgerDocData, setLedgerDocData] = useState(() => {
+        try {
+            const cached = localStorage.getItem(`sweet_ledger_data_${ledgerCode}`);
+            return cached ? JSON.parse(cached) : null;
+        } catch (e) { return null; }
+    });
+
+    const [transactions, setTransactions] = useState(() => {
+        try {
+            const cached = localStorage.getItem(`sweet_ledger_txs_${ledgerCode}`);
+            return cached ? JSON.parse(cached) : [];
+        } catch (e) { return []; }
+    });
+
+    const [isLedgerInitializing, setIsLedgerInitializing] = useState(() => {
+        // If we have cached data, we are NOT initializing (UI can render)
+        // We still sync in background, but don't block UI.
+        const hasCache = localStorage.getItem(`sweet_ledger_data_${ledgerCode}`);
+        return !hasCache;
+    });
 
     // 2. LocalStorage Sync
     useEffect(() => {
@@ -24,17 +43,23 @@ export const useLedgerSync = (user) => {
     const ledgerData = useMemo(() => {
         if (!ledgerDocData) return null;
 
-        // [Fix] Backward Compatibility
-        // If sub-collection is empty, check if we have legacy array data.
-        let displayTransactions = transactions;
+        // [Fix] Merge Sub-collection + Legacy Array
+        // We must merge both sources to ensure users see all data during the migration phase.
+        const legacyTxs = (Array.isArray(ledgerDocData.transactions)) ? ledgerDocData.transactions : [];
+        const subTxs = transactions;
 
-        if (transactions.length === 0 && Array.isArray(ledgerDocData.transactions) && ledgerDocData.transactions.length > 0) {
-            displayTransactions = ledgerDocData.transactions;
-        }
+        // Deduplicate: If an ID exists in sub-collection, use that (newer version)
+        const subIds = new Set(subTxs.map(t => t.id));
+        const filteredLegacy = legacyTxs.filter(t => !subIds.has(t.id));
+
+        const allTransactions = [...subTxs, ...filteredLegacy];
+
+        // Sort by date desc
+        allTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
         return {
             ...ledgerDocData,
-            transactions: displayTransactions
+            transactions: allTransactions
         };
     }, [ledgerDocData, transactions]);
 
@@ -98,6 +123,19 @@ export const useLedgerSync = (user) => {
             unsubscribeTxs();
         };
     }, [ledgerCode, user]);
+
+    // [Cache Strategy] Persist to LocalStorage
+    useEffect(() => {
+        if (ledgerCode && ledgerDocData) {
+            localStorage.setItem(`sweet_ledger_data_${ledgerCode}`, JSON.stringify(ledgerDocData));
+        }
+    }, [ledgerCode, ledgerDocData]);
+
+    useEffect(() => {
+        if (ledgerCode && transactions.length > 0) {
+            localStorage.setItem(`sweet_ledger_txs_${ledgerCode}`, JSON.stringify(transactions));
+        }
+    }, [ledgerCode, transactions]);
 
     return {
         ledgerCode,
