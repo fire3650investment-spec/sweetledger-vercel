@@ -8,7 +8,7 @@ import {
     Tv, Music, Smartphone, Baby, AlertCircle,
     User, Coins
 } from 'lucide-react';
-import { ICON_MAP, CHARACTERS, PALETTE } from './constants';
+import { ICON_MAP, CHARACTERS, PALETTE, MORANDI_PALETTE } from './constants';
 
 // --- Formatters & Helpers ---
 
@@ -141,7 +141,7 @@ export const getIconComponent = (iconName) => {
     return TargetIcon;
 };
 
-export const getCategoryStyle = (category, mode = 'display') => {
+export const getCategoryStyle = (category, mode = 'display', theme = 'vibrant') => {
     if (!category) return { containerClass: 'bg-gray-100', iconClass: 'text-gray-500', hex: '#94a3b8' };
 
     // Input Mode
@@ -158,6 +158,17 @@ export const getCategoryStyle = (category, mode = 'display') => {
     let token = null;
 
     if (category.colorId && PALETTE && PALETTE[category.colorId]) {
+        // [Theme] Check if Morandi theme is active
+        if (theme === 'morandi' && MORANDI_PALETTE && MORANDI_PALETTE[category.colorId]) {
+            const morandiHex = MORANDI_PALETTE[category.colorId];
+            return {
+                containerClass: '',
+                iconClass: '',
+                containerStyle: { backgroundColor: `${morandiHex}26`, color: morandiHex }, // 15% opacity hex
+                iconStyle: { color: morandiHex },
+                hex: morandiHex
+            };
+        }
         token = PALETTE[category.colorId];
     } else if (category.bg && category.text) {
         // Legacy support or direct overrides

@@ -137,11 +137,16 @@ export default function AddExpenseView({
 
     const recentNotes = useMemo(() => {
         if (!ledgerData.transactions || !selectedCategory) return [];
-        const recentTxs = ledgerData.transactions.slice(-50).reverse();
-        const notes = recentTxs
-            .filter(t => t.category.id === selectedCategory.id && t.note)
-            .map(t => t.note);
-        return [...new Set(notes)].slice(0, 5);
+
+        const notes = new Set();
+        // transactions are already sorted New -> Old in Context
+        for (const tx of ledgerData.transactions) {
+            if (tx.category.id === selectedCategory.id && tx.note) {
+                notes.add(tx.note);
+                if (notes.size >= 5) break;
+            }
+        }
+        return Array.from(notes);
     }, [ledgerData.transactions, selectedCategory]);
 
     useEffect(() => {
