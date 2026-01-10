@@ -7,7 +7,7 @@ import MonthlyTrendChart from './stats/MonthlyTrendChart';
 import ContributionChart from './stats/ContributionChart';
 import CategoryPieChart from './stats/CategoryPieChart';
 
-export default function StatsView({ ledgerData, currentProjectId, statsMonth, setStatsMonth, privacyMode, setEditingTx, setIsEditTxModalOpen }) {
+export default function StatsView({ ledgerData, currentProjectId, statsMonth, setStatsMonth, privacyMode, setEditingTx, setIsEditTxModalOpen, user }) {
     if (!ledgerData) return null;
 
     const handleMonthChange = (direction) => {
@@ -24,6 +24,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const rawTxs = ledgerData.transactions || [];
         const safeUsers = ledgerData.users || {};
         const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
+        const myTheme = ledgerData.users?.[user?.uid]?.theme || 'vibrant';
 
         const allTxs = rawTxs
             .filter(t => t && t.id && t.amount !== undefined)
@@ -86,11 +87,19 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
             } else {
                 const cat = currentCategories.find(c => c.id === id);
                 if (cat) {
-                    // [UX Upgrade] Map to Morandi Palette for Charts
-                    let chartColor = MORANDI_PALETTE.slate;
-                    if (cat.colorId && MORANDI_PALETTE[cat.colorId]) {
-                        chartColor = MORANDI_PALETTE[cat.colorId];
+                    // [Theme] Dynamic Color Mapping
+                    let chartColor = myTheme === 'morandi' ? MORANDI_PALETTE.slate : (cat.hex || '#94a3b8');
+
+                    if (myTheme === 'morandi') {
+                        if (cat.colorId && MORANDI_PALETTE[cat.colorId]) {
+                            chartColor = MORANDI_PALETTE[cat.colorId];
+                        }
+                    } else {
+                        // Vibrant Mode: Use standard palette hex if available
+                        const style = getCategoryStyle(cat, 'display', 'vibrant');
+                        chartColor = style.hex;
                     }
+
                     catStats.push({ ...cat, total: amt, hex: chartColor });
                 }
             }
@@ -169,9 +178,9 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                     guestTotal={guestTotal}
                     hostRatio={hostRatio}
                     guestRatio={guestRatio}
-                    // [Advanced] Pass custom Morandi colors
-                    hostColor={MORANDI_PALETTE.host}
-                    guestColor={MORANDI_PALETTE.guest}
+                    // [Advanced] Pass custom Morandi/Vibrant colors
+                    hostColor={ledgerData.users?.[user?.uid]?.theme === 'morandi' ? MORANDI_PALETTE.host : '#3b82f6'}
+                    guestColor={ledgerData.users?.[user?.uid]?.theme === 'morandi' ? MORANDI_PALETTE.guest : '#ec4899'}
                 />
             )}
 
@@ -198,7 +207,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                                 {txs.map((tx, idx) => {
                                     const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                                     const tags = getSmartTags(tx);
-                                    const style = getCategoryStyle(tx.category, 'display');
+                                    const style = getCategoryStyle(tx.category, 'display', ledgerData.users?.[user?.uid]?.theme || 'vibrant');
 
                                     // [Batch 3 New] Currency Visuals
                                     const txCurrency = tx.currency || 'TWD';

@@ -276,7 +276,7 @@ export default function DashboardView({
                             {txs.map((tx, idx) => {
                                 const CatIcon = getIconComponent(tx.category?.icon) || Coins;
                                 const tags = getSmartTags(tx);
-                                const style = getCategoryStyle(tx.category, 'display');
+                                const style = getCategoryStyle(tx.category, 'display', user?.theme || ledgerData.users?.[user?.uid]?.theme || 'vibrant');
 
                                 // [Batch 3 New] 幣別視覺強化
                                 const txCurrency = tx.currency || 'TWD';
