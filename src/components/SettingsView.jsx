@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import {
     LogOut, RotateCcw, X, Check,
     ChevronRight, Pencil, Copy, Globe,
-    ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins, Share2, Database
+    ShieldAlert, FileText, UserX, AlertTriangle, Repeat, Coins, Share2, Database, Palette
 } from 'lucide-react';
 import { renderAvatar, fetchExchangeRate, getIconComponent } from '../utils/helpers';
 import { DEFAULT_FAVORITE_CURRENCIES, CURRENCY_OPTIONS, CHARACTERS } from '../utils/constants';
@@ -57,6 +57,10 @@ export default function SettingsView({
     // Debug Mode State
     const [isDebugMode, setIsDebugMode] = useState(false);
     const [debugClickCount, setDebugClickCount] = useState(0);
+
+    // [New] Theme Switcher State
+    const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+    const myTheme = ledgerData?.users?.[user?.uid]?.theme || 'vibrant';
 
     // [New] Export Config State
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -253,6 +257,23 @@ export default function SettingsView({
 
                 {/* --- Island C: Preferences & System Actions --- */}
                 <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
+
+                    {/* Theme Switcher Entry Point */}
+                    <div
+                        className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer"
+                        onClick={() => setIsThemeModalOpen(true)}
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><Palette size={18} /></div>
+                            <span className="font-bold text-gray-700 text-sm">主題風格</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-gray-400 bg-gray-50 px-2 py-1 rounded-md">
+                                {myTheme === 'morandi' ? '莫蘭迪 (Morandi)' : '鮮豔 (Vibrant)'}
+                            </span>
+                            <ChevronRight size={16} className="text-gray-300" />
+                        </div>
+                    </div>
 
                     {/* Favorite Currencies Entry Point */}
                     <div
@@ -497,6 +518,54 @@ export default function SettingsView({
                         <button onClick={() => setIsRateConfigOpen(false)} className="w-full mt-6 py-3 font-bold text-white bg-gray-900 rounded-xl shadow-lg shadow-gray-200 active:scale-95 transition-transform">
                             完成設定
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Theme Config Modal */}
+            {isThemeModalOpen && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm px-4" onClick={() => setIsThemeModalOpen(false)}>
+                    <div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-scale-up" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2"><Palette size={18} /> 選擇主題風格</h3>
+                            <button onClick={() => setIsThemeModalOpen(false)} className="p-1.5 bg-gray-50 rounded-full text-gray-400 hover:bg-gray-100"><X size={18} /></button>
+                        </div>
+
+                        <p className="text-xs text-gray-400 mb-6">切換不同的色彩風格，打造您喜愛的記帳體驗。（僅影響您個人的顯示介面）</p>
+
+                        <div className="space-y-3 mb-6">
+                            {/* Option 1: Vibrant (Default) */}
+                            <button
+                                onClick={() => { updateUserSetting('theme', 'vibrant'); setIsThemeModalOpen(false); }}
+                                className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all ${myTheme !== 'morandi' ? 'bg-gray-900 border-gray-900 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-600 hover:bg-gray-50'}`}
+                            >
+                                <div className="flex items-center gap-4">
+                                    <div className="flex gap-1">
+                                        <div className="w-4 h-4 rounded-full bg-blue-500"></div>
+                                        <div className="w-4 h-4 rounded-full bg-rose-500"></div>
+                                        <div className="w-4 h-4 rounded-full bg-orange-500"></div>
+                                    </div>
+                                    <span className="font-bold">鮮豔 (Vibrant)</span>
+                                </div>
+                                {myTheme !== 'morandi' && <Check size={18} />}
+                            </button>
+
+                            {/* Option 2: Morandi */}
+                            <button
+                                onClick={() => { updateUserSetting('theme', 'morandi'); setIsThemeModalOpen(false); }}
+                                className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all ${myTheme === 'morandi' ? 'bg-gray-900 border-gray-900 text-white shadow-lg' : 'bg-white border-gray-100 text-gray-600 hover:bg-gray-50'}`}
+                            >
+                                <div className="flex items-center gap-4">
+                                    <div className="flex gap-1">
+                                        <div className="w-4 h-4 rounded-full bg-[#8fbcd4]"></div>
+                                        <div className="w-4 h-4 rounded-full bg-[#eeccdf]"></div>
+                                        <div className="w-4 h-4 rounded-full bg-[#d6a2a2]"></div>
+                                    </div>
+                                    <span className="font-bold">莫蘭迪 (Morandi)</span>
+                                </div>
+                                {myTheme === 'morandi' && <Check size={18} />}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

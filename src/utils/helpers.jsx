@@ -157,10 +157,25 @@ export const getCategoryStyle = (category, mode = 'display', theme = 'vibrant') 
     // Display Mode
     let token = null;
 
-    if (category.colorId && PALETTE && PALETTE[category.colorId]) {
+    // [Fix] Infer colorId if missing (for default/legacy categories)
+    let colorId = category.colorId;
+    if (!colorId) {
+        // Try to match by bg class (e.g. 'bg-orange-100')
+        if (category.bg) {
+            const match = Object.values(PALETTE).find(p => p.bg === category.bg);
+            if (match) colorId = match.id;
+        }
+        // Fallback: Try to match by hex (e.g. '#ea580c') only if no bg (legacy custom)
+        else if (category.hex) {
+            const match = Object.values(PALETTE).find(p => p.hex === category.hex);
+            if (match) colorId = match.id;
+        }
+    }
+
+    if (colorId && PALETTE && PALETTE[colorId]) {
         // [Theme] Check if Morandi theme is active
-        if (theme === 'morandi' && MORANDI_PALETTE && MORANDI_PALETTE[category.colorId]) {
-            const morandiHex = MORANDI_PALETTE[category.colorId];
+        if (theme === 'morandi' && MORANDI_PALETTE && MORANDI_PALETTE[colorId]) {
+            const morandiHex = MORANDI_PALETTE[colorId];
             return {
                 containerClass: '',
                 iconClass: '',
@@ -169,7 +184,7 @@ export const getCategoryStyle = (category, mode = 'display', theme = 'vibrant') 
                 hex: morandiHex
             };
         }
-        token = PALETTE[category.colorId];
+        token = PALETTE[colorId];
     } else if (category.bg && category.text) {
         // Legacy support or direct overrides
         return {
