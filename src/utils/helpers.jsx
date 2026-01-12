@@ -221,6 +221,35 @@ export const getCategoryStyle = (category, mode = 'display', theme = 'vibrant') 
     };
 };
 
+// [Stability Fix] Safe LocalStorage Wrapper
+// Prevents crash when Storage is full (QuotaExceededError) or in Private Mode (Safari)
+export const safeLocalStorage = {
+    getItem: (key) => {
+        try {
+            return localStorage.getItem(key);
+        } catch (e) {
+            console.warn(`[safeLocalStorage] Read failed for ${key}:`, e);
+            return null;
+        }
+    },
+    setItem: (key, value) => {
+        try {
+            localStorage.setItem(key, value);
+        } catch (e) {
+            // QuotaExceededError or SecurityError
+            console.error(`[safeLocalStorage] Write failed for ${key} (Likely Storage Full):`, e);
+            // Fail silently to prevent White Screen of Death
+        }
+    },
+    removeItem: (key) => {
+        try {
+            localStorage.removeItem(key);
+        } catch (e) {
+            console.warn(`[safeLocalStorage] Remove failed for ${key}:`, e);
+        }
+    }
+};
+
 export const renderAvatar = (avatarKeyOrUrl, className = "w-10 h-10") => {
     if (avatarKeyOrUrl && typeof avatarKeyOrUrl === 'string' && avatarKeyOrUrl.includes('http')) {
         return <img src={avatarKeyOrUrl} className={`${className} rounded-full object-cover border border-gray-200`} alt="avatar" />;
@@ -243,7 +272,54 @@ export const renderAvatar = (avatarKeyOrUrl, className = "w-10 h-10") => {
 
 // --- AI / Gemini Functions (Using Proxy) ---
 
+// [SRE Fix] Payload Bomber Protection: Client-side Compression
+export const compressImage = (file, maxWidth = 1024, quality = 0.7) => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let width = img.width;
+                let height = img.height;
+
+                if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // Export as JPEG with reduced quality
+                const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                resolve(dataUrl.split(',')[1]); // Return only Base64 body
+            };
+            img.onerror = (err) => reject(err);
+        };
+        reader.onerror = (err) => reject(err);
+    });
+};
+
+// [SRE Fix] Wallet Drainer Protection: Simple Rate Limiting
+const rateLimitMap = {
+    lastCall: 0,
+    minInterval: 3000 // 3 seconds
+};
+
 export const callGemini = async (prompt, imageBase64 = null) => {
+    // 1. Rate Limit Check
+    const now = Date.now();
+    if (now - rateLimitMap.lastCall < rateLimitMap.minInterval) {
+        console.warn("⚠️ API Rate Limit Exceeded. Please wait.");
+        return null; // Silent fail or throw error depending on UX usage
+    }
+    rateLimitMap.lastCall = now;
+
     try {
         const token = await getAuthToken(); // Get Token
         const response = await fetch('/api/gemini', {

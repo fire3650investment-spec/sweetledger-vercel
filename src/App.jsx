@@ -9,7 +9,7 @@ import { useAuth } from './contexts/AuthContext';
 import { useLedger } from './contexts/LedgerContext';
 
 // Utils
-import { formatCurrency, callGemini } from './utils/helpers';
+import { formatCurrency, callGemini, safeLocalStorage } from './utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS } from './utils/constants';
 
 // Components
@@ -48,11 +48,11 @@ export default function SweetLedger() {
     } = useLedger();
 
     // --- UI State (Only Navigation & Global Settings) ---
-    const [view, setView] = useState(() => localStorage.getItem('sweet_ledger_code') ? 'dashboard' : 'onboarding');
+    const [view, setView] = useState(() => safeLocalStorage.getItem('sweet_ledger_code') ? 'dashboard' : 'onboarding');
     const [addExpenseKey, setAddExpenseKey] = useState(0);
     const [privacyMode, setPrivacyMode] = useState(false);
     const [loading, setLoading] = useState(false);
-    const [currentProjectId, setCurrentProjectId] = useState(() => localStorage.getItem('sweet_last_project_id') || 'daily');
+    const [currentProjectId, setCurrentProjectId] = useState(() => safeLocalStorage.getItem('sweet_last_project_id') || 'daily');
     const [pendingInviteCode, setPendingInviteCode] = useState(() => {
         // [New] 支援 URL 一鍵邀請連結 (/?invite=CODE)
         const params = new URLSearchParams(window.location.search);
@@ -91,7 +91,7 @@ export default function SweetLedger() {
 
     // --- Effects ---
     useEffect(() => { window.scrollTo(0, 0); }, [view]);
-    useEffect(() => { if (currentProjectId) localStorage.setItem('sweet_last_project_id', currentProjectId); }, [currentProjectId]);
+    useEffect(() => { if (currentProjectId) safeLocalStorage.setItem('sweet_last_project_id', currentProjectId); }, [currentProjectId]);
 
     useEffect(() => {
         if (ledgerData && ledgerData.projects) {
@@ -102,6 +102,13 @@ export default function SweetLedger() {
 
     useEffect(() => {
         const decideView = async () => {
+            // [Stability Fix] Logout Race Condition
+            // Ensure no async logic attempts to read user properties after logout.
+            if (!user && !authLoading && !ledgerCode) {
+                setView('onboarding');
+                return;
+            }
+
             if (ledgerCode && user && ledgerData) {
                 if (view === 'onboarding') setView('dashboard');
                 return;
@@ -118,11 +125,23 @@ export default function SweetLedger() {
                         setView('decision');
                     }
                 } else {
-                    const cloudCode = await checkUserBinding(user.uid);
-                    if (cloudCode) {
-                        setLedgerCode(cloudCode);
-                        localStorage.setItem('sweet_ledger_code', cloudCode);
-                    } else {
+
+                    // [Stability Fix] Firestore Timeout (Prevent Infinite Loading)
+                    const timeoutPromise = new Promise((_, reject) =>
+                        setTimeout(() => reject(new Error("Request Timed Out")), 10000)
+                    );
+
+                    try {
+                        const cloudCode = await Promise.race([checkUserBinding(user.uid), timeoutPromise]);
+                        if (cloudCode) {
+                            setLedgerCode(cloudCode);
+                            safeLocalStorage.setItem('sweet_ledger_code', cloudCode);
+                        } else {
+                            setView('decision');
+                        }
+                    } catch (e) {
+                        console.warn("User Binding Check Failed:", e);
+                        // On timeout or error, assume no binding (safety fallback)
                         setView('decision');
                     }
                 }
@@ -151,8 +170,8 @@ export default function SweetLedger() {
     const handleLogout = async () => {
         if (confirm('確定要登出嗎？')) {
             disconnectLedger();
-            localStorage.removeItem('sweet_last_currency');
-            localStorage.removeItem('sweet_last_project_id');
+            safeLocalStorage.removeItem('sweet_last_currency');
+            safeLocalStorage.removeItem('sweet_last_project_id');
             await logout();
             setView('onboarding');
         }

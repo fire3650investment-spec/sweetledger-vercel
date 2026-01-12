@@ -1,24 +1,25 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { doc, onSnapshot, updateDoc, deleteField, collection } from 'firebase/firestore';
 import { db, appId } from '../utils/firebase';
+import { generateId, getLocalISODate, safeLocalStorage } from '../utils/helpers';
 
 export const useLedgerSync = (user) => {
     // 1. State
     const [ledgerCode, setLedgerCode] = useState(() => {
-        return localStorage.getItem('sweet_ledger_code') || '';
+        return safeLocalStorage.getItem('sweet_ledger_code') || '';
     });
 
     // [Cache Strategy] Init from LocalStorage
     const [ledgerDocData, setLedgerDocData] = useState(() => {
         try {
-            const cached = localStorage.getItem(`sweet_ledger_data_${ledgerCode}`);
+            const cached = safeLocalStorage.getItem(`sweet_ledger_data_${ledgerCode}`);
             return cached ? JSON.parse(cached) : null;
         } catch (e) { return null; }
     });
 
     const [transactions, setTransactions] = useState(() => {
         try {
-            const cached = localStorage.getItem(`sweet_ledger_txs_${ledgerCode}`);
+            const cached = safeLocalStorage.getItem(`sweet_ledger_txs_${ledgerCode}`);
             return cached ? JSON.parse(cached) : [];
         } catch (e) { return []; }
     });
@@ -26,16 +27,16 @@ export const useLedgerSync = (user) => {
     const [isLedgerInitializing, setIsLedgerInitializing] = useState(() => {
         // If we have cached data, we are NOT initializing (UI can render)
         // We still sync in background, but don't block UI.
-        const hasCache = localStorage.getItem(`sweet_ledger_data_${ledgerCode}`);
+        const hasCache = safeLocalStorage.getItem(`sweet_ledger_data_${ledgerCode}`);
         return !hasCache;
     });
 
     // 2. LocalStorage Sync
     useEffect(() => {
         if (ledgerCode) {
-            localStorage.setItem('sweet_ledger_code', ledgerCode);
+            safeLocalStorage.setItem('sweet_ledger_code', ledgerCode);
         } else {
-            localStorage.removeItem('sweet_ledger_code');
+            safeLocalStorage.removeItem('sweet_ledger_code');
         }
     }, [ledgerCode]);
 
@@ -66,7 +67,7 @@ export const useLedgerSync = (user) => {
     // 4. Listeners
     useEffect(() => {
         if (!db || !ledgerCode) {
-            if (!localStorage.getItem('sweet_ledger_code')) {
+            if (!safeLocalStorage.getItem('sweet_ledger_code')) {
                 setLedgerDocData(null);
                 setTransactions([]);
                 setIsLedgerInitializing(false);
@@ -127,13 +128,13 @@ export const useLedgerSync = (user) => {
     // [Cache Strategy] Persist to LocalStorage
     useEffect(() => {
         if (ledgerCode && ledgerDocData) {
-            localStorage.setItem(`sweet_ledger_data_${ledgerCode}`, JSON.stringify(ledgerDocData));
+            safeLocalStorage.setItem(`sweet_ledger_data_${ledgerCode}`, JSON.stringify(ledgerDocData));
         }
     }, [ledgerCode, ledgerDocData]);
 
     useEffect(() => {
         if (ledgerCode && transactions.length > 0) {
-            localStorage.setItem(`sweet_ledger_txs_${ledgerCode}`, JSON.stringify(transactions));
+            safeLocalStorage.setItem(`sweet_ledger_txs_${ledgerCode}`, JSON.stringify(transactions));
         }
     }, [ledgerCode, transactions]);
 

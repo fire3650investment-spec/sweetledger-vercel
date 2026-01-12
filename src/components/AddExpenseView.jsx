@@ -252,6 +252,9 @@ export default function AddExpenseView({
         : CURRENCY_OPTIONS;
 
     const selectCurrency = async (code) => {
+        // [SRE Fix] Race Condition: Prevent multiple clicks
+        if (isRateLoading) return;
+
         setCurrency(code);
         setIsCurrencySheetOpen(false);
         setCurrencySearch('');
@@ -261,13 +264,16 @@ export default function AddExpenseView({
         const projectRates = currentProject?.rates || {};
         if (!projectRates[code]) {
             setIsRateLoading(true);
-            const rate = await fetchExchangeRate(code);
-            if (rate) {
-                if (updateProjectRates) {
-                    await updateProjectRates(currentProjectId, code, rate);
+            try {
+                const rate = await fetchExchangeRate(code);
+                if (rate) {
+                    if (updateProjectRates) {
+                        await updateProjectRates(currentProjectId, code, rate);
+                    }
                 }
+            } finally {
+                setIsRateLoading(false);
             }
-            setIsRateLoading(false);
         }
     };
 

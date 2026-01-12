@@ -1,6 +1,5 @@
-
 import { useState, useRef } from 'react';
-import { parseReceiptWithGemini } from '../utils/helpers';
+import { parseReceiptWithGemini, compressImage } from '../utils/helpers';
 
 export default function useReceiptScanner({
     setLocalAmount,
@@ -27,26 +26,24 @@ export default function useReceiptScanner({
         e.target.value = '';
 
         setIsScanning(true);
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-            try {
-                const base64String = reader.result.split(',')[1];
-                const items = await parseReceiptWithGemini(base64String);
-                setIsScanning(false);
+        try {
+            // [SRE Fix] Client-side Compression
+            const base64String = await compressImage(file, 1024, 0.7);
 
-                if (items && Array.isArray(items)) {
-                    setScannedItems(items);
-                    setIsScanModalOpen(true);
-                } else {
-                    alert("掃描失敗，請再試一次或手動輸入");
-                }
-            } catch (error) {
-                console.error("Scanning Error", error);
-                setIsScanning(false);
-                alert("掃描發生錯誤：" + error.message);
+            const items = await parseReceiptWithGemini(base64String);
+            setIsScanning(false);
+
+            if (items && Array.isArray(items)) {
+                setScannedItems(items);
+                setIsScanModalOpen(true);
+            } else {
+                alert("掃描失敗，請再試一次或手動輸入");
             }
-        };
-        reader.readAsDataURL(file);
+        } catch (error) {
+            console.error("Scanning Error", error);
+            setIsScanning(false);
+            alert("掃描發生錯誤：" + error.message);
+        }
     };
 
     const handleCameraClick = () => { cameraInputRef.current?.click(); };

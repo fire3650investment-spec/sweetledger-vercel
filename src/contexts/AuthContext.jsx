@@ -10,6 +10,7 @@ import {
   browserLocalPersistence
 } from 'firebase/auth';
 import { auth } from '../utils/firebase';
+import { safeLocalStorage } from '../utils/helpers';
 
 const AuthContext = createContext();
 
@@ -20,7 +21,7 @@ export const AuthProvider = ({ children }) => {
   // 這樣在 Firebase 檢查完成前，UI 就有 user.uid 可以跑邏輯，不會報錯
   const [user, setUser] = useState(() => {
     try {
-      const cached = localStorage.getItem('sweet_user_cache');
+      const cached = safeLocalStorage.getItem('sweet_user_cache');
       return cached ? JSON.parse(cached) : null;
     } catch (e) {
       console.warn("User cache parse failed:", e);
@@ -61,11 +62,11 @@ export const AuthProvider = ({ children }) => {
           photoURL: currentUser.photoURL,
           isCached: false // 標記這是真實資料
         };
-        localStorage.setItem('sweet_user_cache', JSON.stringify(serializableUser));
+        safeLocalStorage.setItem('sweet_user_cache', JSON.stringify(serializableUser));
         setUser(currentUser); // Update with full Firebase object
       } else {
         // 若沒登入，清除快取
-        localStorage.removeItem('sweet_user_cache');
+        safeLocalStorage.removeItem('sweet_user_cache');
         setUser(null);
       }
       setLoading(false);
@@ -93,7 +94,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    localStorage.removeItem('sweet_user_cache'); // [安全] 登出清除快取
+    safeLocalStorage.removeItem('sweet_user_cache'); // [安全] 登出清除快取
     setUser(null);
     return signOut(auth);
   };
