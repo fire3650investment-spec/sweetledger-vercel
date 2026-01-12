@@ -340,6 +340,7 @@ export const callGemini = async (prompt, imageBase64 = null) => {
             return data.text;
         } else {
             console.error("Gemini API Error:", data.error);
+            if (data.details) console.error("Error Details:", data.details);
             return null;
         }
     } catch (e) {
