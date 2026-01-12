@@ -45,7 +45,7 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'react-error-boundary', 'react-router-dom'],
+          vendor: ['react', 'react-dom', 'react-error-boundary'],
           firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
           charts: ['recharts'],
           ui: ['lucide-react']
