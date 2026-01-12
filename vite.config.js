@@ -39,8 +39,19 @@ export default defineConfig({
       }
     })
   ],
-  base: '/', 
+  base: '/',
   build: {
-    outDir: 'build'
+    outDir: 'build',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-error-boundary', 'react-router-dom'],
+          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+          charts: ['recharts'],
+          ui: ['lucide-react']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1000 // Raise limit slightly as we have split chunks well
   }
 })
