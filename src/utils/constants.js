@@ -30,21 +30,21 @@ export const DEFAULT_FAVORITE_CURRENCIES = ['JPY', 'THB', 'USD'];
 // --- 1. 全域色票系統 (Design Tokens) ---
 // [UI Update] Morandi Color Palette Applied
 export const PALETTE = {
-  orange: { id: 'orange', bg: null, text: null, hex: '#d6a2a2', name: 'Orange' }, // Muted Terra Cotta
-  blue: { id: 'blue', bg: null, text: null, hex: '#8fbcd4', name: 'Blue' }, // Dusty Blue
-  pink: { id: 'pink', bg: null, text: null, hex: '#eeccdf', name: 'Pink' }, // Soft Pink
-  indigo: { id: 'indigo', bg: null, text: null, hex: '#a3a7bf', name: 'Indigo' }, // Muted Lavender
-  purple: { id: 'purple', bg: null, text: null, hex: '#c7b3e5', name: 'Purple' }, // Soft Purple
-  yellow: { id: 'yellow', bg: null, text: null, hex: '#e6c9a8', name: 'Yellow' }, // Sand
-  gray: { id: 'gray', bg: 'bg-gray-100', text: 'text-gray-600', hex: '#d1d5db', name: 'Gray' }, // Gray remains standard for consistency
-  red: { id: 'red', bg: null, text: null, hex: '#e09f9f', name: 'Red' }, // Muted Red
-  green: { id: 'green', bg: null, text: null, hex: '#a8cebb', name: 'Green' }, // Sage Green
-  slate: { id: 'slate', bg: null, text: null, hex: '#94a3b8', name: 'Slate' },
-  emerald: { id: 'emerald', bg: null, text: null, hex: '#88bfac', name: 'Emerald' }, // Seafoam
-  rose: { id: 'rose', bg: 'bg-rose-100', text: 'text-rose-600', hex: '#e11d48', name: 'Rose' }, // [Keep] Primary Brand Color
-  cyan: { id: 'cyan', bg: null, text: null, hex: '#a5d6d9', name: 'Cyan' },
-  amber: { id: 'amber', bg: null, text: null, hex: '#d9b891', name: 'Amber' },
-  fuchsia: { id: 'fuchsia', bg: null, text: null, hex: '#d8a7d1', name: 'Fuchsia' },
+  orange: { id: 'orange', bg: 'bg-orange-100', text: 'text-orange-600', hex: '#ea580c', name: 'Orange' },
+  blue: { id: 'blue', bg: 'bg-blue-100', text: 'text-blue-600', hex: '#2563eb', name: 'Blue' },
+  pink: { id: 'pink', bg: 'bg-pink-100', text: 'text-pink-600', hex: '#db2777', name: 'Pink' },
+  indigo: { id: 'indigo', bg: 'bg-indigo-100', text: 'text-indigo-600', hex: '#4f46e5', name: 'Indigo' },
+  purple: { id: 'purple', bg: 'bg-purple-100', text: 'text-purple-600', hex: '#9333ea', name: 'Purple' },
+  yellow: { id: 'yellow', bg: 'bg-yellow-100', text: 'text-yellow-600', hex: '#ca8a04', name: 'Yellow' },
+  gray: { id: 'gray', bg: 'bg-gray-100', text: 'text-gray-600', hex: '#4b5563', name: 'Gray' },
+  red: { id: 'red', bg: 'bg-red-100', text: 'text-red-600', hex: '#dc2626', name: 'Red' },
+  green: { id: 'green', bg: 'bg-green-100', text: 'text-green-600', hex: '#16a34a', name: 'Green' },
+  slate: { id: 'slate', bg: 'bg-slate-100', text: 'text-slate-600', hex: '#475569', name: 'Slate' },
+  emerald: { id: 'emerald', bg: 'bg-emerald-100', text: 'text-emerald-600', hex: '#059669', name: 'Emerald' },
+  rose: { id: 'rose', bg: 'bg-rose-100', text: 'text-rose-600', hex: '#e11d48', name: 'Rose' },
+  cyan: { id: 'cyan', bg: 'bg-cyan-100', text: 'text-cyan-600', hex: '#0891b2', name: 'Cyan' },
+  amber: { id: 'amber', bg: 'bg-amber-100', text: 'text-amber-600', hex: '#d97706', name: 'Amber' },
+  fuchsia: { id: 'fuchsia', bg: 'bg-fuchsia-100', text: 'text-fuchsia-600', hex: '#c026d3', name: 'Fuchsia' },
 };
 
 // [UI Update] Morandi Color Palette for Charts (Low Saturation)
