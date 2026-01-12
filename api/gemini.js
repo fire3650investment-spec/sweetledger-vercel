@@ -36,8 +36,8 @@ export default async function handler(req, res) {
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
-        // Use stable model name (explicit vision)
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-001" });
+        // Use stable 1.5 Pro model for better image recognition
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
         let result;
         if (imageBase64) {
