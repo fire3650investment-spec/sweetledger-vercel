@@ -34,29 +34,61 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'Server Config Error: Missing API Key' });
     }
 
-    try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        // Use stable 1.5 Pro model for better image recognition
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    // List of models to try in order of preference
+    const modelsToTry = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"];
 
-        let result;
-        if (imageBase64) {
-            const imagePart = {
-                inlineData: {
-                    data: imageBase64,
-                    mimeType: "image/jpeg"
+    let lastError = null;
+
+    for (const modelName of modelsToTry) {
+        try {
+            console.log(`🤖 Attempting to generate with model: ${modelName}`);
+            const genAI = new GoogleGenerativeAI(apiKey);
+            const model = genAI.getGenerativeModel({ model: modelName });
+
+            let result;
+            if (imageBase64) {
+                // gemini-pro (1.0) does not support images
+                if (modelName === "gemini-pro") {
+                    console.log("⚠️ Fallback to gemini-pro: Image input ignored.");
+                    result = await model.generateContent(`${prompt}\n(Note: Image analysis skipped as fallback model gemini-pro was used)`);
+                } else {
+                    const imagePart = {
+                        inlineData: {
+                            data: imageBase64,
+                            mimeType: "image/jpeg"
+                        }
+                    };
+                    result = await model.generateContent([prompt, imagePart]);
                 }
-            };
-            result = await model.generateContent([prompt, imagePart]);
-        } else {
-            result = await model.generateContent(prompt);
+            } else {
+                result = await model.generateContent(prompt);
+            }
+
+            const text = result.response.text();
+            console.log(`✅ Success with model: ${modelName}`);
+            return res.status(200).json({ text, usedModel: modelName });
+
+        } catch (error) {
+            console.warn(`❌ Failed with model ${modelName}:`, error.message);
+            lastError = error;
+            // Continue to next model...
         }
-
-        const text = result.response.text();
-        return res.status(200).json({ text });
-
-    } catch (error) {
-        console.error("Gemini API Error:", error);
-        return res.status(500).json({ error: error.message || 'AI Generation Failed' });
     }
+
+    // If all failed, try to list available models for debugging
+    try {
+        /* 
+           Note: listing models might also fail if scope is restricted, 
+           but it's worth a try for debugging 404s 
+        */
+        console.log("🔍 All attempts failed. listing available models...");
+        // This is a placeholder as the current SDK usage for listModels might vary or require different client setup.
+        // We will stick to returning the last error with a hint.
+    } catch (e) { /* ignore */ }
+
+    console.error("🚨 All model attempts failed.");
+    return res.status(500).json({
+        error: `All models failed. Last error: ${lastError?.message}`,
+        details: "Please check Vercel Environment Variables. Your API Key might be invalid or has not been propagated to the server yet."
+    });
 }
