@@ -294,14 +294,11 @@ export default function AddExpenseView({
                         {currentProject?.name || '日常'}
                     </div>
                     <div className="flex gap-2 -mr-1">
-                        <button onClick={handleAlbumClick} disabled={isScanning} className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isScanning ? 'opacity-30' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 active:scale-95'}`}>
-                            <Image size={18} strokeWidth={2.5} />
-                        </button>
-                        <button onClick={handleCameraClick} disabled={isScanning} className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-blue-50 hover:text-blue-500 active:scale-95'}`}>
-                            {isScanning ? <RefreshCw className="animate-spin" size={18} /> : <Camera size={18} strokeWidth={2.5} />}
+                        <button onClick={handleAlbumClick} disabled={isScanning} className={`h-9 px-3 rounded-full flex items-center justify-center transition-all ${isScanning ? 'bg-gray-50 text-gray-300' : 'bg-gray-100 text-gray-600 font-bold hover:bg-gray-200 active:scale-95'}`}>
+                            <span className="text-xs whitespace-nowrap">掃描收據</span>
                         </button>
                         <button onClick={() => setIsAiModalOpen(true)} className={`h-9 px-3 rounded-full flex items-center justify-center gap-1.5 transition-all ${isAiProcessing ? 'bg-rose-100 text-rose-600' : 'bg-rose-500 text-white hover:bg-rose-600 active:scale-95 shadow-sm shadow-rose-200'}`}>
-                            {isAiProcessing ? <RefreshCw className="animate-spin" size={16} /> : <Sparkles size={16} strokeWidth={2.5} />}
+                            {isAiProcessing && <RefreshCw className="animate-spin" size={16} />}
                             <span className="text-xs font-bold whitespace-nowrap">AI 記帳</span>
                         </button>
                     </div>
