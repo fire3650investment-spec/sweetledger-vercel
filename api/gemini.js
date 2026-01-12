@@ -35,9 +35,9 @@ export default async function handler(req, res) {
     }
 
     // List of models to try in order of preference
-    const modelsToTry = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"];
+    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"];
 
-    let lastError = null;
+    let allErrors = [];
 
     for (const modelName of modelsToTry) {
         try {
@@ -47,10 +47,10 @@ export default async function handler(req, res) {
 
             let result;
             if (imageBase64) {
-                // gemini-pro (1.0) does not support images
-                if (modelName === "gemini-pro") {
-                    console.log("⚠️ Fallback to gemini-pro: Image input ignored.");
-                    result = await model.generateContent(`${prompt}\n(Note: Image analysis skipped as fallback model gemini-pro was used)`);
+                // gemini-1.0-pro does not support images
+                if (modelName === "gemini-1.0-pro" || modelName === "gemini-pro") {
+                    console.log(`⚠️ Fallback to ${modelName}: Image input ignored.`);
+                    result = await model.generateContent(`${prompt}\n(Note: Image analysis skipped as fallback model ${modelName} was used)`);
                 } else {
                     const imagePart = {
                         inlineData: {
@@ -70,25 +70,14 @@ export default async function handler(req, res) {
 
         } catch (error) {
             console.warn(`❌ Failed with model ${modelName}:`, error.message);
-            lastError = error;
-            // Continue to next model...
+            allErrors.push(`${modelName}: ${error.message}`);
         }
     }
 
-    // If all failed, try to list available models for debugging
-    try {
-        /* 
-           Note: listing models might also fail if scope is restricted, 
-           but it's worth a try for debugging 404s 
-        */
-        console.log("🔍 All attempts failed. listing available models...");
-        // This is a placeholder as the current SDK usage for listModels might vary or require different client setup.
-        // We will stick to returning the last error with a hint.
-    } catch (e) { /* ignore */ }
-
     console.error("🚨 All model attempts failed.");
     return res.status(500).json({
-        error: `All models failed. Last error: ${lastError?.message}`,
-        details: "Please check Vercel Environment Variables. Your API Key might be invalid or has not been propagated to the server yet."
+        error: "All models failed",
+        details: allErrors.join(" | "),
+        help: "Please check Vercel Environment Variables (GEMINI_API_KEY). Ensure the key is valid and has access to Generative Language API."
     });
 }
