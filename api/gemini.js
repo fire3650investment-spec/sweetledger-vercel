@@ -36,8 +36,8 @@ export default async function handler(req, res) {
 
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
-        // Use latest alias
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+        // Use stable model name
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
         let result;
         if (imageBase64) {
