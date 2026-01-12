@@ -300,7 +300,7 @@ export default function AddExpenseView({
                         <button onClick={handleCameraClick} disabled={isScanning} className={`w-9 h-9 rounded-full flex items-center justify-center transition-all ${isScanning ? 'bg-blue-100 text-blue-600 animate-pulse' : 'bg-gray-100 text-gray-500 hover:bg-blue-50 hover:text-blue-500 active:scale-95'}`}>
                             {isScanning ? <RefreshCw className="animate-spin" size={18} /> : <Camera size={18} strokeWidth={2.5} />}
                         </button>
-                        <button onClick={() => setIsAiModalOpen(true)} className={`h-9 px-3 rounded-full flex items-center justify-center gap-1.5 transition-all ${isAiProcessing ? 'bg-purple-100 text-purple-600' : 'bg-purple-50 text-purple-600 hover:bg-purple-100 active:scale-95'}`}>
+                        <button onClick={() => setIsAiModalOpen(true)} className={`h-9 px-3 rounded-full flex items-center justify-center gap-1.5 transition-all ${isAiProcessing ? 'bg-rose-100 text-rose-600' : 'bg-rose-500 text-white hover:bg-rose-600 active:scale-95 shadow-sm shadow-rose-200'}`}>
                             {isAiProcessing ? <RefreshCw className="animate-spin" size={16} /> : <Sparkles size={16} strokeWidth={2.5} />}
                             <span className="text-xs font-bold whitespace-nowrap">AI 記帳</span>
                         </button>
