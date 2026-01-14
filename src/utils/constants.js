@@ -136,8 +136,7 @@ export const DEFAULT_CATEGORIES = CATEGORIES.filter(c => c.id !== 'settlement');
 
 export const AVAILABLE_ICONS = [
   'food', 'transport', 'shopping', 'housing', 'hotel', 'ticket', 'telecom', 'insurance', 'life', 'other',
-  'coffee', 'music', 'game', 'heart', 'gift', 'zap', 'book',
-  'cat', 'dog', 'rabbit', 'bird', 'fish', 'turtle'
+  'coffee', 'music', 'game', 'heart', 'gift', 'zap', 'book'
 ];
 
 export const CHARACTERS = {

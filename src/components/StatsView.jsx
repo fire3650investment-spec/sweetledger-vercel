@@ -43,9 +43,9 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const hId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'host');
         const gId = Object.keys(safeUsers).find(uid => safeUsers[uid].role === 'guest');
 
-        // Pass user names
-        const hName = safeUsers[hId]?.name || 'Host';
-        const gName = safeUsers[gId]?.name || 'Guest';
+        // Pass user names - [UX] 使用「我」和「對方」作為 fallback
+        const hName = safeUsers[hId]?.name || '我';
+        const gName = safeUsers[gId]?.name || '對方';
 
         const calculateTotalPaid = (uid) => {
             return txs.reduce((sum, tx) => {
@@ -67,6 +67,12 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const combinedTotal = hTotal + gTotal;
         const hRatio = combinedTotal > 0 ? (hTotal / combinedTotal) * 100 : 50;
         const gRatio = combinedTotal > 0 ? (gTotal / combinedTotal) * 100 : 50;
+
+        // [Debt-based Color Logic] 付得多的人=綠色 (creditor), 付得少的人=玫瑰紅 (debtor)
+        const creditorColor = '#10b981'; // emerald-500
+        const debtorColor = '#f43f5e'; // rose-500
+        const hColor = hTotal >= gTotal ? creditorColor : debtorColor;
+        const gColor = gTotal >= hTotal ? creditorColor : debtorColor;
 
         const statsMap = {};
         let totalExp = 0;
@@ -178,9 +184,9 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                     guestTotal={guestTotal}
                     hostRatio={hostRatio}
                     guestRatio={guestRatio}
-                    // [Advanced] Pass custom Morandi/Vibrant colors
-                    hostColor={ledgerData.users?.[user?.uid]?.theme === 'morandi' ? MORANDI_PALETTE.host : '#3b82f6'}
-                    guestColor={ledgerData.users?.[user?.uid]?.theme === 'morandi' ? MORANDI_PALETTE.guest : '#ec4899'}
+                    // [Debt-based] 付得多=綠色, 付得少=玫瑰紅 (而非固定 host/guest)
+                    hostColor={hostTotal >= guestTotal ? '#10b981' : '#f43f5e'}
+                    guestColor={guestTotal >= hostTotal ? '#10b981' : '#f43f5e'}
                 />
             )}
 

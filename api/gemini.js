@@ -34,8 +34,9 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'Server Config Error: Missing API Key' });
     }
 
-    // List of models to try in order of preference
-    const modelsToTry = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"];
+    // List of models to try in order of preference (updated 2026-01)
+    // See: https://ai.google.dev/gemini-api/docs/models/gemini
+    const modelsToTry = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"];
 
     let allErrors = [];
 

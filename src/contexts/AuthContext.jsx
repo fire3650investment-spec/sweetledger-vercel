@@ -7,7 +7,8 @@ import {
   signOut,
   setPersistence,
   signInWithCustomToken,
-  browserLocalPersistence
+  browserLocalPersistence,
+  OAuthProvider
 } from 'firebase/auth';
 import { auth } from '../utils/firebase';
 import { safeLocalStorage } from '../utils/helpers';
@@ -93,6 +94,39 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const loginWithApple = async () => {
+    setLoading(true);
+    // Apple Provider Config
+    const provider = new OAuthProvider('apple.com');
+
+    // Optional: Request scopes (email, name)
+    provider.addScope('email');
+    provider.addScope('name');
+
+    try {
+      console.log("🍏 Starting Apple Login via Popup...");
+      const result = await signInWithPopup(auth, provider);
+
+      // The signed-in user info.
+      const user = result.user;
+
+      // Apple Credential (JWT) - useful if you need backend validation
+      const credential = OAuthProvider.credentialFromResult(result);
+      const accessToken = credential.accessToken;
+      const idToken = credential.idToken;
+
+      if (user) {
+        console.log("🎉 Apple Login Success:", user.uid);
+      }
+      setLoading(false);
+    } catch (error) {
+      console.error("Apple Login Error:", error);
+      setLoading(false);
+      // Apple often fails if domain not verified in Apple Developer Console
+      alert(`Apple 登入失敗: ${error.message}\n(請確認 Firebase Console 與 Apple Developer 設置是否完成)`);
+    }
+  };
+
   const logout = async () => {
     safeLocalStorage.removeItem('sweet_user_cache'); // [安全] 登出清除快取
     setUser(null);
@@ -103,6 +137,7 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     loginWithGoogle,
+    loginWithApple,
     logout
   };
 

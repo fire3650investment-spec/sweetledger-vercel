@@ -18,7 +18,7 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
         if (!currentUser) throw new Error("請先登入");
         if (!db) throw new Error("資料庫未連線");
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-        const userName = currentUser.displayName || 'Host';
+        const userName = currentUser.displayName || '我';
 
         await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', code), {
             ...INITIAL_LEDGER_STATE,
@@ -46,7 +46,7 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
         if (docSnap.exists()) {
             const currentData = docSnap.data();
             if (!currentData.users || !currentData.users[currentUser.uid]) {
-                const userName = currentUser.displayName || 'Guest';
+                const userName = currentUser.displayName || '對方';
                 await updateDoc(docRef, {
                     [`users.${currentUser.uid}`]: { name: userName, avatar: 'dog', role: 'guest' }
                 });
@@ -103,30 +103,29 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
     // --- Projects & Categories ---
 
     const saveProject = useCallback(async (projectData) => {
-        if (!ledgerCode || !ledgerDocData || !db) return;
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        let newProjects = [...(ledgerDocData.projects || [])];
-        let projectId = projectData.id;
-        const payload = { ...projectData, rates: projectData.rates || {}, type: projectData.type || 'public' };
+        if (!ledgerCode || !db) return;
+        const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
 
-        if (projectId) {
-            newProjects = newProjects.map(p => p.id === projectId ? { ...p, ...payload } : p);
-        } else {
-            projectId = generateId();
-            newProjects.push({ ...payload, id: projectId });
-        }
-        await updateDoc(docRef, { projects: newProjects });
+        // [Migrated to Sub-collection]
+        let projectId = projectData.id || generateId();
+        const payload = {
+            ...projectData,
+            id: projectId,
+            rates: projectData.rates || {},
+            type: projectData.type || 'public',
+            updatedAt: new Date().toISOString()
+        };
+
+        await setDoc(doc(ledgerRef, 'projects', projectId), payload, { merge: true });
         return projectId;
-    }, [ledgerCode, ledgerDocData]);
+    }, [ledgerCode]);
 
     const deleteProject = useCallback(async (projectId) => {
-        if (!ledgerCode || !ledgerDocData || !db) return;
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        if (!ledgerCode || !db) return;
+        const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
 
-        const newProjects = ledgerDocData.projects.filter(p => p.id !== projectId);
-        const newSubscriptions = (ledgerDocData.subscriptions || []).filter(s => s.projectId !== projectId);
-
-        const q = query(collection(docRef, 'transactions'), where('projectId', '==', projectId));
+        // Delete related Transactions
+        const q = query(collection(ledgerRef, 'transactions'), where('projectId', '==', projectId));
         const snapshots = await getDocs(q);
 
         const batch = writeBatch(db);
@@ -138,7 +137,24 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
             }
         });
 
-        batch.update(docRef, { projects: newProjects, subscriptions: newSubscriptions });
+        // Delete from Sub-collection
+        batch.delete(doc(ledgerRef, 'projects', projectId));
+
+        // Delete related Subscriptions (if any)
+        // Note: Subscriptions should also be migrated to sub-collection, so we delete that too
+        // For now, simpler to query subscriptions by projectId
+        const subQ = query(collection(ledgerRef, 'subscriptions'), where('projectId', '==', projectId));
+        const subSnaps = await getDocs(subQ);
+        subSnaps.forEach(d => batch.delete(d.ref));
+
+        // [Legacy Cleanup] If project exists in legacy array, remove it too
+        if (ledgerDocData && Array.isArray(ledgerDocData.projects)) {
+            const newProjects = ledgerDocData.projects.filter(p => p.id !== projectId);
+            if (newProjects.length !== ledgerDocData.projects.length) {
+                batch.update(ledgerRef, { projects: newProjects });
+            }
+        }
+
         await batch.commit();
 
         if (snapshots.size > 450) {
@@ -146,7 +162,17 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
         }
     }, [ledgerCode, ledgerDocData]);
 
-    const reorderProjects = (newP) => simpleUpdate('projects', newP);
+    const reorderProjects = async (newProjects) => {
+        if (!ledgerCode || !db) return;
+        const batch = writeBatch(db);
+        const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+
+        newProjects.forEach((proj, index) => {
+            batch.update(doc(ledgerRef, 'projects', proj.id), { order: index });
+        });
+
+        await batch.commit();
+    };
     const reorderCategories = (newC) => simpleUpdate('customCategories', newC);
 
     const deleteCategory = async (catId) => {
@@ -162,8 +188,11 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
     };
 
     const updateProjectRates = async (pid, cur, val) => {
-        const newP = ledgerDocData.projects.map(p => p.id === pid ? { ...p, rates: { ...p.rates, [cur]: parseFloat(val) } } : p);
-        await simpleUpdate('projects', newP);
+        if (!ledgerCode || !db) return;
+        const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        await updateDoc(doc(ledgerRef, 'projects', pid), {
+            [`rates.${cur}`]: parseFloat(val)
+        });
     };
 
     const updateUserSetting = async (field, val) => {
@@ -218,6 +247,44 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
 
     const fixIdentity = () => { }; // No-op
 
+
+    const migrateToSubCollections = useCallback(async () => {
+        if (!ledgerCode || !ledgerDocData || !db) return;
+
+        const batch = writeBatch(db);
+        const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
+        let migratedCount = 0;
+
+        // 1. Migrate Projects
+        if (Array.isArray(ledgerDocData.projects) && ledgerDocData.projects.length > 0) {
+            console.log("Migrating projects...", ledgerDocData.projects.length);
+            ledgerDocData.projects.forEach((p, idx) => {
+                const pRef = doc(ledgerRef, 'projects', p.id);
+                batch.set(pRef, { ...p, order: idx }, { merge: true });
+            });
+            batch.update(ledgerRef, { projects: deleteField() });
+            migratedCount++;
+        }
+
+        // 2. Migrate Subscriptions
+        if (Array.isArray(ledgerDocData.subscriptions) && ledgerDocData.subscriptions.length > 0) {
+            console.log("Migrating subscriptions...", ledgerDocData.subscriptions.length);
+            ledgerDocData.subscriptions.forEach((s) => {
+                const sId = s.id || generateId();
+                const sRef = doc(ledgerRef, 'subscriptions', sId);
+                batch.set(sRef, { ...s, id: sId }, { merge: true });
+            });
+            batch.update(ledgerRef, { subscriptions: deleteField() });
+            migratedCount++;
+        }
+
+        if (migratedCount > 0) {
+            await batch.commit();
+            console.log("Migration completed!");
+            alert("資料庫升級完成 (Projects & Subscriptions)");
+        }
+    }, [ledgerCode, ledgerDocData]);
+
     return {
         createLedger,
         joinLedger,
@@ -235,6 +302,7 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
         updatePaymentMethods,
         resetAccount,
         deleteAccount,
-        fixIdentity
+        fixIdentity,
+        migrateToSubCollections
     };
 };

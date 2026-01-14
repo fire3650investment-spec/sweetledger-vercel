@@ -11,6 +11,7 @@ import ScanReceiptModal from './ScanReceiptModal';
 
 import CustomKeypad from './add-expense/CustomKeypad';
 import CategorySelector from './add-expense/CategorySelector';
+import CategoryEditorModal from './add-expense/CategoryEditorModal';
 import SmartTagBar from './add-expense/SmartTagBar';
 
 // Hooks
@@ -66,6 +67,10 @@ export default function AddExpenseView({
     const [isCurrencySheetOpen, setIsCurrencySheetOpen] = useState(false);
     const [currencySearch, setCurrencySearch] = useState('');
 
+    // Category Editor State (Quick Add)
+    const [isCategoryEditorOpen, setIsCategoryEditorOpen] = useState(false);
+    const [editingCategoryData, setEditingCategoryData] = useState({ id: '', name: '', icon: 'food', colorId: 'slate' });
+
     const noteInputRef = useRef(null);
 
     const currentCats = useMemo(() => ledgerData.customCategories || DEFAULT_CATEGORIES, [ledgerData.customCategories]);
@@ -81,8 +86,9 @@ export default function AddExpenseView({
     const users = ledgerData.users || {};
     const hostId = Object.keys(users).find(uid => users[uid].role === 'host');
     const guestId = Object.keys(users).find(uid => users[uid].role === 'guest');
-    const hostName = hostId ? (users[hostId]?.name || '戶長') : '戶長';
-    const guestName = guestId ? (users[guestId]?.name || '成員') : '成員';
+    // [UX] 使用「我」和「對方」作為 fallback，更親切易懂
+    const hostName = hostId ? (users[hostId]?.name || '我') : '我';
+    const guestName = guestId ? (users[guestId]?.name || '對方') : '對方';
 
     // [Critical Fix] 判斷目前付款人是否為 Host，用於動態切換選單邏輯
     const isPayerHost = users[payer]?.role === 'host';
@@ -171,6 +177,52 @@ export default function AddExpenseView({
         setSelectedCategory(cat);
         setActiveOverlay('none');
         setTimeout(() => { noteInputRef.current?.focus(); }, 100);
+    };
+
+    // Quick Category Creation Handlers
+    const handleOpenNewCategory = () => {
+        setEditingCategoryData({ id: '', name: '', icon: 'food', colorId: 'slate' });
+        setIsCategoryEditorOpen(true);
+    };
+
+    const handleSaveNewCategory = async () => {
+        if (!editingCategoryData.name) return;
+
+        // 產生新 ID
+        const newId = `custom_${Date.now()}`;
+        const newCategory = {
+            ...editingCategoryData,
+            id: newId
+        };
+
+        // 取得現有分類並加入新分類
+        const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
+        const updatedCategories = [...currentCategories, newCategory];
+
+        // 更新 Firestore (透過 App.jsx 傳入的 updateProjectRates 或類似方法)
+        // 這裡需要透過 ledgerData 的更新機制
+        try {
+            const db = (await import('../utils/firebase')).db;
+            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-sweetledger';
+            const { doc, updateDoc } = await import('firebase/firestore');
+            const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerData.code);
+            await updateDoc(ledgerRef, { customCategories: updatedCategories });
+
+            // 自動選擇新分類並關閉編輯器
+            setSelectedCategory(newCategory);
+            setIsCategoryEditorOpen(false);
+
+            // 也加入到 selectedCategories 以確保在記帳頁面可見
+            const selectedCategoryIds = ledgerData.settings?.selectedCategories || [];
+            if (!selectedCategoryIds.includes(newId)) {
+                await updateDoc(ledgerRef, {
+                    'settings.selectedCategories': [...selectedCategoryIds, newId]
+                });
+            }
+        } catch (error) {
+            console.error('Failed to save category:', error);
+            alert('儲存分類失敗');
+        }
     };
 
 
@@ -464,7 +516,7 @@ export default function AddExpenseView({
                             <button onClick={() => setIsSubscription(!isSubscription)} className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all ${isSubscription ? 'bg-rose-50 border-rose-200' : 'bg-white border-gray-100'}`}>
                                 <div className="flex items-center gap-2">
                                     <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-500 shrink-0"><Repeat size={16} /></div>
-                                    <span className={`text-sm font-bold ${isSubscription ? 'text-rose-600' : 'text-gray-500'}`}>設為固定支出 (訂閱/分期)</span>
+                                    <span className={`text-sm font-bold ${isSubscription ? 'text-rose-600' : 'text-gray-500'}`}>設為固定支出 (週期/分期)</span>
                                 </div>
                                 <div className={`w-4 h-4 rounded-full border ${isSubscription ? 'bg-rose-500 border-rose-500' : 'bg-transparent border-gray-300'}`}></div>
                             </button>
@@ -495,7 +547,16 @@ export default function AddExpenseView({
 
             {/* Overlays */}
             {activeOverlay === 'amount' && <CustomKeypad onKeyPress={handleKeyPress} isMathPending={isMathPending} />}
-            {activeOverlay === 'category' && <CategorySelector categories={filteredCategories} selectedCategory={selectedCategory} onSelect={handleCategorySelect} />}
+            {activeOverlay === 'category' && <CategorySelector categories={filteredCategories} selectedCategory={selectedCategory} onSelect={handleCategorySelect} onAddNew={handleOpenNewCategory} />}
+
+            {/* Category Editor Modal */}
+            <CategoryEditorModal
+                isOpen={isCategoryEditorOpen}
+                onClose={() => setIsCategoryEditorOpen(false)}
+                editingData={editingCategoryData}
+                setEditingData={setEditingCategoryData}
+                onSave={handleSaveNewCategory}
+            />
 
             {/* AI Modal */}
             {/* AI Modal */}

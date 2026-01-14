@@ -44,8 +44,9 @@ export default function EditTransactionModal({
     const users = ledgerData.users || {};
     const hostId = Object.keys(users).find(uid => users[uid].role === 'host');
     const guestId = Object.keys(users).find(uid => users[uid].role === 'guest');
-    const hostName = hostId ? (users[hostId]?.name || '戶長') : '戶長';
-    const guestName = guestId ? (users[guestId]?.name || '成員') : '成員';
+    // [UX] 使用「我」和「對方」作為 fallback
+    const hostName = hostId ? (users[hostId]?.name || '我') : '我';
+    const guestName = guestId ? (users[guestId]?.name || '對方') : '對方';
 
     // [Batch 2] User Favorites (補回)
     const mySettings = ledgerData.users?.[user?.uid] || {};

@@ -350,7 +350,7 @@ export default function SettingsView({
                     </h3>
                     <div className="bg-white rounded-2xl overflow-hidden border border-gray-100 divide-y divide-gray-50">
 
-                        {/* Upgrade Database (Host Only) */}
+                        {/* [Hidden for App Store] Upgrade Database (Host Only) - Legacy migration feature, not needed for new users
                         {isHost && (
                             <div
                                 className="p-4 flex justify-between items-center active:bg-gray-50 hover:bg-gray-50 transition-colors cursor-pointer"
@@ -370,6 +370,7 @@ export default function SettingsView({
                                 <ChevronRight size={16} className="text-gray-300" />
                             </div>
                         )}
+                        */}
 
                         {/* Reset Account */}
                         <div

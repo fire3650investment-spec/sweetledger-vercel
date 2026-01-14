@@ -24,6 +24,22 @@ export const useLedgerSync = (user) => {
         } catch (e) { return []; }
     });
 
+    // [New] Projects State (Sub-collection)
+    const [projects, setProjects] = useState(() => {
+        try {
+            const cached = safeLocalStorage.getItem(`sweet_ledger_projects_${ledgerCode}`);
+            return cached ? JSON.parse(cached) : [];
+        } catch (e) { return []; }
+    });
+
+    // [New] Subscriptions State (Sub-collection)
+    const [subscriptions, setSubscriptions] = useState(() => {
+        try {
+            const cached = safeLocalStorage.getItem(`sweet_ledger_subscriptions_${ledgerCode}`);
+            return cached ? JSON.parse(cached) : [];
+        } catch (e) { return []; }
+    });
+
     const [isLedgerInitializing, setIsLedgerInitializing] = useState(() => {
         // If we have cached data, we are NOT initializing (UI can render)
         // We still sync in background, but don't block UI.
@@ -49,20 +65,44 @@ export const useLedgerSync = (user) => {
         const legacyTxs = (Array.isArray(ledgerDocData.transactions)) ? ledgerDocData.transactions : [];
         const subTxs = transactions;
 
-        // Deduplicate: If an ID exists in sub-collection, use that (newer version)
+        // Deduplicate Transitions
         const subIds = new Set(subTxs.map(t => t.id));
         const filteredLegacy = legacyTxs.filter(t => !subIds.has(t.id));
 
         const allTransactions = [...subTxs, ...filteredLegacy];
-
-        // Sort by date desc
         allTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+        // [Migration] Merge Projects (Array + Sub-collection)
+        const legacyProjects = (Array.isArray(ledgerDocData.projects)) ? ledgerDocData.projects : [];
+        const subProjects = projects;
+
+        const subProjIds = new Set(subProjects.map(p => p.id));
+        const filteredLegacyProjects = legacyProjects.filter(p => !subProjIds.has(p.id));
+
+        let allProjects = [...subProjects, ...filteredLegacyProjects];
+
+        // Sort projects: prefer 'order' field, fallback to original index logic implicitly
+        // Since we combined them, array order is mixed.
+        // Best effort: separate those with 'order' and those without?
+        // Or just sort by order if available.
+        allProjects.sort((a, b) => (a.order || 999) - (b.order || 999));
+
+        // [Migration] Merge Subscriptions (Array + Sub-collection)
+        const legacySubs = (Array.isArray(ledgerDocData.subscriptions)) ? ledgerDocData.subscriptions : [];
+        const subSubs = subscriptions;
+
+        const subSubIds = new Set(subSubs.map(s => s.id));
+        const filteredLegacySubs = legacySubs.filter(s => !subSubIds.has(s.id));
+
+        const allSubscriptions = [...subSubs, ...filteredLegacySubs];
 
         return {
             ...ledgerDocData,
-            transactions: allTransactions
+            transactions: allTransactions,
+            projects: allProjects,
+            subscriptions: allSubscriptions
         };
-    }, [ledgerDocData, transactions]);
+    }, [ledgerDocData, transactions, projects, subscriptions]);
 
     // 4. Listeners
     useEffect(() => {
@@ -109,7 +149,7 @@ export const useLedgerSync = (user) => {
             setIsLedgerInitializing(false);
         });
 
-        // B. Sub-collection Listener
+        // B. Sub-collection Listener (Transactions)
         const txCollectionRef = collection(ledgerRef, 'transactions');
         const unsubscribeTxs = onSnapshot(txCollectionRef, (snapshot) => {
             const txs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
@@ -119,9 +159,29 @@ export const useLedgerSync = (user) => {
             console.log("Tx sub-collection issue:", error.message);
         });
 
+        // C. Sub-collection Listener (Projects)
+        const projCollectionRef = collection(ledgerRef, 'projects');
+        const unsubscribeProjects = onSnapshot(projCollectionRef, (snapshot) => {
+            const projs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+            setProjects(projs);
+        }, (error) => {
+            console.log("Projects sub-collection issue:", error.message);
+        });
+
+        // D. Sub-collection Listener (Subscriptions)
+        const subCollectionRef = collection(ledgerRef, 'subscriptions');
+        const unsubscribeSubscriptions = onSnapshot(subCollectionRef, (snapshot) => {
+            const subs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+            setSubscriptions(subs);
+        }, (error) => {
+            console.log("Subscriptions sub-collection issue:", error.message);
+        });
+
         return () => {
             unsubscribeLedger();
             unsubscribeTxs();
+            unsubscribeProjects();
+            unsubscribeSubscriptions();
         };
     }, [ledgerCode, user]);
 
@@ -137,6 +197,19 @@ export const useLedgerSync = (user) => {
             safeLocalStorage.setItem(`sweet_ledger_txs_${ledgerCode}`, JSON.stringify(transactions));
         }
     }, [ledgerCode, transactions]);
+
+    // [New] Projects & Subscriptions Persistence
+    useEffect(() => {
+        if (ledgerCode && projects.length > 0) {
+            safeLocalStorage.setItem(`sweet_ledger_projects_${ledgerCode}`, JSON.stringify(projects));
+        }
+    }, [ledgerCode, projects]);
+
+    useEffect(() => {
+        if (ledgerCode && subscriptions.length > 0) {
+            safeLocalStorage.setItem(`sweet_ledger_subscriptions_${ledgerCode}`, JSON.stringify(subscriptions));
+        }
+    }, [ledgerCode, subscriptions]);
 
     return {
         ledgerCode,

@@ -35,7 +35,7 @@ const PageLoading = () => (
 );
 
 export default function SweetLedger() {
-    const { user, loading: authLoading, loginWithGoogle, logout } = useAuth();
+    const { user, loading: authLoading, loginWithGoogle, loginWithApple, logout } = useAuth();
     const {
         ledgerCode, ledgerData, isLedgerInitializing,
         createLedger, joinLedger, disconnectLedger,
@@ -163,6 +163,7 @@ export default function SweetLedger() {
 
     // --- Handlers (Simplified) ---
     const handleGoogleLogin = async () => { try { await loginWithGoogle(); } catch (error) { alert(`登入失敗: ${error.message}`); } };
+    const handleAppleLogin = async () => { try { await loginWithApple(); } catch (error) { alert(`登入失敗: ${error.message}`); } };
     const handleJoinWithCode = async (code) => { setPendingInviteCode(code); await handleGoogleLogin(); };
     const handleCreateLedgerFn = async () => { setLoading(true); try { await createLedger(user); } catch (e) { alert(e.message); } setLoading(false); };
     const handleJoinLedgerFn = async (code) => { setLoading(true); try { await joinLedger(code, user); } catch (e) { alert(e.message); } setLoading(false); };
@@ -347,7 +348,7 @@ export default function SweetLedger() {
     return (
         <div className="min-h-screen bg-white text-gray-900 font-sans pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500 relative">
             <React.Suspense fallback={<div className="h-screen w-full flex items-center justify-center bg-white"><div className="text-4xl animate-bounce">🍰</div></div>}>
-                {view === 'onboarding' && <OnboardingView handleGoogleLogin={handleGoogleLogin} loading={loading} onJoinWithCode={handleJoinWithCode} />}
+                {view === 'onboarding' && <OnboardingView handleGoogleLogin={handleGoogleLogin} handleAppleLogin={handleAppleLogin} loading={loading} onJoinWithCode={handleJoinWithCode} />}
                 {view === 'decision' && <DecisionView user={user} onCreate={handleCreateLedgerFn} onJoin={handleJoinLedgerFn} />}
             </React.Suspense>
 
