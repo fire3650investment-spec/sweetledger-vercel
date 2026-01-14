@@ -1,14 +1,24 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 
 export default function useCalculator(onSubmit) {
     const [localAmount, setLocalAmount] = useState('');
 
-    const isMathPending = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
+    // [Performance] Use Ref to keep track of latest value without triggering re-creation of callbacks
+    const localAmountRef = useRef(localAmount);
+    useEffect(() => { localAmountRef.current = localAmount; }, [localAmount]);
 
-    const handleKeypadSubmit = () => {
-        if (isMathPending) {
+    // Derived state (still causes re-render when changed, which is expected for UI updates)
+    const isMathPending = /[+\-×÷]/.test(localAmount) && !/[+\-×÷]$/.test(localAmount);
+    const isMathPendingRef = useRef(isMathPending);
+    useEffect(() => { isMathPendingRef.current = isMathPending; }, [isMathPending]);
+
+    const handleKeypadSubmit = useCallback(() => {
+        const currentAmount = localAmountRef.current;
+        const currentIsMathPending = isMathPendingRef.current;
+
+        if (currentIsMathPending) {
             try {
-                const safeExpr = localAmount.replace(/×/g, '*').replace(/÷/g, '/');
+                const safeExpr = currentAmount.replace(/×/g, '*').replace(/÷/g, '/');
                 const result = new Function('return ' + safeExpr)();
                 // Round to 2 decimal places to avoid floating point errors
                 let finalVal = Math.round(result * 100) / 100;
@@ -22,17 +32,17 @@ export default function useCalculator(onSubmit) {
             }
             return;
         }
-        if (!localAmount || parseFloat(localAmount) <= 0) return;
+        if (!currentAmount || parseFloat(currentAmount) <= 0) return;
 
         // [Validation] Simple Amount Check
-        if (parseFloat(localAmount) > 100000000) {
+        if (parseFloat(currentAmount) > 100000000) {
             setLocalAmount('100000000');
             return;
         }
 
         // Trigger the external submit callback (usually to switch overlay)
         if (onSubmit) onSubmit();
-    };
+    }, [onSubmit]); // Dependency on onSubmit is unavoidable, but onSubmit should be stable from parent
 
     const handleKeyPress = useCallback((key) => {
         if (navigator.vibrate) try { navigator.vibrate(10); } catch (e) { }
@@ -68,16 +78,13 @@ export default function useCalculator(onSubmit) {
 
             // [Validation] Simulate next value to check limit
             const nextValStr = prev + key;
-            // Only check if it looks like a complete number (no pending operators)
-            // But complex expressions are hard to predict without eval. 
-            // Simple check: if it's just a number so far, check limit.
             if (!/[+\-×÷]/.test(nextValStr)) {
                 if (parseFloat(nextValStr) > PREDICT_LIMIT) return prev; // Ignore input if exceeding limit
             }
 
             return prev + key;
         });
-    }, [localAmount, isMathPending]); // Added isMathPending to dependency although not strictly used inside, but good practice if logic changes
+    }, [handleKeypadSubmit]); // Stable dependency
 
     return {
         localAmount,

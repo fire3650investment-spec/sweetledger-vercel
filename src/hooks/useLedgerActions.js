@@ -46,6 +46,11 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
         if (docSnap.exists()) {
             const currentData = docSnap.data();
             if (!currentData.users || !currentData.users[currentUser.uid]) {
+                // [Limit Check] Max 2 Users (Host + Guest)
+                if (Object.keys(currentData.users || {}).length >= 2) {
+                    throw new Error("此帳本成員已滿 (最多 2 人)");
+                }
+
                 const userName = currentUser.displayName || '對方';
                 await updateDoc(docRef, {
                     [`users.${currentUser.uid}`]: { name: userName, avatar: 'dog', role: 'guest' }

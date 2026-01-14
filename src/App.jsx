@@ -1,7 +1,7 @@
 // src/App.jsx
 import React, { useState, useEffect } from 'react';
 import {
-    Home, PieChart, Settings, Plus, Briefcase, RefreshCcw
+    Home, PieChart, Settings, Plus, Briefcase, RefreshCcw, AlertCircle
 } from 'lucide-react';
 
 // Contexts
@@ -345,138 +345,183 @@ export default function SweetLedger() {
         );
     }
 
-    return (
-        <div className="min-h-screen bg-white text-gray-900 font-sans pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500 relative">
-            <React.Suspense fallback={<div className="h-screen w-full flex items-center justify-center bg-white"><div className="text-4xl animate-bounce">🍰</div></div>}>
-                {view === 'onboarding' && <OnboardingView handleGoogleLogin={handleGoogleLogin} handleAppleLogin={handleAppleLogin} loading={loading} onJoinWithCode={handleJoinWithCode} />}
-                {view === 'decision' && <DecisionView user={user} onCreate={handleCreateLedgerFn} onJoin={handleJoinLedgerFn} />}
-            </React.Suspense>
+    // Basic Error Boundary Component
+    class ErrorBoundary extends React.Component {
+        constructor(props) {
+            super(props);
+            this.state = { hasError: false, error: null, errorInfo: null };
+        }
 
-            {view !== 'onboarding' && view !== 'decision' && ledgerData && user && (
-                <>
-                    <React.Suspense fallback={<PageLoading />}>
-                        <div className={view === 'add' ? 'block h-full' : 'hidden'}>
-                            {visitedViews.add && (
-                                <React.Suspense fallback={<PageLoading />}>
-                                    <AddExpenseView
-                                        key={addExpenseKey}
-                                        ledgerData={ledgerData}
-                                        user={user}
-                                        currentProjectId={currentProjectId}
-                                        setView={setView}
-                                        addTransaction={addTransaction}
-                                        updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
-                                    />
-                                </React.Suspense>
-                            )}
+        static getDerivedStateFromError(error) {
+            return { hasError: true, error };
+        }
+
+        componentDidCatch(error, errorInfo) {
+            console.error("Uncaught Error:", error, errorInfo);
+            this.setState({ errorInfo });
+        }
+
+        render() {
+            if (this.state.hasError) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-white text-center">
+                        <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mb-4">
+                            <AlertCircle size={32} />
                         </div>
-                        <div className={view === 'subscriptions' ? 'block h-full' : 'hidden'}>
-                            {visitedViews.subscriptions && (
-                                <React.Suspense fallback={<PageLoading />}>
-                                    <SubscriptionsView ledgerData={ledgerData} user={user} setView={setView} handleDeleteSubscription={deleteSubscription} />
-                                </React.Suspense>
-                            )}
+                        <h2 className="text-xl font-bold text-gray-900 mb-2">發生錯誤</h2>
+                        <p className="text-gray-500 text-sm mb-4">很抱歉，程式執行時發生了意外錯誤。</p>
+                        <div className="w-full max-w-sm bg-gray-50 p-4 rounded-xl text-left overflow-auto max-h-40 mb-6 border border-gray-200">
+                            <p className="text-xs font-mono text-red-500 font-bold mb-1">{this.state.error?.toString()}</p>
+                            <p className="text-[10px] font-mono text-gray-400 whitespace-pre-wrap">{this.state.errorInfo?.componentStack}</p>
                         </div>
-
-                        {/* Dashboard is always loaded first */}
-                        <div className={view === 'dashboard' ? 'block' : 'hidden'}>
-                            <DashboardView
-                                ledgerData={ledgerData} currentProjectId={currentProjectId} setCurrentProjectId={setCurrentProjectId}
-                                privacyMode={privacyMode} setPrivacyMode={setPrivacyMode}
-                                setIsEditTxModalOpen={setIsEditTxModalOpen} setEditingTx={setEditingTx}
-                                user={user} handleSettleUp={handleSettleUpFn} handleOpenAddExpense={handleOpenAddExpense} setView={setView}
-                            />
-                        </div>
-
-                        {/* Stats: Lazy Load on Demand + Keep Alive */}
-                        <div className={view === 'stats' ? 'block' : 'hidden'}>
-                            {visitedViews.stats && (
-                                <React.Suspense fallback={<PageLoading />}>
-                                    <StatsView
-                                        ledgerData={ledgerData} currentProjectId={currentProjectId}
-                                        statsMonth={statsMonth} setStatsMonth={setStatsMonth} privacyMode={privacyMode}
-                                        setEditingTx={setEditingTx} setIsEditTxModalOpen={setIsEditTxModalOpen}
-                                    />
-                                </React.Suspense>
-                            )}
-                        </div>
-
-                        {/* Projects: Lazy Load on Demand + Keep Alive */}
-                        <div className={view === 'projects' ? 'block' : 'hidden'}>
-                            {visitedViews.projects && (
-                                <React.Suspense fallback={<PageLoading />}>
-                                    <ProjectsView
-                                        ledgerData={ledgerData} user={user}
-                                        isEditingProject={isEditingProject} setIsEditingProject={setIsEditingProject}
-                                        editingProjectData={editingProjectData} setEditingProjectData={setEditingProjectData}
-                                        handleSaveProject={handleSaveProjectFn} handleDeleteProject={handleDeleteProjectFn}
-                                        handleReorderProjects={reorderProjects}
-                                        updateProjectRates={updateProjectRates}
-                                    />
-                                </React.Suspense>
-                            )}
-                        </div>
-
-                        {/* Settings: Lazy Load on Demand + Keep Alive */}
-                        <div className={view === 'settings' ? 'block' : 'hidden'}>
-                            {visitedViews.settings && (
-                                <React.Suspense fallback={<PageLoading />}>
-                                    <SettingsView
-                                        ledgerData={ledgerData} user={user} setView={setView}
-                                        isEditingCategory={isEditingCategory} setIsEditingCategory={setIsEditingCategory}
-                                        editingCategoryData={editingCategoryData} setEditingCategoryData={setEditingCategoryData}
-                                        handleSaveCategory={handleSaveCategoryFn} handleDeleteCategory={handleDeleteCategoryFn}
-                                        handleExport={handleExport} handleResetAccount={handleResetAccountFn} handleLogout={handleLogout}
-                                        isAvatarModalOpen={isAvatarModalOpen} setIsAvatarModalOpen={setIsAvatarModalOpen}
-                                        myNickname={myNickname} setMyNickname={setMyNickname} updateNickname={handleUpdateNickname}
-                                        tempAvatar={tempAvatar} handleAvatarSelect={setTempAvatar} confirmAvatarUpdate={confirmAvatarUpdate}
-                                        handleFixIdentity={handleFixIdentityFn} ledgerCode={ledgerCode} updateLedgerCurrency={handleUpdateLedgerCurrency}
-                                        currentProjectId={currentProjectId} handleReorderCategories={reorderCategories}
-                                        updateUserSetting={updateUserSetting}
-                                    />
-                                </React.Suspense>
-                            )}
-                        </div>
-
-                        {['dashboard', 'stats', 'projects', 'settings'].includes(view) && (
-                            <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
-                                <div className="flex justify-between items-center max-w-md mx-auto">
-                                    <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
-                                    <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
-                                    <div className="relative -top-6">
-                                        <button onClick={() => handleOpenAddExpense()} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>
-                                    </div>
-                                    <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
-                                    <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
-                                </div>
-                            </div>
-                        )}
-                    </React.Suspense>
-
-                    <React.Suspense fallback={null}>
-                        <EditTransactionModal
-                            isOpen={isEditTxModalOpen}
-                            onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
-                            editingTx={editingTx}
-                            ledgerData={ledgerData}
-                            user={user}
-                            currentProjectId={currentProjectId}
-                            updateTransaction={async (tx) => {
-                                setIsEditTxModalOpen(false);
-                                setEditingTx(null);
-                                await updateTransaction(tx);
-                            }}
-                            deleteTransaction={async (id) => {
-                                setIsEditTxModalOpen(false);
-                                setEditingTx(null);
-                                await deleteTransaction(id);
-                            }}
-                            updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
-                        />
-                    </React.Suspense>
-                </>
-            )
+                        <button
+                            onClick={() => window.location.reload()}
+                            className="px-6 py-3 bg-gray-900 text-white font-bold rounded-xl active:scale-95 transition-transform"
+                        >
+                            重新載入應用程式
+                        </button>
+                    </div>
+                );
             }
-        </div>
+            return this.props.children;
+        }
+    }
+
+    // Wrap the main return content
+    return (
+        <ErrorBoundary>
+            <div className="min-h-screen bg-white text-gray-900 font-sans pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500 relative">
+                <React.Suspense fallback={<div className="h-screen w-full flex items-center justify-center bg-white"><div className="text-4xl animate-bounce">🍰</div></div>}>
+                    {view === 'onboarding' && <OnboardingView handleGoogleLogin={handleGoogleLogin} handleAppleLogin={handleAppleLogin} loading={loading} onJoinWithCode={handleJoinWithCode} />}
+                    {view === 'decision' && <DecisionView user={user} onCreate={handleCreateLedgerFn} onJoin={handleJoinLedgerFn} />}
+                </React.Suspense>
+
+                {view !== 'onboarding' && view !== 'decision' && ledgerData && user && (
+                    <>
+                        <React.Suspense fallback={<PageLoading />}>
+                            <div className={view === 'add' ? 'block h-full' : 'hidden'}>
+                                {visitedViews.add && (
+                                    <React.Suspense fallback={<PageLoading />}>
+                                        <AddExpenseView
+                                            key={addExpenseKey}
+                                            ledgerData={ledgerData}
+                                            user={user}
+                                            currentProjectId={currentProjectId}
+                                            setView={setView}
+                                            addTransaction={addTransaction}
+                                            updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
+                                        />
+                                    </React.Suspense>
+                                )}
+                            </div>
+                            <div className={view === 'subscriptions' ? 'block h-full' : 'hidden'}>
+                                {visitedViews.subscriptions && (
+                                    <React.Suspense fallback={<PageLoading />}>
+                                        <SubscriptionsView ledgerData={ledgerData} user={user} setView={setView} handleDeleteSubscription={deleteSubscription} />
+                                    </React.Suspense>
+                                )}
+                            </div>
+
+                            {/* Dashboard is always loaded first */}
+                            <div className={view === 'dashboard' ? 'block' : 'hidden'}>
+                                <DashboardView
+                                    ledgerData={ledgerData} currentProjectId={currentProjectId} setCurrentProjectId={setCurrentProjectId}
+                                    privacyMode={privacyMode} setPrivacyMode={setPrivacyMode}
+                                    setIsEditTxModalOpen={setIsEditTxModalOpen} setEditingTx={setEditingTx}
+                                    user={user} handleSettleUp={handleSettleUpFn} handleOpenAddExpense={handleOpenAddExpense} setView={setView}
+                                />
+                            </div>
+
+                            {/* Stats: Lazy Load on Demand + Keep Alive */}
+                            <div className={view === 'stats' ? 'block' : 'hidden'}>
+                                {visitedViews.stats && (
+                                    <React.Suspense fallback={<PageLoading />}>
+                                        <StatsView
+                                            ledgerData={ledgerData} currentProjectId={currentProjectId}
+                                            statsMonth={statsMonth} setStatsMonth={setStatsMonth} privacyMode={privacyMode}
+                                            setEditingTx={setEditingTx} setIsEditTxModalOpen={setIsEditTxModalOpen}
+                                        />
+                                    </React.Suspense>
+                                )}
+                            </div>
+
+                            {/* Projects: Lazy Load on Demand + Keep Alive */}
+                            <div className={view === 'projects' ? 'block' : 'hidden'}>
+                                {visitedViews.projects && (
+                                    <React.Suspense fallback={<PageLoading />}>
+                                        <ProjectsView
+                                            ledgerData={ledgerData} user={user}
+                                            isEditingProject={isEditingProject} setIsEditingProject={setIsEditingProject}
+                                            editingProjectData={editingProjectData} setEditingProjectData={setEditingProjectData}
+                                            handleSaveProject={handleSaveProjectFn} handleDeleteProject={handleDeleteProjectFn}
+                                            handleReorderProjects={reorderProjects}
+                                            updateProjectRates={updateProjectRates}
+                                        />
+                                    </React.Suspense>
+                                )}
+                            </div>
+
+                            {/* Settings: Lazy Load on Demand + Keep Alive */}
+                            <div className={view === 'settings' ? 'block' : 'hidden'}>
+                                {visitedViews.settings && (
+                                    <React.Suspense fallback={<PageLoading />}>
+                                        <SettingsView
+                                            ledgerData={ledgerData} user={user} setView={setView}
+                                            isEditingCategory={isEditingCategory} setIsEditingCategory={setIsEditingCategory}
+                                            editingCategoryData={editingCategoryData} setEditingCategoryData={setEditingCategoryData}
+                                            handleSaveCategory={handleSaveCategoryFn} handleDeleteCategory={handleDeleteCategoryFn}
+                                            handleExport={handleExport} handleResetAccount={handleResetAccountFn} handleLogout={handleLogout}
+                                            isAvatarModalOpen={isAvatarModalOpen} setIsAvatarModalOpen={setIsAvatarModalOpen}
+                                            myNickname={myNickname} setMyNickname={setMyNickname} updateNickname={handleUpdateNickname}
+                                            tempAvatar={tempAvatar} handleAvatarSelect={setTempAvatar} confirmAvatarUpdate={confirmAvatarUpdate}
+                                            handleFixIdentity={handleFixIdentityFn} ledgerCode={ledgerCode} updateLedgerCurrency={handleUpdateLedgerCurrency}
+                                            currentProjectId={currentProjectId} handleReorderCategories={reorderCategories}
+                                            updateUserSetting={updateUserSetting}
+                                        />
+                                    </React.Suspense>
+                                )}
+                            </div>
+
+                            {['dashboard', 'stats', 'projects', 'settings'].includes(view) && (
+                                <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
+                                    <div className="flex justify-between items-center max-w-md mx-auto">
+                                        <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
+                                        <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
+                                        <div className="relative -top-6">
+                                            <button onClick={() => handleOpenAddExpense()} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>
+                                        </div>
+                                        <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
+                                        <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
+                                    </div>
+                                </div>
+                            )}
+                        </React.Suspense>
+
+                        <React.Suspense fallback={null}>
+                            <EditTransactionModal
+                                isOpen={isEditTxModalOpen}
+                                onClose={() => { setIsEditTxModalOpen(false); setEditingTx(null); }}
+                                editingTx={editingTx}
+                                ledgerData={ledgerData}
+                                user={user}
+                                currentProjectId={currentProjectId}
+                                updateTransaction={async (tx) => {
+                                    setIsEditTxModalOpen(false);
+                                    setEditingTx(null);
+                                    await updateTransaction(tx);
+                                }}
+                                deleteTransaction={async (id) => {
+                                    setIsEditTxModalOpen(false);
+                                    setEditingTx(null);
+                                    await deleteTransaction(id);
+                                }}
+                                updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
+                            />
+                        </React.Suspense>
+                    </>
+                )
+                }
+            </div>
+        </ErrorBoundary>
     );
 }

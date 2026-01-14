@@ -219,7 +219,12 @@ export default function SettingsView({
                     {/* 2. Ledger Code */}
                     <div className="border-t border-gray-50 p-4 active:bg-gray-50 transition-colors flex justify-between items-center group">
                         <div onClick={handleCopyCode} className="cursor-pointer flex-1">
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">帳本代碼</p>
+                            <div className="flex items-center gap-2 mb-1">
+                                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">帳本代碼</p>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${Object.keys(ledgerData.users || {}).length >= 2 ? 'bg-rose-50 text-rose-500 border-rose-100' : 'bg-green-50 text-green-600 border-green-100'}`}>
+                                    {Object.keys(ledgerData.users || {}).length >= 2 ? '已滿 2/2' : '1/2 人'}
+                                </span>
+                            </div>
                             <p className="text-base font-mono font-medium text-gray-600 tracking-widest group-hover:text-rose-500 transition-colors">{ledgerCode}</p>
                         </div>
                         <div className="flex items-center gap-2">
