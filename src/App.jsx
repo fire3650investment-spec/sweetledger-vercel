@@ -26,6 +26,7 @@ const DecisionView = React.lazy(() => import('./components/DecisionView'));
 // [Optimization] Modal is heavy but not critical for first paint. Lazy load it.
 const EditTransactionModal = React.lazy(() => import('./components/EditTransactionModal'));
 const SubscriptionsView = React.lazy(() => import('./components/SubscriptionsView'));
+const PrivacyView = React.lazy(() => import('./components/PrivacyView'));
 
 // Loading Component
 const PageLoading = () => (
@@ -480,6 +481,12 @@ export default function SweetLedger() {
                                         />
                                     </React.Suspense>
                                 )}
+                            </div>
+
+                            <div className={view === 'privacy' ? 'block h-full' : 'hidden'}>
+                                <React.Suspense fallback={<PageLoading />}>
+                                    <PrivacyView onBack={() => setView('settings')} />
+                                </React.Suspense>
                             </div>
 
                             {['dashboard', 'stats', 'projects', 'settings'].includes(view) && (

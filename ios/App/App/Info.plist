@@ -45,6 +45,12 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>SweetLedger 需要相機權限以拍攝收據進行 AI 辨識。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SweetLedger 需要相簿權限以讀取收據照片進行記帳。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SweetLedger 需要儲存權限以保存收據截圖。</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 </dict>

@@ -1,8 +1,21 @@
 // src/components/add-expense/CustomKeypad.jsx
-import React, { memo } from 'react';
+import React, { memo, useRef } from 'react';
 import { Delete, Equal, CornerDownLeft } from 'lucide-react';
 
 const CustomKeypad = memo(function CustomKeypad({ onKeyPress, isMathPending }) {
+    // [Fix] Timestamp lock to prevent double execution (touch jitter / rapid fire)
+    const lastClickTimeRef = useRef(0);
+
+    const handleInput = (label) => {
+        const now = Date.now();
+        // Ignore clicks within 150ms (typical human tap is ~100-200ms, machine bounce is <50ms)
+        // But we want to allow fast typing, so 100ms is a safe bet for double-trigger prevention
+        if (now - lastClickTimeRef.current < 100) {
+            return;
+        }
+        lastClickTimeRef.current = now;
+        onKeyPress(label);
+    };
 
     const renderKey = (label, type = 'num', className = '') => {
         let content = label;
@@ -11,19 +24,16 @@ const CustomKeypad = memo(function CustomKeypad({ onKeyPress, isMathPending }) {
 
         // [Performance] Use dedicated event handlers to bypass 300ms delay
         const handleTouchStart = (e) => {
-            // Prevent default to stop mouse emulation and ghost clicks
-            if (e.cancelable && e.target.tagName !== 'BUTTON') e.preventDefault();
-            // Note: preventing default on button touchstart might block :active css states in some browsers,
-            // but it's crucial for speed. We can manually toggle class if needed, or rely on active:scale-95 which usually works with touch.
-            // Actually, for React, e.preventDefault() on touchStart stops onClick from firing.
+            // [Critical Fix] Always prevent default to stop mouse emulation
+            if (e.cancelable) e.preventDefault();
             e.stopPropagation();
-            onKeyPress(label);
+            handleInput(label);
         };
 
         const handleMouseDown = (e) => {
             e.preventDefault(); // Prevent focus
             e.stopPropagation();
-            onKeyPress(label);
+            handleInput(label); // Mouse also needs debounce if mixed events happen
         };
 
         return (
@@ -59,8 +69,16 @@ const CustomKeypad = memo(function CustomKeypad({ onKeyPress, isMathPending }) {
             </div>
             <div className="px-4 pb-2 flex justify-end">
                 <button
-                    onTouchStart={(e) => { e.preventDefault(); e.stopPropagation(); onKeyPress('DEL'); }}
-                    onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onKeyPress('DEL'); }}
+                    onTouchStart={(e) => {
+                        if (e.cancelable) e.preventDefault();
+                        e.stopPropagation();
+                        handleInput('DEL');
+                    }}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleInput('DEL');
+                    }}
                     className="flex items-center gap-2 text-gray-400 font-bold px-4 py-2 rounded-lg active:bg-gray-200 transition-colors touch-manipulation">
                     <Delete size={18} /> 刪除
                 </button>

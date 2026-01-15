@@ -39,7 +39,7 @@ export default defineConfig({
       }
     })
   ],
-  base: '/',
+  base: './', // [Fix] Must be relative for Capacitor/Cordova apps to prevent white screen
   build: {
     outDir: 'build',
     rollupOptions: {

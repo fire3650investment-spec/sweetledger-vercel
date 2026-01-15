@@ -340,6 +340,14 @@ export default function SettingsView({
                         <ChevronRight size={16} className="text-gray-300" />
                     </div>
 
+                    <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={() => setView('privacy')}>
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-gray-100 text-gray-600 rounded-lg"><ShieldAlert size={18} /></div>
+                            <span className="font-bold text-gray-700 text-sm">隱私權政策</span>
+                        </div>
+                        <ChevronRight size={16} className="text-gray-300" />
+                    </div>
+
                     <div className="p-4 flex justify-between items-center active:bg-gray-50 transition-colors cursor-pointer" onClick={handleLogout}>
                         <div className="flex items-center gap-3">
                             <div className="p-2 bg-gray-100 text-gray-500 rounded-lg"><LogOut size={18} /></div>

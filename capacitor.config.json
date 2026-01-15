@@ -1,5 +1,12 @@
 {
   "appId": "com.sweetledger.app",
   "appName": "SweetLedger",
-  "webDir": "build"
+  "webDir": "build",
+  "plugins": {
+    "StatusBar": {
+      "style": "DARK",
+      "overlaysWebView": true,
+      "backgroundColor": "#ffffffff"
+    }
+  }
 }
