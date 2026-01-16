@@ -221,7 +221,8 @@ export default function DashboardView({
 
     return (
         <div className="pb-24 pt-[calc(env(safe-area-inset-top)+1rem)] px-4 relative">
-            <div className="flex justify-between items-center mb-4">
+            {/* [Smooth UX] Header - 第一批進場 */}
+            <div className="flex justify-between items-center mb-4 animate-stagger stagger-1">
                 <div className="relative">
                     <select value={currentProjectId} onChange={(e) => setCurrentProjectId(e.target.value)} className={`appearance-none text-white pl-4 pr-8 py-2 rounded-full font-bold text-sm outline-none shadow-lg shadow-gray-200 transition-colors ${isPrivateProject ? 'bg-gray-800' : 'bg-gray-900'}`}>
                         {visibleProjects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
@@ -237,9 +238,9 @@ export default function DashboardView({
                 </div>
             </div>
 
-            {/* Card Switcher */}
+            {/* [Smooth UX] Card Switcher - 第二批進場 */}
             {isPrivateProject ? (
-                <div className="rounded-3xl p-6 text-white shadow-lg shadow-gray-200 mb-8 relative overflow-hidden bg-gradient-to-br from-slate-700 to-gray-900">
+                <div className="rounded-3xl p-6 text-white shadow-lg shadow-gray-200 mb-8 relative overflow-hidden bg-gradient-to-br from-slate-700 to-gray-900 animate-stagger stagger-2">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10"></div>
                     <p className="text-white/60 mb-1 font-bold text-xs flex items-center gap-2 uppercase tracking-wider"><Wallet size={12} /> 個人支出概況</p>
                     <div className="flex justify-between items-end mb-4">
@@ -260,7 +261,7 @@ export default function DashboardView({
                     </div>
                 </div>
             ) : (
-                <div className={`rounded-3xl p-6 text-white shadow-lg mb-8 relative overflow-hidden transition-colors ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-200' : 'bg-gradient-to-br from-rose-500 to-pink-600 shadow-rose-200'}`}>
+                <div className={`rounded-3xl p-6 text-white shadow-lg mb-8 relative overflow-hidden transition-colors animate-stagger stagger-2 ${settlement >= 0 ? 'bg-gradient-to-br from-emerald-500 to-teal-600 shadow-emerald-200' : 'bg-gradient-to-br from-rose-500 to-pink-600 shadow-rose-200'}`}>
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
                     <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14} /> 總結算狀態 ({currentProjectName})</p>
                     <div className="flex justify-between items-end mb-2">
@@ -289,8 +290,9 @@ export default function DashboardView({
                 </div>
             )}
 
-            <div className="space-y-6">
-                {Object.entries(groupedTransactions).map(([date, txs]) => (
+            {/* [Smooth UX] 交易列表 - 第三批進場 */}
+            <div className="space-y-6 animate-stagger stagger-3">
+                {Object.entries(groupedTransactions).map(([date, txs], groupIdx) => (
                     <div key={date}>
                         <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 ml-1">{date}</h3>
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-50 overflow-hidden">
@@ -305,7 +307,12 @@ export default function DashboardView({
                                 const currencyInfo = CURRENCY_OPTIONS.find(c => c.code === txCurrency);
 
                                 return (
-                                    <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors ${idx !== txs.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                                    <div
+                                        key={tx.id}
+                                        onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }}
+                                        className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors animate-list-item ${idx !== txs.length - 1 ? 'border-b border-gray-50' : ''}`}
+                                        style={{ animationDelay: `${(groupIdx * 50) + (idx * 30)}ms` }}
+                                    >
                                         <div className="flex items-center gap-3 flex-1 min-w-0">
                                             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${style.containerClass}`} style={style.containerStyle}>
                                                 <CatIcon size={16} className={style.iconClass} style={style.iconStyle} />

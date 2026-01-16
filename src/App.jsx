@@ -17,6 +17,7 @@ import { DEFAULT_CATEGORIES, COLORS } from './utils/constants';
 // Components - Lazy Load for Performance
 // [Optimization] Dashboard is LCP, eager load it!
 import DashboardView from './components/DashboardView';
+import DashboardSkeleton from './components/DashboardSkeleton'; // [Smooth UX] 骨架屏
 const AddExpenseView = React.lazy(() => import('./components/AddExpenseView'));
 const StatsView = React.lazy(() => import('./components/StatsView'));
 const ProjectsView = React.lazy(() => import('./components/ProjectsView'));
@@ -357,11 +358,22 @@ export default function SweetLedger() {
     // Broken State Detection
     const isBrokenState = user && ledgerCode && !ledgerData && !isLedgerInitializing;
 
-    if (shouldShowLoading || isWaitingForFirstData || (loading && !ledgerData)) {
+    // [Smooth UX] 根據狀態決定載入畫面
+    // - 已知要載入 Dashboard：顯示骨架屏
+    // - 初始 auth check：顯示簡單 Logo
+    if (shouldShowLoading) {
         return (
-            <div className="min-h-screen flex flex-col items-center justify-center bg-white text-gray-900 z-[200] relative">
-                <div style={{ fontSize: '4rem', animation: 'sweet-bounce 1s infinite' }}>🍰</div>
-                <p style={{ marginTop: '1rem', color: '#db2777', fontWeight: 'bold', fontSize: '0.875rem', animation: 'sweet-fade 1.5s infinite alternate' }}>{loading ? '正在同步資料...' : 'SweetLedger Loading...'}</p>
+            <div className="min-h-screen flex flex-col items-center justify-center bg-white text-gray-900 z-[200] relative animate-gentle-fade">
+                <div style={{ fontSize: '3rem' }}>🍰</div>
+                <p className="mt-4 text-gray-400 text-sm font-medium">SweetLedger</p>
+            </div>
+        );
+    }
+
+    if (isWaitingForFirstData || (loading && !ledgerData)) {
+        return (
+            <div className="min-h-screen bg-white">
+                <DashboardSkeleton />
             </div>
         );
     }
