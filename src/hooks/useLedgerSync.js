@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { doc, onSnapshot, updateDoc, deleteField, collection } from 'firebase/firestore';
 import { db, appId } from '../utils/firebase';
 import { generateId, getLocalISODate, safeLocalStorage } from '../utils/helpers';
@@ -41,18 +41,44 @@ export const useLedgerSync = (user) => {
     });
 
     const [isLedgerInitializing, setIsLedgerInitializing] = useState(() => {
-        // If we have cached data, we are NOT initializing (UI can render)
-        // We still sync in background, but don't block UI.
         const hasCache = safeLocalStorage.getItem(`sweet_ledger_data_${ledgerCode}`);
         return !hasCache;
     });
 
-    // 2. LocalStorage Sync
+    // [Fix 1] Track previous ledgerCode to detect switching vs disconnecting
+    const prevLedgerCodeRef = useRef(ledgerCode);
+
+    // 2. LocalStorage Sync + Cache Pre-load on Switch
     useEffect(() => {
         if (ledgerCode) {
             safeLocalStorage.setItem('sweet_ledger_code', ledgerCode);
+
+            // [Fix 1] When switching ledgers (not first load), pre-load cache for new ledger
+            if (prevLedgerCodeRef.current && prevLedgerCodeRef.current !== ledgerCode) {
+                // Switching ledgers - load cache for new one immediately to prevent null flash
+                try {
+                    const cachedDoc = safeLocalStorage.getItem(`sweet_ledger_data_${ledgerCode}`);
+                    const cachedTxs = safeLocalStorage.getItem(`sweet_ledger_txs_${ledgerCode}`);
+                    const cachedProjs = safeLocalStorage.getItem(`sweet_ledger_projects_${ledgerCode}`);
+                    const cachedSubs = safeLocalStorage.getItem(`sweet_ledger_subscriptions_${ledgerCode}`);
+
+                    if (cachedDoc) setLedgerDocData(JSON.parse(cachedDoc));
+                    if (cachedTxs) setTransactions(JSON.parse(cachedTxs));
+                    if (cachedProjs) setProjects(JSON.parse(cachedProjs));
+                    if (cachedSubs) setSubscriptions(JSON.parse(cachedSubs));
+
+                    // If we have cached doc, no need to show initializing
+                    if (cachedDoc) setIsLedgerInitializing(false);
+                    else setIsLedgerInitializing(true);
+                } catch (e) {
+                    setIsLedgerInitializing(true);
+                }
+            }
+            prevLedgerCodeRef.current = ledgerCode;
         } else {
+            // Disconnecting - clear everything
             safeLocalStorage.removeItem('sweet_ledger_code');
+            prevLedgerCodeRef.current = '';
         }
     }, [ledgerCode]);
 

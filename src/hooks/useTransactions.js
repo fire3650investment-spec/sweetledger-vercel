@@ -113,13 +113,29 @@ export const useTransactions = (ledgerCode, user, ledgerDocData) => {
         await deleteDoc(txRef);
     }, [ledgerCode]);
 
-    const settleUp = useCallback(async (amount, payerId, payeeName, projectId) => {
+    const settleUp = useCallback(async (amount, payerId, payeeName, projectId, paymentDate, customNote) => {
         if (!ledgerCode || !db) return;
         const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
         const txId = generateId();
         const txRef = doc(collection(ledgerRef, 'transactions'), txId);
 
         const settlementCategory = { id: 'settlement', name: '還款結清', icon: 'settlement', color: 'bg-emerald-100 text-emerald-600', hex: '#059669' };
+
+        // [Date Logic] Use custom payment date if provided, otherwise now. Ensure ISO format.
+        // If paymentDate is just '2025-01-01', append time to make it valid ISO if needed, or just use as is if logic supports YYYY-MM-DD
+        // Our helpers usually prefer ISO. Let's make sure it's an ISO string.
+        let outputDate = new Date().toISOString();
+        if (paymentDate) {
+            const d = new Date(paymentDate);
+            if (!isNaN(d.getTime())) {
+                // Keep time if provided, or set to noon to avoid timezone shifts if only date
+                // Dashboard uses getLocalISODate which returns 'YYYY-MM-DD'.
+                // We should append current time to keep it roughly correct order-wise
+                const now = new Date();
+                d.setHours(now.getHours(), now.getMinutes(), now.getSeconds());
+                outputDate = d.toISOString();
+            }
+        }
 
         await setDoc(txRef, {
             id: txId,
@@ -128,9 +144,9 @@ export const useTransactions = (ledgerCode, user, ledgerDocData) => {
             category: settlementCategory,
             payer: payerId,
             splitType: 'settlement',
-            note: `還款給 ${payeeName}`,
+            note: customNote || `還款給 ${payeeName}`,
             projectId: projectId,
-            date: new Date().toISOString(),
+            date: outputDate,
             isSettlement: true
         });
     }, [ledgerCode]);

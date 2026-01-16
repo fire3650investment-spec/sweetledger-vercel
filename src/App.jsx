@@ -50,7 +50,6 @@ export default function SweetLedger() {
 
     // --- UI State (Only Navigation & Global Settings) ---
     const [view, setView] = useState(() => safeLocalStorage.getItem('sweet_ledger_code') ? 'dashboard' : 'onboarding');
-    const [addExpenseKey, setAddExpenseKey] = useState(0);
     const [privacyMode, setPrivacyMode] = useState(false);
     const [loading, setLoading] = useState(false);
     const [currentProjectId, setCurrentProjectId] = useState(() => safeLocalStorage.getItem('sweet_last_project_id') || 'daily');
@@ -179,8 +178,8 @@ export default function SweetLedger() {
         }
     };
 
-    const handleOpenAddExpense = (mode) => {
-        setAddExpenseKey(prev => prev + 1);
+    // [Fix 4] Simplified - no longer forces remount
+    const handleOpenAddExpense = () => {
         setView('add');
     };
 
@@ -400,26 +399,22 @@ export default function SweetLedger() {
                 {view !== 'onboarding' && view !== 'decision' && ledgerData && user && (
                     <>
                         <React.Suspense fallback={<PageLoading />}>
+                            {/* [Fix 2+4] Removed nested Suspense and key prop */}
                             <div className={view === 'add' ? 'block h-full' : 'hidden'}>
                                 {visitedViews.add && (
-                                    <React.Suspense fallback={<PageLoading />}>
-                                        <AddExpenseView
-                                            key={addExpenseKey}
-                                            ledgerData={ledgerData}
-                                            user={user}
-                                            currentProjectId={currentProjectId}
-                                            setView={setView}
-                                            addTransaction={addTransaction}
-                                            updateProjectRates={updateProjectRates} // [Batch 2] 串接匯率更新
-                                        />
-                                    </React.Suspense>
+                                    <AddExpenseView
+                                        ledgerData={ledgerData}
+                                        user={user}
+                                        currentProjectId={currentProjectId}
+                                        setView={setView}
+                                        addTransaction={addTransaction}
+                                        updateProjectRates={updateProjectRates}
+                                    />
                                 )}
                             </div>
                             <div className={view === 'subscriptions' ? 'block h-full' : 'hidden'}>
                                 {visitedViews.subscriptions && (
-                                    <React.Suspense fallback={<PageLoading />}>
-                                        <SubscriptionsView ledgerData={ledgerData} user={user} setView={setView} handleDeleteSubscription={deleteSubscription} />
-                                    </React.Suspense>
+                                    <SubscriptionsView ledgerData={ledgerData} user={user} setView={setView} handleDeleteSubscription={deleteSubscription} />
                                 )}
                             </div>
 
@@ -436,57 +431,49 @@ export default function SweetLedger() {
                             {/* Stats: Lazy Load on Demand + Keep Alive */}
                             <div className={view === 'stats' ? 'block' : 'hidden'}>
                                 {visitedViews.stats && (
-                                    <React.Suspense fallback={<PageLoading />}>
-                                        <StatsView
-                                            ledgerData={ledgerData} currentProjectId={currentProjectId}
-                                            statsMonth={statsMonth} setStatsMonth={setStatsMonth} privacyMode={privacyMode}
-                                            setEditingTx={setEditingTx} setIsEditTxModalOpen={setIsEditTxModalOpen}
-                                        />
-                                    </React.Suspense>
+                                    <StatsView
+                                        ledgerData={ledgerData} currentProjectId={currentProjectId}
+                                        statsMonth={statsMonth} setStatsMonth={setStatsMonth} privacyMode={privacyMode}
+                                        setEditingTx={setEditingTx} setIsEditTxModalOpen={setIsEditTxModalOpen}
+                                    />
                                 )}
                             </div>
 
                             {/* Projects: Lazy Load on Demand + Keep Alive */}
                             <div className={view === 'projects' ? 'block' : 'hidden'}>
                                 {visitedViews.projects && (
-                                    <React.Suspense fallback={<PageLoading />}>
-                                        <ProjectsView
-                                            ledgerData={ledgerData} user={user}
-                                            isEditingProject={isEditingProject} setIsEditingProject={setIsEditingProject}
-                                            editingProjectData={editingProjectData} setEditingProjectData={setEditingProjectData}
-                                            handleSaveProject={handleSaveProjectFn} handleDeleteProject={handleDeleteProjectFn}
-                                            handleReorderProjects={reorderProjects}
-                                            updateProjectRates={updateProjectRates}
-                                        />
-                                    </React.Suspense>
+                                    <ProjectsView
+                                        ledgerData={ledgerData} user={user}
+                                        isEditingProject={isEditingProject} setIsEditingProject={setIsEditingProject}
+                                        editingProjectData={editingProjectData} setEditingProjectData={setEditingProjectData}
+                                        handleSaveProject={handleSaveProjectFn} handleDeleteProject={handleDeleteProjectFn}
+                                        handleReorderProjects={reorderProjects}
+                                        updateProjectRates={updateProjectRates}
+                                    />
                                 )}
                             </div>
 
                             {/* Settings: Lazy Load on Demand + Keep Alive */}
                             <div className={view === 'settings' ? 'block' : 'hidden'}>
                                 {visitedViews.settings && (
-                                    <React.Suspense fallback={<PageLoading />}>
-                                        <SettingsView
-                                            ledgerData={ledgerData} user={user} setView={setView}
-                                            isEditingCategory={isEditingCategory} setIsEditingCategory={setIsEditingCategory}
-                                            editingCategoryData={editingCategoryData} setEditingCategoryData={setEditingCategoryData}
-                                            handleSaveCategory={handleSaveCategoryFn} handleDeleteCategory={handleDeleteCategoryFn}
-                                            handleExport={handleExport} handleResetAccount={handleResetAccountFn} handleLogout={handleLogout}
-                                            isAvatarModalOpen={isAvatarModalOpen} setIsAvatarModalOpen={setIsAvatarModalOpen}
-                                            myNickname={myNickname} setMyNickname={setMyNickname} updateNickname={handleUpdateNickname}
-                                            tempAvatar={tempAvatar} handleAvatarSelect={setTempAvatar} confirmAvatarUpdate={confirmAvatarUpdate}
-                                            handleFixIdentity={handleFixIdentityFn} ledgerCode={ledgerCode} updateLedgerCurrency={handleUpdateLedgerCurrency}
-                                            currentProjectId={currentProjectId} handleReorderCategories={reorderCategories}
-                                            updateUserSetting={updateUserSetting}
-                                        />
-                                    </React.Suspense>
+                                    <SettingsView
+                                        ledgerData={ledgerData} user={user} setView={setView}
+                                        isEditingCategory={isEditingCategory} setIsEditingCategory={setIsEditingCategory}
+                                        editingCategoryData={editingCategoryData} setEditingCategoryData={setEditingCategoryData}
+                                        handleSaveCategory={handleSaveCategoryFn} handleDeleteCategory={handleDeleteCategoryFn}
+                                        handleExport={handleExport} handleResetAccount={handleResetAccountFn} handleLogout={handleLogout}
+                                        isAvatarModalOpen={isAvatarModalOpen} setIsAvatarModalOpen={setIsAvatarModalOpen}
+                                        myNickname={myNickname} setMyNickname={setMyNickname} updateNickname={handleUpdateNickname}
+                                        tempAvatar={tempAvatar} handleAvatarSelect={setTempAvatar} confirmAvatarUpdate={confirmAvatarUpdate}
+                                        handleFixIdentity={handleFixIdentityFn} ledgerCode={ledgerCode} updateLedgerCurrency={handleUpdateLedgerCurrency}
+                                        currentProjectId={currentProjectId} handleReorderCategories={reorderCategories}
+                                        updateUserSetting={updateUserSetting}
+                                    />
                                 )}
                             </div>
 
                             <div className={view === 'privacy' ? 'block h-full' : 'hidden'}>
-                                <React.Suspense fallback={<PageLoading />}>
-                                    <PrivacyView onBack={() => setView('settings')} />
-                                </React.Suspense>
+                                <PrivacyView onBack={() => setView('settings')} />
                             </div>
 
                             {['dashboard', 'stats', 'projects', 'settings'].includes(view) && (

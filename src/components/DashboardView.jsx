@@ -2,7 +2,8 @@
 import React, { useMemo } from 'react';
 import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins, Lock, Wallet, History, CalendarClock } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
-import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS } from '../utils/constants'; // [Batch 3] 引入貨幣選項
+import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS } from '../utils/constants';
+import SettlementModal from './SettlementModal'; // [New Feature] Flexible Settlement
 
 export default function DashboardView({
     ledgerData,
@@ -13,10 +14,20 @@ export default function DashboardView({
     setIsEditTxModalOpen,
     setEditingTx,
     user,
-    handleSettleUp,
+    handleSettleUp, // Legacy or passed from parent? We will wrap it.
     handleOpenAddExpense,
     setView
 }) {
+    // Local state for settlement modal
+    const [isSettlementModalOpen, setIsSettlementModalOpen] = React.useState(false);
+
+    // Wrapper for confirmation from modal
+    const onSettlementConfirm = (data) => {
+        // data: { amount, payerId, payeeName, date, note }
+        // We need to pass projectId too.
+        handleSettleUp(data.amount, data.payerId, data.payeeName, currentProjectId, data.date, data.note);
+    };
+
     if (!ledgerData || !user) return null;
 
     const visibleProjects = (ledgerData.projects || []).filter(p => p.type !== 'private' || p.owner === user.uid);
@@ -261,9 +272,19 @@ export default function DashboardView({
                     </div>
                     <p className="text-white/70 text-xs font-medium truncate">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
                     {Math.abs(settlement) > 0 && (
-                        <button onClick={() => handleSettleUp(Math.abs(settlement), settlement < 0 ? partnerName : '你', settlement < 0 ? user.uid : otherUserId)} className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4">
-                            <Coins size={14} /> 結清債務
-                        </button>
+                        <>
+                            <button onClick={() => setIsSettlementModalOpen(true)} className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4">
+                                <Coins size={14} /> 結清債務
+                            </button>
+                            <SettlementModal
+                                isOpen={isSettlementModalOpen}
+                                onClose={() => setIsSettlementModalOpen(false)}
+                                ledgerData={ledgerData}
+                                currentUser={user}
+                                currentProjectId={currentProjectId}
+                                onConfirm={onSettlementConfirm}
+                            />
+                        </>
                     )}
                 </div>
             )}
