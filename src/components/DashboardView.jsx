@@ -81,7 +81,13 @@ export default function DashboardView({
 
         // Grouping
         const grouped = {};
-        const sorted = [...displayTxs].sort((a, b) => new Date(b.date) - new Date(a.date));
+        // [UX] 同一天內，後記的在上面
+        const sorted = [...displayTxs].sort((a, b) => {
+            const dateA = new Date(a.date).setHours(0, 0, 0, 0);
+            const dateB = new Date(b.date).setHours(0, 0, 0, 0);
+            if (dateB !== dateA) return dateB - dateA;
+            return (b.id || '').localeCompare(a.id || '');
+        });
         sorted.forEach(tx => {
             try {
                 const dateStr = new Date(tx.date).toLocaleDateString('zh-TW');

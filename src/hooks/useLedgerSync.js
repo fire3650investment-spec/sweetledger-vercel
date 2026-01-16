@@ -96,7 +96,13 @@ export const useLedgerSync = (user) => {
         const filteredLegacy = legacyTxs.filter(t => !subIds.has(t.id));
 
         const allTransactions = [...subTxs, ...filteredLegacy];
-        allTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+        // [UX] 同一天內，後記的在上面（利用 ID 包含時間戳的特性）
+        allTransactions.sort((a, b) => {
+            const dateA = new Date(a.date).setHours(0, 0, 0, 0);
+            const dateB = new Date(b.date).setHours(0, 0, 0, 0);
+            if (dateB !== dateA) return dateB - dateA; // 日期降序
+            return (b.id || '').localeCompare(a.id || ''); // 同日按 ID 降序
+        });
 
         // [Migration] Merge Projects (Array + Sub-collection)
         const legacyProjects = (Array.isArray(ledgerDocData.projects)) ? ledgerDocData.projects : [];
@@ -179,7 +185,13 @@ export const useLedgerSync = (user) => {
         const txCollectionRef = collection(ledgerRef, 'transactions');
         const unsubscribeTxs = onSnapshot(txCollectionRef, (snapshot) => {
             const txs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
-            txs.sort((a, b) => new Date(b.date) - new Date(a.date));
+            // [UX] 同一天內，後記的在上面
+            txs.sort((a, b) => {
+                const dateA = new Date(a.date).setHours(0, 0, 0, 0);
+                const dateB = new Date(b.date).setHours(0, 0, 0, 0);
+                if (dateB !== dateA) return dateB - dateA;
+                return (b.id || '').localeCompare(a.id || '');
+            });
             setTransactions(txs);
         }, (error) => {
             console.log("Tx sub-collection issue:", error.message);
