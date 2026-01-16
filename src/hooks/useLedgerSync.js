@@ -219,8 +219,13 @@ export const useLedgerSync = (user) => {
     }, [ledgerCode, ledgerDocData]);
 
     useEffect(() => {
-        if (ledgerCode && transactions.length > 0) {
-            safeLocalStorage.setItem(`sweet_ledger_txs_${ledgerCode}`, JSON.stringify(transactions));
+        if (ledgerCode) {
+            if (transactions.length > 0) {
+                safeLocalStorage.setItem(`sweet_ledger_txs_${ledgerCode}`, JSON.stringify(transactions));
+            } else {
+                // [Fix] 若交易為空，清除舊快取避免顯示過時資料
+                safeLocalStorage.removeItem(`sweet_ledger_txs_${ledgerCode}`);
+            }
         }
     }, [ledgerCode, transactions]);
 

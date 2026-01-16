@@ -99,8 +99,6 @@ export default function EditTransactionModal({
                 setCustomSplitHost('');
                 setCustomSplitGuest('');
             }
-            setCustomSplitHost('');
-            setCustomSplitGuest('');
         }
 
         setPaymentMethod(transaction.paymentMethod || ''); // [New Feature] Init

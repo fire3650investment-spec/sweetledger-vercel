@@ -35,6 +35,48 @@ const PageLoading = () => (
     </div>
 );
 
+// [Stability Fix] Error Boundary - 移至外部避免每次 re-render 時重新定義
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null, errorInfo: null };
+    }
+
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+
+    componentDidCatch(error, errorInfo) {
+        console.error("Uncaught Error:", error, errorInfo);
+        this.setState({ errorInfo });
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return (
+                <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-white text-center">
+                    <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mb-4">
+                        <AlertCircle size={32} />
+                    </div>
+                    <h2 className="text-xl font-bold text-gray-900 mb-2">發生錯誤</h2>
+                    <p className="text-gray-500 text-sm mb-4">很抱歉，程式執行時發生了意外錯誤。</p>
+                    <div className="w-full max-w-sm bg-gray-50 p-4 rounded-xl text-left overflow-auto max-h-40 mb-6 border border-gray-200">
+                        <p className="text-xs font-mono text-red-500 font-bold mb-1">{this.state.error?.toString()}</p>
+                        <p className="text-[10px] font-mono text-gray-400 whitespace-pre-wrap">{this.state.errorInfo?.componentStack}</p>
+                    </div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        className="px-6 py-3 bg-gray-900 text-white font-bold rounded-xl active:scale-95 transition-transform"
+                    >
+                        重新載入應用程式
+                    </button>
+                </div>
+            );
+        }
+        return this.props.children;
+    }
+}
+
 export default function SweetLedger() {
     const { user, loading: authLoading, loginWithGoogle, loginWithApple, logout } = useAuth();
     const {
@@ -343,48 +385,6 @@ export default function SweetLedger() {
                 </button>
             </div>
         );
-    }
-
-    // Basic Error Boundary Component
-    class ErrorBoundary extends React.Component {
-        constructor(props) {
-            super(props);
-            this.state = { hasError: false, error: null, errorInfo: null };
-        }
-
-        static getDerivedStateFromError(error) {
-            return { hasError: true, error };
-        }
-
-        componentDidCatch(error, errorInfo) {
-            console.error("Uncaught Error:", error, errorInfo);
-            this.setState({ errorInfo });
-        }
-
-        render() {
-            if (this.state.hasError) {
-                return (
-                    <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-white text-center">
-                        <div className="w-16 h-16 bg-rose-100 text-rose-500 rounded-full flex items-center justify-center mb-4">
-                            <AlertCircle size={32} />
-                        </div>
-                        <h2 className="text-xl font-bold text-gray-900 mb-2">發生錯誤</h2>
-                        <p className="text-gray-500 text-sm mb-4">很抱歉，程式執行時發生了意外錯誤。</p>
-                        <div className="w-full max-w-sm bg-gray-50 p-4 rounded-xl text-left overflow-auto max-h-40 mb-6 border border-gray-200">
-                            <p className="text-xs font-mono text-red-500 font-bold mb-1">{this.state.error?.toString()}</p>
-                            <p className="text-[10px] font-mono text-gray-400 whitespace-pre-wrap">{this.state.errorInfo?.componentStack}</p>
-                        </div>
-                        <button
-                            onClick={() => window.location.reload()}
-                            className="px-6 py-3 bg-gray-900 text-white font-bold rounded-xl active:scale-95 transition-transform"
-                        >
-                            重新載入應用程式
-                        </button>
-                    </div>
-                );
-            }
-            return this.props.children;
-        }
     }
 
     // Wrap the main return content

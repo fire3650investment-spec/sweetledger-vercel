@@ -14,10 +14,20 @@ export const useSubscriptions = (ledgerCode, ledgerDocData) => {
         if (lastCheckDate === todayStr) return;
 
         const localSessionKey = `temp_subs_lock_${ledgerCode}_${todayStr}`;
-        if (sessionStorage.getItem(localSessionKey)) return;
+
+        // [Fix] Safari Private Mode 防禦
+        try {
+            if (sessionStorage.getItem(localSessionKey)) return;
+        } catch (e) {
+            console.warn('[useSubscriptions] sessionStorage read failed:', e);
+        }
 
         const timer = setTimeout(async () => {
-            sessionStorage.setItem(localSessionKey, 'true');
+            try {
+                sessionStorage.setItem(localSessionKey, 'true');
+            } catch (e) {
+                console.warn('[useSubscriptions] sessionStorage write failed:', e);
+            }
             let updatesNeeded = false;
             let generatedTxs = [];
             let newSubscriptions = [...ledgerDocData.subscriptions];
