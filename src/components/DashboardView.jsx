@@ -298,25 +298,15 @@ export default function DashboardView({
                     </div>
                     <p className="text-white/70 text-xs font-medium truncate">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
                     {Math.abs(settlement) > 0 && (
-                        <>
-                            <button
-                                onClick={() => {
-                                    hapticLight(); // [iOS] 輕按震動
-                                    setIsSettlementModalOpen(true);
-                                }}
-                                className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4 active:scale-95"
-                            >
-                                <Coins size={14} /> 結清債務
-                            </button>
-                            <SettlementModal
-                                isOpen={isSettlementModalOpen}
-                                onClose={() => setIsSettlementModalOpen(false)}
-                                ledgerData={ledgerData}
-                                currentUser={user}
-                                currentProjectId={currentProjectId}
-                                onConfirm={onSettlementConfirm}
-                            />
-                        </>
+                        <button
+                            onClick={() => {
+                                hapticLight(); // [iOS] 輕按震動
+                                setIsSettlementModalOpen(true);
+                            }}
+                            className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4 active:scale-95"
+                        >
+                            <Coins size={14} /> 結清債務
+                        </button>
                     )}
                 </div>
             )}
@@ -411,6 +401,16 @@ export default function DashboardView({
                     </div>
                 ) : null}
             </div>
+
+            {/* [Bug Fix] SettlementModal 移到最外層，避免被父容器 overflow-hidden 裁剪 */}
+            <SettlementModal
+                isOpen={isSettlementModalOpen}
+                onClose={() => setIsSettlementModalOpen(false)}
+                ledgerData={ledgerData}
+                currentUser={user}
+                currentProjectId={currentProjectId}
+                onConfirm={onSettlementConfirm}
+            />
         </div>
     );
 }
