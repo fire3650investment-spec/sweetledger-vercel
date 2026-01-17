@@ -1,16 +1,19 @@
 // src/components/StatsView.jsx
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Coins } from 'lucide-react';
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS, MORANDI_PALETTE } from '../utils/constants';
 import MonthlyTrendChart from './stats/MonthlyTrendChart';
 import ContributionChart from './stats/ContributionChart';
 import CategoryPieChart from './stats/CategoryPieChart';
+import { useCountUp } from '../hooks/useCountUp'; // [Visual Polish]
+import { hapticLight, hapticSelection } from '../utils/haptics'; // [iOS] Haptics
 
 export default function StatsView({ ledgerData, currentProjectId, statsMonth, setStatsMonth, privacyMode, setEditingTx, setIsEditTxModalOpen, user }) {
     if (!ledgerData) return null;
 
     const handleMonthChange = (direction) => {
+        hapticSelection(); // [iOS] Picker 震動
         const date = new Date(statsMonth + '-01');
         date.setMonth(date.getMonth() + direction);
         setStatsMonth(date.toISOString().slice(0, 7));
@@ -20,13 +23,21 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
     const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
     const isPrivateProject = currentProject?.type === 'private';
 
-    const { filteredTxs, sortedHistory, rates, hostId, guestId, hostTotal, guestTotal, hostRatio, guestRatio, totalExpense, categoryStats, hostName, guestName } = useMemo(() => {
-        const rawTxs = ledgerData.transactions || [];
-        const safeUsers = ledgerData.users || {};
-        const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
-        const myTheme = ledgerData.users?.[user?.uid]?.theme || 'vibrant';
+    // [Performance Fix] 提取穩定的依賴項，避免整個 ledgerData 物件參考變化觸發重算
+    const transactions = ledgerData.transactions || [];
+    const users = ledgerData.users || {};
+    const customCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
+    const txCount = transactions.length;
+    const userCount = Object.keys(users).length;
+    const categoryCount = customCategories.length;
+    const myTheme = users[user?.uid]?.theme || 'vibrant';
+    const projectRatesJson = JSON.stringify(currentProject?.rates || {});
 
-        const allTxs = rawTxs
+    const { filteredTxs, sortedHistory, rates, hostId, guestId, hostTotal, guestTotal, hostRatio, guestRatio, totalExpense, categoryStats, hostName, guestName } = useMemo(() => {
+        const safeUsers = users;
+        const currentCategories = customCategories;
+
+        const allTxs = transactions
             .filter(t => t && t.id && t.amount !== undefined)
             .map(t => {
                 let displayCategory = t.category || { name: '未分類', icon: 'help-circle' };
@@ -133,7 +144,24 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
             totalExpense: isNaN(totalExp) ? 0 : totalExp,
             categoryStats: catStats
         };
-    }, [ledgerData, statsMonth, currentProjectId, currentProject]);
+        // [Performance Fix] 使用更穩定的依賴項，避免物件參考變化觸發不必要的重算
+    }, [transactions, users, customCategories, statsMonth, currentProjectId, projectRatesJson, txCount, userCount, categoryCount, myTheme]);
+
+    // [Visual Polish] Living Numbers for Stats
+    const animatedTotalExpense = useCountUp(totalExpense, 800);
+
+    // [Performance Fix] 追蹤是否已播放過入場動畫，避免 re-render 時閃爍
+    const [hasAnimated, setHasAnimated] = useState(false);
+    const isMountedRef = useRef(false);
+
+    useEffect(() => {
+        // 只在首次掛載時設定，之後的 re-render 不會重置
+        if (!isMountedRef.current) {
+            isMountedRef.current = true;
+            const timer = setTimeout(() => setHasAnimated(true), 400); // 動畫結束後標記
+            return () => clearTimeout(timer);
+        }
+    }, []);
 
     const getSmartTags = (tx) => {
         // [Private Mode Fix] Hide tags in private mode
@@ -164,45 +192,51 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
 
     return (
         <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4">
-            <div className="flex justify-between items-center mb-6">
+            <div className={`flex justify-between items-center mb-6 ${hasAnimated ? '' : 'animate-stagger stagger-1'}`}>
                 <h2 className="text-2xl font-bold text-gray-800">消費分析</h2>
                 <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
-                    <button onClick={() => handleMonthChange(-1)} className="p-1"><ChevronLeft size={16} /></button>
-                    <span className="text-sm font-bold w-20 text-center">{statsMonth}</span>
-                    <button onClick={() => handleMonthChange(1)} className="p-1"><ChevronRight size={16} /></button>
+                    <button onClick={() => handleMonthChange(-1)} className="p-1 active:scale-90 transition-transform"><ChevronLeft size={16} /></button>
+                    <span className="text-sm font-bold w-20 text-center font-nums">{statsMonth}</span>
+                    <button onClick={() => handleMonthChange(1)} className="p-1 active:scale-90 transition-transform"><ChevronRight size={16} /></button>
                 </div>
             </div>
 
             {/* Trend Chart (Recharts) */}
-            <MonthlyTrendChart
-                ledgerData={ledgerData}
-                currentProjectId={currentProjectId}
-                selectedMonth={statsMonth}
-                isPrivateProject={isPrivateProject}
-            />
+            <div className={hasAnimated ? '' : 'animate-stagger stagger-2'}>
+                <MonthlyTrendChart
+                    ledgerData={ledgerData}
+                    currentProjectId={currentProjectId}
+                    selectedMonth={statsMonth}
+                    isPrivateProject={isPrivateProject}
+                />
+            </div>
 
             {/* Contribution Chart (Recharts) - Hidden in Private Mode */}
             {!isPrivateProject && (
-                <ContributionChart
-                    hostName={hostName}
-                    guestName={guestName}
-                    hostTotal={hostTotal}
-                    guestTotal={guestTotal}
-                    hostRatio={hostRatio}
-                    guestRatio={guestRatio}
-                    // [Debt-based] 付得多=綠色, 付得少=玫瑰紅 (而非固定 host/guest)
-                    hostColor={hostTotal >= guestTotal ? '#10b981' : '#f43f5e'}
-                    guestColor={guestTotal >= hostTotal ? '#10b981' : '#f43f5e'}
-                />
+                <div className={hasAnimated ? '' : 'animate-stagger stagger-3'}>
+                    <ContributionChart
+                        hostName={hostName}
+                        guestName={guestName}
+                        hostTotal={hostTotal}
+                        guestTotal={guestTotal}
+                        hostRatio={hostRatio}
+                        guestRatio={guestRatio}
+                        // [Debt-based] 付得多=綠色, 付得少=玫瑰紅 (而非固定 host/guest)
+                        hostColor={hostTotal >= guestTotal ? '#10b981' : '#f43f5e'}
+                        guestColor={guestTotal >= hostTotal ? '#10b981' : '#f43f5e'}
+                    />
+                </div>
             )}
 
             {/* Category Pie Chart (Recharts) */}
-            <CategoryPieChart
-                categoryStats={categoryStats}
-                totalExpense={totalExpense}
-            />
+            <div className={hasAnimated ? '' : 'animate-stagger stagger-3'}>
+                <CategoryPieChart
+                    categoryStats={categoryStats}
+                    totalExpense={animatedTotalExpense} // Use Animated Value
+                />
+            </div>
 
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6">
+            <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 mb-6 ${hasAnimated ? '' : 'animate-stagger stagger-4'}`}>
                 <h3 className="text-gray-600 font-bold mb-4">本月交易明細 ({sortedHistory.length}筆)</h3>
 
                 {/* [Layout Fix] Group by Date Logic */}
@@ -212,7 +246,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                         if (!groups[dateStr]) groups[dateStr] = [];
                         groups[dateStr].push(tx);
                         return groups;
-                    }, {})).map(([date, txs]) => (
+                    }, {})).map(([date, txs], groupIdx) => (
                         <div key={date}>
                             <h4 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 ml-1">{date}</h4>
                             <div className="border border-gray-50 rounded-2xl overflow-hidden">
@@ -227,7 +261,16 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                                     const currencyInfo = CURRENCY_OPTIONS.find(c => c.code === txCurrency);
 
                                     return (
-                                        <div key={tx.id} onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }} className={`flex items-center justify-between p-3 active:bg-gray-50 transition-colors ${idx !== txs.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                                        <div
+                                            key={tx.id}
+                                            onClick={() => {
+                                                hapticLight(); // [iOS] List Click
+                                                setEditingTx(tx);
+                                                setIsEditTxModalOpen(true);
+                                            }}
+                                            className={`flex items-center justify-between p-3 active:bg-gray-50 active-press transition-colors animate-list-item ${idx !== txs.length - 1 ? 'border-b border-gray-50' : ''}`}
+                                            style={{ animationDelay: `${(groupIdx * 50) + (idx * 30)}ms` }}
+                                        >
                                             <div className="flex items-center gap-3 flex-1 min-w-0">
                                                 {/* Removed Date Column (32px) */}
                                                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${style.containerClass}`} style={style.containerStyle}>

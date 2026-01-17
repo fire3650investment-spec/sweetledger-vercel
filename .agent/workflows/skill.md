@@ -11,7 +11,7 @@ description: SweetLedger 開發原則與 AI 助手行為規範
 
 ## 🌐 語言規範
 
-- **所有解說、討論、Task 名稱一律使用繁體中文**
+- **所有解說、討論、Task 名稱、Artifacts (task.md 等) 一律使用繁體中文**
 - 程式碼中的註解建議以繁體中文為主
 - Git commit message 可中英混用
 

@@ -269,9 +269,9 @@ export default function ProjectsView({
 
     // --- Main List View ---
     return (
-        <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 animate-in fade-in">
+        <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4">
             {/* Header */}
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex justify-between items-center mb-6 animate-stagger stagger-1">
                 <h2 className="text-2xl font-bold text-gray-800">專案管理</h2>
                 <button
                     onClick={() => {
@@ -297,8 +297,9 @@ export default function ProjectsView({
                     return (
                         <div
                             key={p.id}
+                            style={{ animationDelay: `${(idx * 50) + 50}ms` }}
                             className={`
-                                p-4 rounded-2xl flex items-center justify-between group transition-colors
+                                p-4 rounded-2xl flex items-center justify-between group transition-colors animate-stagger
                                 ${isPrivate
                                     ? 'bg-slate-50 border-2 border-dashed border-slate-200'
                                     : 'bg-white border border-gray-100 shadow-sm'
@@ -310,7 +311,7 @@ export default function ProjectsView({
                                     w-12 h-12 rounded-2xl flex items-center justify-center transition-colors
                                     ${isPrivate
                                         ? 'bg-white text-slate-400 shadow-sm'
-                                        : 'bg-gray-50 text-gray-500 group-hover:bg-rose-50 group-hover:text-rose-500'
+                                        : 'bg-gray-50 text-gray-500'
                                     }
                                 `}>
                                     <ProjIcon size={24} />

@@ -173,7 +173,11 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
         const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
 
         newProjects.forEach((proj, index) => {
-            batch.update(doc(ledgerRef, 'projects', proj.id), { order: index });
+            // [Fix] Use set with merge: true to handle both existing sub-collection docs
+            // AND legacy projects that need to be lazily migrated to sub-collection.
+            // batch.update will fail if the doc doesn't exist yet.
+            const projRef = doc(ledgerRef, 'projects', proj.id);
+            batch.set(projRef, { ...proj, order: index }, { merge: true });
         });
 
         await batch.commit();

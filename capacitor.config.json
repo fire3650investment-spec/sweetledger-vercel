@@ -7,6 +7,19 @@
       "style": "DARK",
       "overlaysWebView": true,
       "backgroundColor": "#ffffffff"
+    },
+    "SplashScreen": {
+      "backgroundColor": "#ffffff",
+      "launchShowDuration": 1500,
+      "launchAutoHide": true,
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
     }
+  },
+  "ios": {
+    "allowsBackForwardNavigationGestures": true,
+    "contentInset": "always"
   }
 }

@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { getIconComponent, callGemini, getLocalISODate, fetchExchangeRate, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
+import { hapticLight, hapticMedium, hapticSuccess, hapticError, hapticSelection } from '../utils/haptics'; // [iOS] Haptics
 import ScanReceiptModal from './ScanReceiptModal';
 
 import CustomKeypad from './add-expense/CustomKeypad';
@@ -227,6 +228,14 @@ export default function AddExpenseView({
 
 
 
+    // [UI] Helper to format input string with commas
+    const formatDisplayAmount = (val) => {
+        if (!val) return '0';
+        const parts = val.split('.');
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        return parts.join('.');
+    };
+
     // Optimistic UI Implementation
     const handleSubmit = async () => {
         if (!localAmount || parseFloat(localAmount) <= 0) return;
@@ -239,6 +248,7 @@ export default function AddExpenseView({
             const guestAmt = parseFloat(customSplitGuest) || 0;
 
             if (Math.abs((hostAmt + guestAmt) - amountFloat) > 0.1) {
+                hapticWarning(); // [iOS] Warning
                 alert(`雙方金額總和 (${hostAmt + guestAmt}) 必須等於支出總額 (${amountFloat})！`);
                 return;
             }
@@ -248,6 +258,7 @@ export default function AddExpenseView({
         }
 
         // 1. Optimistic Update: 立即切換頁面
+        hapticSuccess(); // [iOS] Success - 立即給予成功回饋
         setView('dashboard');
 
         // 2. Background Process: 執行資料寫入，不等待
@@ -268,12 +279,13 @@ export default function AddExpenseView({
                 paymentMethod // Pass to action
             });
         } catch (e) {
+            hapticError(); // [iOS] Error
             console.error("Add Tx Error:", e);
         }
     };
 
-    const handleAmountClick = () => { setActiveOverlay('amount'); noteInputRef.current?.blur(); };
-    const handleCategoryTriggerClick = () => { setActiveOverlay('category'); noteInputRef.current?.blur(); };
+    const handleAmountClick = () => { hapticLight(); setActiveOverlay('amount'); noteInputRef.current?.blur(); };
+    const handleCategoryTriggerClick = () => { hapticLight(); setActiveOverlay('category'); noteInputRef.current?.blur(); };
     const handleNoteFocus = () => { setActiveOverlay('none'); };
 
     const handleCustomSplitChange = (field, value) => {
@@ -389,7 +401,7 @@ export default function AddExpenseView({
                     <div className="flex justify-center mb-6 overflow-x-auto no-scrollbar">
                         <button onClick={handleAmountClick} className={`text-5xl font-bold tracking-tight flex items-center transition-all px-4 mx-auto ${localAmount ? 'text-gray-900' : 'text-gray-300'} ${activeOverlay === 'amount' ? 'scale-105' : ''}`}>
                             <span className="text-2xl mr-2 text-gray-300 font-medium whitespace-nowrap">{CURRENCY_OPTIONS.find(c => c.code === currency)?.symbol || '$'}</span>
-                            <span className="whitespace-nowrap">{localAmount || '0'}</span>
+                            <span className="whitespace-nowrap">{formatDisplayAmount(localAmount)}</span>
                             {activeOverlay === 'amount' && <div className="w-[3px] h-10 bg-rose-500 animate-cursor-blink ml-1 rounded-full shrink-0"></div>}
                         </button>
                     </div>

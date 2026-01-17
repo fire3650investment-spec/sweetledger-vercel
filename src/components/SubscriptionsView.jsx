@@ -57,8 +57,8 @@ export default function SubscriptionsView({
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] pb-6 relative animate-in fade-in">
-            <div className="px-4 mb-6 flex justify-between items-center">
+        <div className="min-h-screen bg-gray-50 flex flex-col pt-[calc(env(safe-area-inset-top)+1rem)] pb-6 relative">
+            <div className="px-4 mb-6 flex justify-between items-center animate-stagger stagger-1">
                 <div className="flex items-center gap-3">
                     <button
                         onClick={onBack || (() => setView('dashboard'))}
@@ -74,7 +74,7 @@ export default function SubscriptionsView({
 
             <div className="flex-1 px-4 overflow-y-auto space-y-4">
                 {sortedSubs.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                    <div className="flex flex-col items-center justify-center py-20 text-gray-400 animate-stagger stagger-2">
                         <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                             <RefreshCw size={32} className="opacity-30" />
                         </div>
@@ -93,7 +93,11 @@ export default function SubscriptionsView({
                         const style = getCategoryStyle(category, 'display');
 
                         return (
-                            <div key={idx} className={`bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden transition-all ${isExpired ? 'ring-2 ring-rose-100' : ''}`}>
+                            <div
+                                key={idx}
+                                className={`bg-white p-5 rounded-2xl shadow-sm border border-gray-100 relative overflow-hidden transition-all animate-stagger ${isExpired ? 'ring-2 ring-rose-100' : ''}`}
+                                style={{ animationDelay: `${(idx * 50) + 50}ms` }}
+                            >
                                 <div className="flex justify-between items-start mb-3">
                                     <div className="flex items-center gap-3">
                                         {/* [Updated] Use containerClass */}
@@ -135,7 +139,7 @@ export default function SubscriptionsView({
                     })
                 )}
 
-                <div className="bg-blue-50 p-4 rounded-2xl flex gap-3 items-start mt-6 border border-blue-100">
+                <div className="bg-blue-50 p-4 rounded-2xl flex gap-3 items-start mt-6 border border-blue-100 animate-stagger" style={{ animationDelay: sortedSubs.length > 0 ? `${(sortedSubs.length * 50) + 100}ms` : '200ms' }}>
                     <AlertCircle size={20} className="text-blue-500 flex-shrink-0 mt-0.5" />
                     <div className="text-xs text-blue-700 leading-relaxed">
                         <p className="font-bold mb-1">關於自動記帳</p>

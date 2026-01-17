@@ -4,6 +4,8 @@ import { ChevronDown, Eye, EyeOff, ArrowRightLeft, Coins, Lock, Wallet, History,
 import { formatCurrency, getIconComponent, calculateTwdValue, getCategoryStyle } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS } from '../utils/constants';
 import SettlementModal from './SettlementModal'; // [New Feature] Flexible Settlement
+import { hapticLight, hapticMedium, hapticSelection } from '../utils/haptics'; // [iOS] Haptics
+import { useCountUp } from '../hooks/useCountUp'; // [Visual Polish]
 
 export default function DashboardView({
     ledgerData,
@@ -173,6 +175,10 @@ export default function DashboardView({
 
     }, [allTxs, safeUsers, currentProjectId, user, currentProjectObj, isPrivateProject]);
 
+    // [Visual Polish] Living Numbers
+    const animatedTotal = useCountUp(monthlyTotal, 800);
+    const animatedSettlement = useCountUp(Math.abs(settlement), 800);
+
     // [Feature] Smart Tags Logic
     const getSmartTags = (tx) => {
         // Private Mode: Hide ALL tags for visual noise reduction
@@ -230,7 +236,14 @@ export default function DashboardView({
             {/* [Smooth UX] Header - 第一批進場 */}
             <div className="flex justify-between items-center mb-4 animate-stagger stagger-1">
                 <div className="relative">
-                    <select value={currentProjectId} onChange={(e) => setCurrentProjectId(e.target.value)} className={`appearance-none text-white pl-4 pr-8 py-2 rounded-full font-bold text-sm outline-none shadow-lg shadow-gray-200 transition-colors ${isPrivateProject ? 'bg-gray-800' : 'bg-gray-900'}`}>
+                    <select
+                        value={currentProjectId}
+                        onChange={(e) => {
+                            hapticSelection(); // [iOS] Picker 震動
+                            setCurrentProjectId(e.target.value);
+                        }}
+                        className={`appearance-none text-white pl-4 pr-8 py-2 rounded-full font-bold text-sm outline-none shadow-lg shadow-gray-200 transition-colors ${isPrivateProject ? 'bg-gray-800' : 'bg-gray-900'}`}
+                    >
                         {visibleProjects.map(p => (<option key={p.id} value={p.id}>{p.name}</option>))}
                     </select>
                     <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-white"><ChevronDown size={14} /></div>
@@ -238,7 +251,13 @@ export default function DashboardView({
 
                 <div className="flex gap-2">
                     {isPrivateProject && <div className="p-2 bg-gray-100 rounded-full text-gray-400"><Lock size={16} /></div>}
-                    <button onClick={() => setPrivacyMode(!privacyMode)} className="p-2 bg-white rounded-full shadow-sm border border-gray-100 active:scale-95 transition-transform">
+                    <button
+                        onClick={() => {
+                            hapticMedium(); // [iOS] Toggle 震動
+                            setPrivacyMode(!privacyMode);
+                        }}
+                        className="p-2 bg-white rounded-full shadow-sm border border-gray-100 active:scale-95 transition-transform"
+                    >
                         {privacyMode ? <EyeOff size={16} className="text-gray-400" /> : <Eye size={16} className="text-rose-500" />}
                     </button>
                 </div>
@@ -250,8 +269,8 @@ export default function DashboardView({
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full -mr-10 -mt-10"></div>
                     <p className="text-white/60 mb-1 font-bold text-xs flex items-center gap-2 uppercase tracking-wider"><Wallet size={12} /> 個人支出概況</p>
                     <div className="flex justify-between items-end mb-4">
-                        <h1 className="text-4xl font-bold tracking-tight truncate" title={formatCurrency(monthlyTotal, 'TWD', privacyMode)}>
-                            {formatCurrency(monthlyTotal, 'TWD', privacyMode)}
+                        <h1 className="text-4xl font-bold tracking-tight truncate font-nums" title={formatCurrency(monthlyTotal, 'TWD', privacyMode)}>
+                            {privacyMode ? '****' : `$${animatedTotal.toLocaleString()}`}
                         </h1>
                     </div>
                     <div className="flex gap-4 border-t border-white/10 pt-3">
@@ -271,16 +290,22 @@ export default function DashboardView({
                     <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-10 rounded-full -mr-10 -mt-10"></div>
                     <p className="text-white/80 mb-1 font-medium text-sm flex items-center gap-2"><ArrowRightLeft size={14} /> 總結算狀態 ({currentProjectName})</p>
                     <div className="flex justify-between items-end mb-2">
-                        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2 flex-wrap">
+                        <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2 flex-wrap font-nums">
                             {settlement >= 0 ?
-                                <><span>{partnerName}</span> <span>欠你</span> <span className="truncate">{formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}</span></> :
-                                <><span>你欠</span> <span>{partnerName}</span> <span className="truncate">{formatCurrency(Math.abs(settlement), 'TWD', privacyMode)}</span></>}
+                                <><span>{partnerName}</span> <span>欠你</span> <span className="truncate">{privacyMode ? '****' : `$${animatedSettlement.toLocaleString()}`}</span></> :
+                                <><span>你欠</span> <span>{partnerName}</span> <span className="truncate">{privacyMode ? '****' : `$${animatedSettlement.toLocaleString()}`}</span></>}
                         </h1>
                     </div>
                     <p className="text-white/70 text-xs font-medium truncate">本月總支出: {formatCurrency(monthlyTotal, 'TWD', privacyMode)}</p>
                     {Math.abs(settlement) > 0 && (
                         <>
-                            <button onClick={() => setIsSettlementModalOpen(true)} className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4">
+                            <button
+                                onClick={() => {
+                                    hapticLight(); // [iOS] 輕按震動
+                                    setIsSettlementModalOpen(true);
+                                }}
+                                className="bg-white/20 hover:bg-white/30 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-2 backdrop-blur-sm transition-colors mt-4 active:scale-95"
+                            >
                                 <Coins size={14} /> 結清債務
                             </button>
                             <SettlementModal
@@ -315,8 +340,12 @@ export default function DashboardView({
                                 return (
                                     <div
                                         key={tx.id}
-                                        onClick={() => { setEditingTx(tx); setIsEditTxModalOpen(true); }}
-                                        className={`flex items-center justify-between p-4 active:bg-gray-50 transition-colors animate-list-item ${idx !== txs.length - 1 ? 'border-b border-gray-50' : ''}`}
+                                        onClick={() => {
+                                            hapticLight(); // [iOS] 列表點擊震動
+                                            setEditingTx(tx);
+                                            setIsEditTxModalOpen(true);
+                                        }}
+                                        className={`flex items-center justify-between p-4 active:bg-gray-50 active-press transition-colors animate-list-item ${idx !== txs.length - 1 ? 'border-b border-gray-50' : ''}`}
                                         style={{ animationDelay: `${(groupIdx * 50) + (idx * 30)}ms` }}
                                     >
                                         <div className="flex items-center gap-3 flex-1 min-w-0">

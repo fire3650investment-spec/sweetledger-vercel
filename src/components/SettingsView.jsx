@@ -183,17 +183,17 @@ export default function SettingsView({
     };
 
     return (
-        <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4 animate-in fade-in duration-500">
+        <div className="pb-24 pt-[calc(env(safe-area-inset-top)+2rem)] px-4">
 
             {/* Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-6 animate-stagger stagger-1">
                 <h2 className="text-2xl font-bold text-gray-800">設定</h2>
             </div>
 
             <div className="space-y-6">
 
                 {/* --- Island A: Identity --- */}
-                <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-stagger stagger-1">
                     {/* 1. Personal Profile */}
                     <div className="p-4 flex items-center gap-4">
                         <button onClick={() => setIsAvatarModalOpen(true)} className="relative group shrink-0">
@@ -247,7 +247,7 @@ export default function SettingsView({
                 </section>
 
                 {/* --- Island B: Categories --- */}
-                <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-stagger stagger-2">
                     <CategoryManager
                         ledgerData={ledgerData}
                         isEditingCategory={isEditingCategory}
@@ -261,7 +261,7 @@ export default function SettingsView({
                 </section>
 
                 {/* --- Island C: Preferences & System Actions --- */}
-                <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50">
+                <section className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden divide-y divide-gray-50 animate-stagger stagger-3">
 
                     {/* Theme Switcher Entry Point */}
                     <div
@@ -357,7 +357,7 @@ export default function SettingsView({
                 </section>
 
                 {/* --- Island D: Danger Zone --- */}
-                <section className="space-y-3 pt-2">
+                <section className="space-y-3 pt-2 animate-stagger stagger-4">
                     <h3 className="text-xs font-bold text-rose-500 ml-2 flex items-center gap-1">
                         <AlertTriangle size={12} /> 危險區域
                     </h3>

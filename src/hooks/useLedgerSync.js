@@ -117,7 +117,7 @@ export const useLedgerSync = (user) => {
         // Since we combined them, array order is mixed.
         // Best effort: separate those with 'order' and those without?
         // Or just sort by order if available.
-        allProjects.sort((a, b) => (a.order || 999) - (b.order || 999));
+        allProjects.sort((a, b) => (a.order ?? 999) - (b.order ?? 999));
 
         // [Migration] Merge Subscriptions (Array + Sub-collection)
         const legacySubs = (Array.isArray(ledgerDocData.subscriptions)) ? ledgerDocData.subscriptions : [];

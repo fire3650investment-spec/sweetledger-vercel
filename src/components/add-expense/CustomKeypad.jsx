@@ -1,12 +1,14 @@
 // src/components/add-expense/CustomKeypad.jsx
 import React, { memo, useRef } from 'react';
 import { Delete, Equal, CornerDownLeft } from 'lucide-react';
+import { hapticLight } from '../../utils/haptics'; // [iOS] Haptics
 
 const CustomKeypad = memo(function CustomKeypad({ onKeyPress, isMathPending }) {
     // [Fix] Flag to track if touch event fired, to prevent onClick from double-firing
     const touchFiredRef = useRef(false);
 
     const handleInput = (label) => {
+        hapticLight(); // [iOS] Keypad Vibration
         onKeyPress(label);
     };
 

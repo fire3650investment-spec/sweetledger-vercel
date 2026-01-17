@@ -11,13 +11,16 @@ import { useLedger } from './contexts/LedgerContext';
 // Utils
 import { formatCurrency, callGemini, safeLocalStorage } from './utils/helpers';
 import { DEFAULT_CATEGORIES, COLORS } from './utils/constants';
+import { hapticLight, hapticMedium } from './utils/haptics'; // [iOS] Haptics
 
 // Components
+import { useSimpleRouter } from './hooks/useSimpleRouter'; // [iOS] Native Back Gesture support
 // Components - Lazy Load for Performance
 // Components - Lazy Load for Performance
 // [Optimization] Dashboard is LCP, eager load it!
 import DashboardView from './components/DashboardView';
 import DashboardSkeleton from './components/DashboardSkeleton'; // [Smooth UX] 骨架屏
+import StatsSkeleton from './components/StatsSkeleton'; // [Smooth UX] 分析頁骨架屏
 const AddExpenseView = React.lazy(() => import('./components/AddExpenseView'));
 const StatsView = React.lazy(() => import('./components/StatsView'));
 const ProjectsView = React.lazy(() => import('./components/ProjectsView'));
@@ -35,6 +38,9 @@ const PageLoading = () => (
         <div className="w-8 h-8 border-4 border-rose-100 border-t-rose-500 rounded-full animate-spin"></div>
     </div>
 );
+
+// Hooks
+import usePushNotifications from './hooks/usePushNotifications'; // [iOS] Push Notifications
 
 // [Stability Fix] Error Boundary - 移至外部避免每次 re-render 時重新定義
 class ErrorBoundary extends React.Component {
@@ -91,8 +97,13 @@ export default function SweetLedger() {
         updateUserSetting, resetAccount, fixIdentity
     } = useLedger();
 
+    // [iOS] Push Notifications Integration
+    // 當用戶登入並進入 App 後，自動請求權限並註冊 FCM Token，寫入 Firestore
+    usePushNotifications(user);
+
     // --- UI State (Only Navigation & Global Settings) ---
-    const [view, setView] = useState(() => safeLocalStorage.getItem('sweet_ledger_code') ? 'dashboard' : 'onboarding');
+    // [iOS] Use Simple Router for History API & Gesture Support
+    const [view, setView] = useSimpleRouter(safeLocalStorage.getItem('sweet_ledger_code') ? 'dashboard' : 'onboarding');
     const [privacyMode, setPrivacyMode] = useState(false);
     const [loading, setLoading] = useState(false);
     const [currentProjectId, setCurrentProjectId] = useState(() => safeLocalStorage.getItem('sweet_last_project_id') || 'daily');
@@ -443,11 +454,14 @@ export default function SweetLedger() {
                             {/* Stats: Lazy Load on Demand + Keep Alive */}
                             <div className={view === 'stats' ? 'block' : 'hidden'}>
                                 {visitedViews.stats && (
-                                    <StatsView
-                                        ledgerData={ledgerData} currentProjectId={currentProjectId}
-                                        statsMonth={statsMonth} setStatsMonth={setStatsMonth} privacyMode={privacyMode}
-                                        setEditingTx={setEditingTx} setIsEditTxModalOpen={setIsEditTxModalOpen}
-                                    />
+                                    <React.Suspense fallback={<StatsSkeleton />}>
+                                        <StatsView
+                                            ledgerData={ledgerData} currentProjectId={currentProjectId}
+                                            statsMonth={statsMonth} setStatsMonth={setStatsMonth} privacyMode={privacyMode}
+                                            setEditingTx={setEditingTx} setIsEditTxModalOpen={setIsEditTxModalOpen}
+                                            user={user}
+                                        />
+                                    </React.Suspense>
                                 )}
                             </div>
 
@@ -491,13 +505,13 @@ export default function SweetLedger() {
                             {['dashboard', 'stats', 'projects', 'settings'].includes(view) && (
                                 <div className="fixed bottom-0 left-0 w-full bg-white/90 backdrop-blur-md border-t border-gray-100 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] pt-2 px-6 z-[50]">
                                     <div className="flex justify-between items-center max-w-md mx-auto">
-                                        <button onClick={() => setView('dashboard')} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
-                                        <button onClick={() => setView('stats')} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
+                                        <button onClick={() => { hapticLight(); setView('dashboard'); }} className={`flex flex-col items-center gap-1 p-2 ${view === 'dashboard' ? 'text-rose-500' : 'text-gray-400'}`}><Home size={24} strokeWidth={view === 'dashboard' ? 2.5 : 2} /><span className="text-[10px] font-medium">首頁</span></button>
+                                        <button onClick={() => { hapticLight(); setView('stats'); }} className={`flex flex-col items-center gap-1 p-2 ${view === 'stats' ? 'text-rose-500' : 'text-gray-400'}`}><PieChart size={24} strokeWidth={view === 'stats' ? 2.5 : 2} /><span className="text-[10px] font-medium">分析</span></button>
                                         <div className="relative -top-6">
-                                            <button onClick={() => handleOpenAddExpense()} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>
+                                            <button onClick={() => { hapticMedium(); handleOpenAddExpense(); }} className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white shadow-xl shadow-gray-300 active:scale-90 transition-transform"><Plus size={32} /></button>
                                         </div>
-                                        <button onClick={() => setView('projects')} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
-                                        <button onClick={() => setView('settings')} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
+                                        <button onClick={() => { hapticLight(); setView('projects'); }} className={`flex flex-col items-center gap-1 p-2 ${view === 'projects' ? 'text-rose-500' : 'text-gray-400'}`}><Briefcase size={24} strokeWidth={view === 'projects' ? 2.5 : 2} /><span className="text-[10px] font-medium">專案</span></button>
+                                        <button onClick={() => { hapticLight(); setView('settings'); }} className={`flex flex-col items-center gap-1 p-2 ${view === 'settings' ? 'text-rose-500' : 'text-gray-400'}`}><Settings size={24} strokeWidth={view === 'settings' ? 2.5 : 2} /><span className="text-[10px] font-medium">設定</span></button>
                                     </div>
                                 </div>
                             )}

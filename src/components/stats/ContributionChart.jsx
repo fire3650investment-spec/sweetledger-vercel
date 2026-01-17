@@ -2,8 +2,13 @@
 import React, { memo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { formatCurrency } from '../../utils/helpers';
+import { useCountUp } from '../../hooks/useCountUp'; // [Visual Polish]
 
 const ContributionChart = memo(({ hostName, guestName, hostTotal, guestTotal, hostRatio, guestRatio, hostColor = '#3b82f6', guestColor = '#ec4899' }) => {
+    // [Visual Polish] Living Numbers
+    const animatedHostTotal = useCountUp(hostTotal, 800);
+    const animatedGuestTotal = useCountUp(guestTotal, 800);
+
     // Transform data for Recharts Stacked Bar
     // We need a single object with keys for each portion
     const data = [
@@ -45,7 +50,7 @@ const ContributionChart = memo(({ hostName, guestName, hostTotal, guestTotal, ho
                     <span className="text-gray-600">{hostName}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <span className="font-bold text-gray-800">{formatCurrency(hostTotal, 'TWD')}</span>
+                    <span className="font-bold text-gray-800 font-nums">{formatCurrency(animatedHostTotal, 'TWD')}</span>
                     <span className="text-xs text-gray-400">({Math.round(hostRatio)}%)</span>
                 </div>
             </div>
@@ -55,7 +60,7 @@ const ContributionChart = memo(({ hostName, guestName, hostTotal, guestTotal, ho
                     <span className="text-gray-600">{guestName}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <span className="font-bold text-gray-800">{formatCurrency(guestTotal, 'TWD')}</span>
+                    <span className="font-bold text-gray-800 font-nums">{formatCurrency(animatedGuestTotal, 'TWD')}</span>
                     <span className="text-xs text-gray-400">({Math.round(guestRatio)}%)</span>
                 </div>
             </div>

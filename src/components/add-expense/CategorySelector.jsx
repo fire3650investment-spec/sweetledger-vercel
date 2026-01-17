@@ -2,6 +2,7 @@
 import React, { memo } from 'react';
 import { Plus } from 'lucide-react';
 import { getIconComponent, getCategoryStyle } from '../../utils/helpers';
+import { hapticLight } from '../../utils/haptics'; // [iOS] Haptics
 
 const CategorySelector = memo(function CategorySelector({ categories, selectedCategory, onSelect, onAddNew }) {
     return (
@@ -21,7 +22,14 @@ const CategorySelector = memo(function CategorySelector({ categories, selectedCa
                         const style = getCategoryStyle(cat, 'input');
 
                         return (
-                            <button key={cat.id} onClick={() => onSelect(cat)} className="flex flex-col items-center gap-2 group p-1">
+                            <button
+                                key={cat.id}
+                                onClick={() => {
+                                    hapticLight(); // [iOS] 震動
+                                    onSelect(cat);
+                                }}
+                                className="flex flex-col items-center gap-2 group p-1"
+                            >
                                 <div className={`
                                 w-14 h-14 rounded-3xl flex items-center justify-center transition-all shrink-0 border
                                 ${isSelected ? style.activeClass : style.containerClass}
@@ -38,7 +46,13 @@ const CategorySelector = memo(function CategorySelector({ categories, selectedCa
 
                     {/* +新增 按鈕 */}
                     {onAddNew && (
-                        <button onClick={onAddNew} className="flex flex-col items-center gap-2 group p-1">
+                        <button
+                            onClick={() => {
+                                hapticLight();
+                                onAddNew();
+                            }}
+                            className="flex flex-col items-center gap-2 group p-1"
+                        >
                             <div className="w-14 h-14 rounded-3xl bg-gray-50 border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 group-hover:border-rose-300 group-hover:text-rose-500 group-active:scale-95 transition-all">
                                 <Plus size={24} />
                             </div>
