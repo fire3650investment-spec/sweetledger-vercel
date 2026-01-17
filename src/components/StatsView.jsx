@@ -174,9 +174,22 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const payerUser = safeUsers[tx.payer];
         const payerName = payerUser?.name || '未知';
         tags.push({ label: payerName, color: 'gray' });
-        if (tx.splitType === 'custom') tags.push({ label: '自訂分攤', color: 'gray' });
+
+        // [Bug Fix] 根據 customSplit 金額判斷「私人」、「代墊」或「自訂分攤」
+        if (tx.splitType === 'custom' && tx.customSplit) {
+            const payerShare = parseFloat(tx.customSplit[tx.payer] || 0);
+            const total = parseFloat(tx.amount || 0);
+            if (Math.abs(payerShare - total) < 0.1) {
+                tags.push({ label: '私人', color: 'gray' });
+            } else if (payerShare < 0.1) {
+                tags.push({ label: '代墊', color: 'gray' });
+            } else {
+                tags.push({ label: '自訂分攤', color: 'gray' });
+            }
+        }
         else if (tx.splitType === 'even') tags.push({ label: '平均分攤', color: 'gray' });
         else {
+            // Legacy Role-based Types
             const payerRole = payerUser?.role;
             if (payerRole === 'host') {
                 if (tx.splitType === 'host_all') tags.push({ label: '私人', color: 'gray' });
