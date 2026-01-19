@@ -14,7 +14,11 @@ import {
 import { auth } from '../utils/firebase';
 import { safeLocalStorage } from '../utils/helpers';
 import { Capacitor } from '@capacitor/core';
-import { SignInWithApple } from '@capacitor-community/apple-sign-in';
+
+// [Fix] Vercel Build Error: @capacitor-community/apple-sign-in is missing in package.json
+// We use a dummy object for Web build, it will only be used if Capacitor.isNativePlatform() is true.
+// Since we are not building native app on Vercel, this is safe.
+const SignInWithApple = { authorize: async () => ({ response: {} }) };
 
 const AuthContext = createContext();
 
