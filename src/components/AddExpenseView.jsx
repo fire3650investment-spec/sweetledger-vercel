@@ -278,9 +278,17 @@ export default function AddExpenseView({
                 subPayDay,
                 paymentMethod // Pass to action
             });
+
+            // [Success] Reset Form State only after successful write
+            setLocalAmount('');
+            setNote('');
+            setSplitType('even');
+            // Don't reset currency or date as they stick
         } catch (e) {
             hapticError(); // [iOS] Error
             console.error("Add Tx Error:", e);
+            // [Debug] Alert the user so we know why it failed
+            alert(`記帳失敗: ${e.message}`);
         }
     };
 

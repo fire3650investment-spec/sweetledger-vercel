@@ -1,6 +1,6 @@
 {
-  "appId": "com.sweetledger.app",
-  "appName": "SweetLedger",
+  "appId": "com.minimaldesign.fiftyfifty",
+  "appName": "fiftyfifty",
   "webDir": "build",
   "plugins": {
     "StatusBar": {
