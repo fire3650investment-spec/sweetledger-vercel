@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import {
     Home, PieChart, Settings, Plus, Briefcase, RefreshCcw, AlertCircle
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { SplashScreen } from '@capacitor/splash-screen'; // [FIX] Use dedicated package
 
 // Contexts
 import { useAuth } from './contexts/AuthContext';
@@ -146,6 +148,15 @@ export default function SweetLedger() {
     // --- Effects ---
     useEffect(() => { window.scrollTo(0, 0); }, [view]);
     useEffect(() => { if (currentProjectId) safeLocalStorage.setItem('sweet_last_project_id', currentProjectId); }, [currentProjectId]);
+
+    // [FIX] Force Splash Screen to hide on mount (iOS Capacitor)
+    useEffect(() => {
+        if (Capacitor.isNativePlatform()) {
+            SplashScreen.hide().catch((err) => {
+                console.warn('SplashScreen hide failed:', err);
+            });
+        }
+    }, []);
 
     useEffect(() => {
         if (ledgerData && ledgerData.projects) {

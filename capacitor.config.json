@@ -2,6 +2,10 @@
   "appId": "com.minimaldesign.fiftyfifty",
   "appName": "fiftyfifty",
   "webDir": "build",
+  "server": {
+    "iosScheme": "capacitor",
+    "hostname": "localhost"
+  },
   "plugins": {
     "StatusBar": {
       "style": "DARK",

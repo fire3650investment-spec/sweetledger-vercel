@@ -11,14 +11,24 @@
   <link rel="dns-prefetch" href="https://firebaseinstallations.googleapis.com" />
   <link rel="dns-prefetch" href="https://firebase.googleapis.com" />
 
-  <link rel="icon" type="image/svg+xml" href="/pwa-192x192.png" />
+  <link rel="icon" type="image/svg+xml" href="./pwa-192x192.png" />
+  <!-- [DEBUG] Early script to verify WebView is loading HTML -->
+  <script>
+    console.log('[DEBUG] index.html is loading...');
+    window.__htmlLoaded = true;
+    setTimeout(function () {
+      if (!window.__reactMounted) {
+        document.body.innerHTML = '<div style="padding:50px;text-align:center;"><h1>WebView OK</h1><p>HTML loaded but React failed to mount</p><p id="err"></p></div>';
+      }
+    }, 5000);
+  </script>
 
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
 
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-  <link rel="apple-touch-icon" href="/pwa-192x192.png" />
+  <link rel="apple-touch-icon" href="./pwa-192x192.png" />
 
   <meta name="viewport"
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
