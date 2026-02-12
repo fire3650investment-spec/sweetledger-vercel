@@ -33,6 +33,7 @@ const DecisionView = React.lazy(() => import('./components/DecisionView'));
 const EditTransactionModal = React.lazy(() => import('./components/EditTransactionModal'));
 const SubscriptionsView = React.lazy(() => import('./components/SubscriptionsView'));
 const PrivacyView = React.lazy(() => import('./components/PrivacyView'));
+import ValentineToast from './components/ValentineToast'; // 🌹 2/14 彩蛋
 
 // Loading Component
 const PageLoading = () => (
@@ -424,6 +425,7 @@ export default function SweetLedger() {
     // Wrap the main return content
     return (
         <ErrorBoundary>
+            <ValentineToast />
             <div className="min-h-screen bg-white text-gray-900 font-sans pb-[env(safe-area-inset-bottom)] animate-in fade-in duration-500 relative">
                 <React.Suspense fallback={<div className="h-screen w-full flex items-center justify-center bg-white"><div className="text-4xl animate-bounce">🍰</div></div>}>
                     {view === 'onboarding' && <OnboardingView handleGoogleLogin={handleGoogleLogin} handleAppleLogin={handleAppleLogin} loading={loading} onJoinWithCode={handleJoinWithCode} />}

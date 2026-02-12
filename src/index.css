@@ -78,6 +78,16 @@ body {
   animation: fade-in 0.2s ease-out forwards;
 }
 
+/* 淡出動畫 */
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+.animate-fade-out {
+  animation: fade-out 0.8s ease-in forwards;
+}
+
 /* 按鈕點擊回饋 */
 .btn-press {
   transition: transform 0.1s;
