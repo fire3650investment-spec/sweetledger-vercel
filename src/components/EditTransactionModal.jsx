@@ -1,10 +1,10 @@
 // src/components/EditTransactionModal.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     X, Calendar, Trash2, Check, User, Users, AlertCircle, Lock, Tag, DollarSign,
     ChevronDown, RefreshCw, Search, CheckCircle, CreditCard // [Fix] 補回遺失的 Icon
 } from 'lucide-react';
-import { getCategoryStyle, getIconComponent, getLocalISODate } from '../utils/helpers';
+import { getCategoryStyle, getIconComponent, getLocalISODate, normalizePaymentMethods } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants'; // [Fix] 補回遺失的常數
 
 export default function EditTransactionModal({
@@ -38,7 +38,9 @@ export default function EditTransactionModal({
     const [currencySearch, setCurrencySearch] = useState('');
 
     // Context Logic
-    const currentProject = ledgerData.projects?.find(p => p.id === currentProjectId);
+    // [Fix] 使用交易本身的 projectId，而非全域 currentProjectId，避免判斷錯誤
+    const txProjectId = transaction?.projectId || currentProjectId;
+    const currentProject = ledgerData.projects?.find(p => p.id === txProjectId);
     const isPrivateProject = currentProject?.type === 'private';
 
     const users = ledgerData.users || {};
@@ -51,6 +53,8 @@ export default function EditTransactionModal({
     // [Batch 2] User Favorites (補回)
     const mySettings = ledgerData.users?.[user?.uid] || {};
     const myFavorites = mySettings.favoriteCurrencies || DEFAULT_FAVORITE_CURRENCIES;
+    // [Fix] 使用 useMemo 避免每次 render 產生新參考，導致 useEffect 無窮迴圈
+    const paymentMethods = useMemo(() => normalizePaymentMethods(ledgerData.paymentMethods || []), [ledgerData.paymentMethods]);
 
     // Init Data
     useEffect(() => {
@@ -101,8 +105,10 @@ export default function EditTransactionModal({
             }
         }
 
-        setPaymentMethod(transaction.paymentMethod || ''); // [New Feature] Init
-    }, [transaction, hostId, guestId, ledgerData.customCategories]);
+        const rawMethod = transaction.paymentMethod || '';
+        const normalized = paymentMethods.find(m => m.id === rawMethod || m.name === rawMethod);
+        setPaymentMethod(normalized ? normalized.id : rawMethod); // [New Feature] Init
+    }, [transaction, hostId, guestId, ledgerData.customCategories, paymentMethods]);
 
     // Force Private Logic
     useEffect(() => {
@@ -133,6 +139,34 @@ export default function EditTransactionModal({
                 if (guestId) customSplitData[guestId] = guestAmt;
             }
 
+            let finalSplitType = splitType;
+            let finalCustomSplit = customSplitData;
+
+            if (!isPrivateProject && (splitType === 'self' || splitType === 'partner')) {
+                finalSplitType = 'custom';
+                const allUsers = Object.keys(users);
+                const partners = allUsers.filter(u => u !== payer);
+
+                if (splitType === 'self') {
+                    finalCustomSplit = { [payer]: amountFloat };
+                } else {
+                    if (partners.length === 1) {
+                        finalCustomSplit = { [partners[0]]: amountFloat };
+                    } else if (partners.length > 1) {
+                        const share = amountFloat / partners.length;
+                        finalCustomSplit = {};
+                        partners.forEach(p => { finalCustomSplit[p] = share; });
+                    } else {
+                        finalCustomSplit = { [payer]: amountFloat };
+                    }
+                }
+            }
+
+            if (isPrivateProject && user?.uid) {
+                finalSplitType = 'custom';
+                finalCustomSplit = { [user.uid]: amountFloat };
+            }
+
             await updateTransaction({
                 ...transaction,
                 amount: amountFloat,
@@ -141,8 +175,8 @@ export default function EditTransactionModal({
                 note: note || selectedCategory.name,
                 date: new Date(date).toISOString(),
                 payer: isPrivateProject ? user.uid : payer,
-                splitType: isPrivateProject ? 'self' : splitType,
-                customSplit: isPrivateProject ? null : customSplitData,
+                splitType: finalSplitType,
+                customSplit: finalCustomSplit,
                 paymentMethod // [New Feature] Save
             });
             onClose();
@@ -335,7 +369,7 @@ export default function EditTransactionModal({
                                                 className={`w-full appearance-none bg-white border border-gray-200 text-xs font-bold py-1 pl-2 pr-8 rounded-lg outline-none text-right ${!paymentMethod ? 'text-gray-400' : 'text-gray-700'}`}
                                             >
                                                 <option value="">未指定</option>
-                                                {(ledgerData.paymentMethods || []).map(m => (
+                                                {paymentMethods.map(m => (
                                                     <option key={m.id} value={m.id}>{m.name}</option>
                                                 ))}
                                             </select>

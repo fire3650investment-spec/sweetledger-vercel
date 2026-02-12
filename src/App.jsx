@@ -438,6 +438,7 @@ export default function SweetLedger() {
                                 {visitedViews.add && (
                                     <AddExpenseView
                                         ledgerData={ledgerData}
+                                        ledgerCode={ledgerCode}
                                         user={user}
                                         currentProjectId={currentProjectId}
                                         setView={setView}

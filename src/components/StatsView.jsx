@@ -188,6 +188,8 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
             }
         }
         else if (tx.splitType === 'even') tags.push({ label: '平均分攤', color: 'gray' });
+        else if (tx.splitType === 'self') tags.push({ label: '私人', color: 'gray' });
+        else if (tx.splitType === 'partner') tags.push({ label: '代墊', color: 'gray' });
         else {
             // Legacy Role-based Types
             const payerRole = payerUser?.role;

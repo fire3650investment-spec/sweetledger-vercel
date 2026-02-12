@@ -75,18 +75,37 @@ export const useSubscriptions = (ledgerCode, ledgerDocData) => {
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
 
             if (updatesNeeded) {
-                const batch = writeBatch(db);
+                const BATCH_LIMIT = 450; // safety margin under Firestore 500 ops limit
+                const batches = [];
+                let batch = writeBatch(db);
+                let opsInBatch = 0;
+
+                // Update subscriptions + last check once (first batch)
                 batch.update(docRef, {
                     subscriptions: newSubscriptions,
                     lastSubscriptionCheck: todayStr
                 });
+                opsInBatch += 1;
 
                 generatedTxs.forEach(tx => {
+                    if (opsInBatch >= BATCH_LIMIT) {
+                        batches.push(batch);
+                        batch = writeBatch(db);
+                        opsInBatch = 0;
+                    }
                     const txRef = doc(collection(docRef, 'transactions'), tx.id);
                     batch.set(txRef, tx);
+                    opsInBatch += 1;
                 });
 
-                await batch.commit();
+                if (opsInBatch > 0) {
+                    batches.push(batch);
+                }
+
+                for (const b of batches) {
+                    await b.commit();
+                }
+
                 console.log(`✅ 已執行自動扣款: ${generatedTxs.length} 筆`);
             } else {
                 await updateDoc(docRef, { lastSubscriptionCheck: todayStr });

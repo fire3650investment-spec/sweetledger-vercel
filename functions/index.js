@@ -6,13 +6,14 @@ const db = admin.firestore();
 
 /**
  * 當 transactions 子集合有新文件建立時觸發
- * 監聽路徑: ledgers/{ledgerId}/transactions/{txId}
+ * 監聽路徑: artifacts/{appId}/public/data/ledgers/{ledgerId}/transactions/{txId}
  */
 exports.onTransactionCreated = functions.firestore
-    .document("ledgers/{ledgerId}/transactions/{txId}")
+    .document("artifacts/{appId}/public/data/ledgers/{ledgerId}/transactions/{txId}")
     .onCreate(async (snap, context) => {
         const tx = snap.data();
         const ledgerId = context.params.ledgerId;
+        const appId = context.params.appId;
 
         // 基本資料驗證
         if (!tx || !tx.payer) {
@@ -22,7 +23,8 @@ exports.onTransactionCreated = functions.firestore
 
         try {
             // 1. 取得帳本資訊，找出還有哪些使用者
-            const ledgerDoc = await db.collection("ledgers").doc(ledgerId).get();
+            const ledgerRef = db.doc(`artifacts/${appId}/public/data/ledgers/${ledgerId}`);
+            const ledgerDoc = await ledgerRef.get();
             if (!ledgerDoc.exists) {
                 console.log(`Ledger ${ledgerId} not found.`);
                 return null;

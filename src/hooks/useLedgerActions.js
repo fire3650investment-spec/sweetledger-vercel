@@ -219,14 +219,20 @@ export const useLedgerActions = (ledgerCode, setLedgerCode, user, ledgerDocData,
         if (!window.confirm('確定要清空所有交易嗎？')) return;
 
         const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
-        const batch = writeBatch(db);
-        batch.update(docRef, { access_token_revoked: true, subscriptions: [] });
 
         const q = query(collection(docRef, 'transactions'));
         const snaps = await getDocs(q);
-        snaps.forEach(d => batch.delete(d.ref));
+        const txDocs = snaps.docs;
 
-        await batch.commit();
+        const BATCH_LIMIT = 450; // safety margin under Firestore 500 ops limit
+        for (let i = 0; i < txDocs.length; i += BATCH_LIMIT) {
+            const batch = writeBatch(db);
+            const slice = txDocs.slice(i, i + BATCH_LIMIT);
+            slice.forEach(d => batch.delete(d.ref));
+            await batch.commit();
+        }
+
+        await updateDoc(docRef, { access_token_revoked: true, subscriptions: [] });
         alert('帳本已重置');
     }, [ledgerCode, ledgerDocData, user]);
 

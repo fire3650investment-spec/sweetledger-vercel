@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { CreditCard, Plus, X, Trash2, Check, ArrowUp, ArrowDown, Edit2 } from 'lucide-react';
-import { generateId } from '../../utils/helpers';
+import { generateId, normalizePaymentMethods } from '../../utils/helpers';
 
 export default function PaymentMethodManager({
     ledgerData,
@@ -9,7 +9,7 @@ export default function PaymentMethodManager({
 }) {
     // Determine methods: default to empty array if not yet migrated (migration happens in bg)
     // But typically we want to show fallbacks if null
-    const methods = ledgerData?.paymentMethods || [];
+    const methods = normalizePaymentMethods(ledgerData?.paymentMethods || []);
 
     const [isEditing, setIsEditing] = useState(false);
     const [editingData, setEditingData] = useState({ id: '', name: '' });

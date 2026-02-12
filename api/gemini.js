@@ -3,7 +3,6 @@ import { verifyAuth } from './_auth.js';
 
 export default async function handler(req, res) {
     // CORS Support for local dev
-    res.setHeader('Access-Control-Allow-Credentials', true);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
     res.setHeader(

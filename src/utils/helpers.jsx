@@ -45,6 +45,20 @@ export const calculateTwdValue = (amount, currency, rates) => {
     return numAmount * rate;
 };
 
+export const normalizePaymentMethods = (methods = []) => {
+    if (!Array.isArray(methods)) return [];
+    return methods
+        .map((m) => {
+            if (!m) return null;
+            if (typeof m === 'string') return { id: m, name: m };
+            const id = m.id || m.name;
+            const name = m.name || m.id;
+            if (!id || !name) return null;
+            return { id, name };
+        })
+        .filter(Boolean);
+};
+
 import { auth } from './firebase'; // Ensure auth is imported if not already, or pass it in. 
 // Wait, 'auth' export might need checking. Usually it's in ./firebase. 
 // However, helpers.jsx imports constants. Let's assume we need to import auth from 'firebase/auth' or '../utils/firebase'

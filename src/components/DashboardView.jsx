@@ -142,7 +142,9 @@ export default function DashboardView({
                         const myShare = parseFloat(myShareRaw);
                         if (!isNaN(myShare)) liability = calculateTwdValue(myShare, tx.currency || 'TWD', rates);
                     }
-                } else if (tx.splitType === 'host_all') liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
+                } else if (tx.splitType === 'self') liability = tx.payer === user.uid ? amountTwd : 0;
+                else if (tx.splitType === 'partner') liability = tx.payer === user.uid ? 0 : amountTwd;
+                else if (tx.splitType === 'host_all') liability = safeUsers[user.uid]?.role === 'host' ? amountTwd : 0;
                 else if (tx.splitType === 'guest_all') liability = safeUsers[user.uid]?.role === 'guest' ? amountTwd : 0;
 
                 if (isPrivateProject) liability = amountTwd;
@@ -215,6 +217,10 @@ export default function DashboardView({
         }
         else if (tx.splitType === 'even') {
             tags.push({ label: '平均分攤', color: 'gray' });
+        } else if (tx.splitType === 'self') {
+            tags.push({ label: '私人', color: 'gray' });
+        } else if (tx.splitType === 'partner') {
+            tags.push({ label: '代墊', color: 'gray' });
         } else {
             // Legacy Role-based Types
             const payerRole = payerUser?.role;

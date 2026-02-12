@@ -5,10 +5,12 @@ import {
     AlertCircle, Sparkles, Calendar, Plus, User, Repeat,
     Search, CheckCircle, HelpCircle, CreditCard
 } from 'lucide-react';
-import { getIconComponent, callGemini, getLocalISODate, fetchExchangeRate, getCategoryStyle } from '../utils/helpers';
+import { getIconComponent, callGemini, getLocalISODate, fetchExchangeRate, getCategoryStyle, normalizePaymentMethods } from '../utils/helpers';
 import { DEFAULT_CATEGORIES, INITIAL_LEDGER_STATE, CURRENCY_OPTIONS, DEFAULT_FAVORITE_CURRENCIES } from '../utils/constants';
 import { hapticLight, hapticMedium, hapticSuccess, hapticError, hapticSelection } from '../utils/haptics'; // [iOS] Haptics
 import ScanReceiptModal from './ScanReceiptModal';
+import { db, appId } from '../utils/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
 
 import CustomKeypad from './add-expense/CustomKeypad';
 import CategorySelector from './add-expense/CategorySelector';
@@ -23,6 +25,7 @@ import AiInputModal from './add-expense/AiInputModal';
 
 export default function AddExpenseView({
     ledgerData,
+    ledgerCode,
     user,
     currentProjectId,
     setView,
@@ -75,6 +78,7 @@ export default function AddExpenseView({
     const noteInputRef = useRef(null);
 
     const currentCats = useMemo(() => ledgerData.customCategories || DEFAULT_CATEGORIES, [ledgerData.customCategories]);
+    const paymentMethods = useMemo(() => normalizePaymentMethods(ledgerData.paymentMethods || []), [ledgerData.paymentMethods]);
 
     const mySettings = ledgerData.users?.[user?.uid] || {};
     const myFavorites = mySettings.favoriteCurrencies || DEFAULT_FAVORITE_CURRENCIES;
@@ -200,13 +204,9 @@ export default function AddExpenseView({
         const currentCategories = ledgerData.customCategories || DEFAULT_CATEGORIES;
         const updatedCategories = [...currentCategories, newCategory];
 
-        // 更新 Firestore (透過 App.jsx 傳入的 updateProjectRates 或類似方法)
-        // 這裡需要透過 ledgerData 的更新機制
         try {
-            const db = (await import('../utils/firebase')).db;
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-sweetledger';
-            const { doc, updateDoc } = await import('firebase/firestore');
-            const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerData.code);
+            if (!db || !ledgerCode) throw new Error('Ledger unavailable');
+            const ledgerRef = doc(db, 'artifacts', appId, 'public', 'data', 'ledgers', ledgerCode);
             await updateDoc(ledgerRef, { customCategories: updatedCategories });
 
             // 自動選擇新分類並關閉編輯器
@@ -522,7 +522,7 @@ export default function AddExpenseView({
                                             className={`w-full appearance-none bg-gray-50 text-xs font-bold py-2 pl-3 pr-8 rounded-xl outline-none border border-gray-100 focus:border-blue-200 text-right ${!paymentMethod ? 'text-gray-400' : 'text-gray-700'}`}
                                         >
                                             <option value="">未指定</option>
-                                            {(ledgerData.paymentMethods || []).map(m => (
+                                            {paymentMethods.map(m => (
                                                 <option key={m.id} value={m.id}>{m.name}</option>
                                             ))}
                                         </select>
