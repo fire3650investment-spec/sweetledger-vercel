@@ -58,6 +58,22 @@ class ErrorBoundary extends React.Component {
 
     componentDidCatch(error, errorInfo) {
         console.error("Uncaught Error:", error, errorInfo);
+
+        // [Vercel Chunk Error Workaround] automatically reload on module script failed
+        if (
+            error.message &&
+            (error.message.includes('Importing a module script failed') || error.message.includes('Failed to fetch dynamically imported module'))
+        ) {
+            const reloaded = safeLocalStorage.getItem('sweet_ledger_reloaded');
+            if (reloaded !== 'true') {
+                safeLocalStorage.setItem('sweet_ledger_reloaded', 'true');
+                window.location.reload(true);
+                return;
+            } else {
+                safeLocalStorage.removeItem('sweet_ledger_reloaded');
+            }
+        }
+
         this.setState({ errorInfo });
     }
 
