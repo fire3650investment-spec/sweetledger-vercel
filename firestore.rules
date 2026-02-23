@@ -115,6 +115,34 @@ service cloud.firestore {
         allow update: if isLedgerMember() && isValidTransaction();
         allow delete: if isLedgerMember();
       }
+
+      // 4. Projects Sub-collection
+      match /projects/{projectId} {
+        function getLedger() {
+          return get(/databases/$(database)/documents/artifacts/$(appId)/public/data/ledgers/$(ledgerId)).data;
+        }
+        function isLedgerMember() {
+          return isLoggedIn() && (request.auth.uid in getLedger().users);
+        }
+        allow read: if isLedgerMember();
+        allow create: if isLedgerMember();
+        allow update: if isLedgerMember();
+        allow delete: if isLedgerMember();
+      }
+
+      // 5. Subscriptions Sub-collection
+      match /subscriptions/{subId} {
+        function getLedger() {
+          return get(/databases/$(database)/documents/artifacts/$(appId)/public/data/ledgers/$(ledgerId)).data;
+        }
+        function isLedgerMember() {
+          return isLoggedIn() && (request.auth.uid in getLedger().users);
+        }
+        allow read: if isLedgerMember();
+        allow create: if isLedgerMember();
+        allow update: if isLedgerMember();
+        allow delete: if isLedgerMember();
+      }
     }
   }
 }

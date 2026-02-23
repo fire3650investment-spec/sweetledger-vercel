@@ -33,7 +33,7 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
     const myTheme = users[user?.uid]?.theme || 'vibrant';
     const projectRatesJson = JSON.stringify(currentProject?.rates || {});
 
-    const { filteredTxs, sortedHistory, rates, hostId, guestId, hostTotal, guestTotal, hostRatio, guestRatio, totalExpense, categoryStats, hostName, guestName } = useMemo(() => {
+    const { filteredTxs, sortedHistory, rates, hostId, guestId, monthMetrics, totalMetrics, totalExpense, categoryStats, hostName, guestName } = useMemo(() => {
         const safeUsers = users;
         const currentCategories = customCategories;
 
@@ -48,7 +48,8 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                 return { ...t, amount: parseFloat(t.amount) || 0, category: displayCategory };
             });
 
-        const txs = allTxs.filter(t => t.date.startsWith(statsMonth) && (t.projectId || 'daily') === currentProjectId);
+        const projectTxs = allTxs.filter(t => (t.projectId || 'daily') === currentProjectId);
+        const txs = projectTxs.filter(t => t.date.startsWith(statsMonth));
         // [UX] 同一天內，後記的在上面
         const sorted = [...txs].sort((a, b) => {
             const dateA = new Date(a.date).setHours(0, 0, 0, 0);
@@ -64,32 +65,77 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
         const hName = safeUsers[hId]?.name || '我';
         const gName = safeUsers[gId]?.name || '對方';
 
-        const calculateTotalPaid = (uid) => {
-            return txs.reduce((sum, tx) => {
-                if (tx.isSettlement) return sum;
-                const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', currentRates);
-                if (isNaN(amountTwd)) return sum;
-                if (tx.splitType === 'multi_payer') {
-                    if (tx.customSplit && tx.customSplit[uid]) {
-                        const paid = parseFloat(tx.customSplit[uid]) || 0;
-                        return sum + calculateTwdValue(paid, tx.currency || 'TWD', currentRates);
-                    }
-                    return sum;
-                }
-                return sum + (tx.payer === uid ? amountTwd : 0);
-            }, 0);
-        };
-        const hTotal = calculateTotalPaid(hId);
-        const gTotal = calculateTotalPaid(gId);
-        const combinedTotal = hTotal + gTotal;
-        const hRatio = combinedTotal > 0 ? (hTotal / combinedTotal) * 100 : 50;
-        const gRatio = combinedTotal > 0 ? (gTotal / combinedTotal) * 100 : 50;
+        const calculateMetrics = (targetTxs) => {
+            let hPaid = 0, gPaid = 0;
+            let hReal = 0, gReal = 0;
+            let hPrivate = 0, gPrivate = 0;
 
-        // [Debt-based Color Logic] 付得多的人=綠色 (creditor), 付得少的人=玫瑰紅 (debtor)
-        const creditorColor = '#10b981'; // emerald-500
-        const debtorColor = '#f43f5e'; // rose-500
-        const hColor = hTotal >= gTotal ? creditorColor : debtorColor;
-        const gColor = gTotal >= hTotal ? creditorColor : debtorColor;
+            targetTxs.forEach(tx => {
+                if (tx.isSettlement) return;
+                const amountTwd = calculateTwdValue(tx.amount, tx.currency || 'TWD', currentRates);
+                if (isNaN(amountTwd)) return;
+
+                // 1. Paid (貢獻度)
+                if (tx.splitType === 'multi_payer') {
+                    if (tx.customSplit) {
+                        const hAmt = parseFloat(tx.customSplit[hId]) || 0;
+                        const gAmt = parseFloat(tx.customSplit[gId]) || 0;
+                        hPaid += calculateTwdValue(hAmt, tx.currency || 'TWD', currentRates);
+                        gPaid += calculateTwdValue(gAmt, tx.currency || 'TWD', currentRates);
+                    }
+                } else {
+                    if (tx.payer === hId) hPaid += amountTwd;
+                    if (tx.payer === gId) gPaid += amountTwd;
+                }
+
+                // 2. Real Expense & Private Expense
+                if (tx.splitType === 'multi_payer' || tx.splitType === 'even') {
+                    hReal += amountTwd / 2;
+                    gReal += amountTwd / 2;
+                } else if (tx.splitType === 'custom') {
+                    if (tx.customSplit) {
+                        const hShare = parseFloat(tx.customSplit[hId]) || 0;
+                        const gShare = parseFloat(tx.customSplit[gId]) || 0;
+                        hReal += calculateTwdValue(hShare, tx.currency || 'TWD', currentRates);
+                        gReal += calculateTwdValue(gShare, tx.currency || 'TWD', currentRates);
+                    }
+                } else if (tx.splitType === 'host_all') {
+                    hReal += amountTwd;
+                    hPrivate += amountTwd;
+                } else if (tx.splitType === 'guest_all') {
+                    gReal += amountTwd;
+                    gPrivate += amountTwd;
+                } else if (tx.splitType === 'self') {
+                    if (tx.payer === hId) {
+                        hReal += amountTwd;
+                        hPrivate += amountTwd;
+                    } else if (tx.payer === gId) {
+                        gReal += amountTwd;
+                        gPrivate += amountTwd;
+                    }
+                } else if (tx.splitType === 'partner') {
+                    if (tx.payer === hId) {
+                        gReal += amountTwd;
+                        gPrivate += amountTwd;
+                    } else if (tx.payer === gId) {
+                        hReal += amountTwd;
+                        hPrivate += amountTwd;
+                    }
+                }
+            });
+
+            return {
+                hPaid: isNaN(hPaid) ? 0 : hPaid,
+                gPaid: isNaN(gPaid) ? 0 : gPaid,
+                hReal: isNaN(hReal) ? 0 : hReal,
+                gReal: isNaN(gReal) ? 0 : gReal,
+                hPrivate: isNaN(hPrivate) ? 0 : hPrivate,
+                gPrivate: isNaN(gPrivate) ? 0 : gPrivate,
+            };
+        };
+
+        const monthMetrics = calculateMetrics(txs);
+        const totalMetrics = calculateMetrics(projectTxs);
 
         const statsMap = {};
         let totalExp = 0;
@@ -137,10 +183,8 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
             rates: currentRates,
             hostId: hId, guestId: gId,
             hostName: hName, guestName: gName,
-            hostTotal: isNaN(hTotal) ? 0 : hTotal,
-            guestTotal: isNaN(gTotal) ? 0 : gTotal,
-            hostRatio: isNaN(hRatio) ? 50 : hRatio,
-            guestRatio: isNaN(gRatio) ? 50 : gRatio,
+            monthMetrics,
+            totalMetrics,
             totalExpense: isNaN(totalExp) ? 0 : totalExp,
             categoryStats: catStats
         };
@@ -232,13 +276,8 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                     <ContributionChart
                         hostName={hostName}
                         guestName={guestName}
-                        hostTotal={hostTotal}
-                        guestTotal={guestTotal}
-                        hostRatio={hostRatio}
-                        guestRatio={guestRatio}
-                        // [Debt-based] 付得多=綠色, 付得少=玫瑰紅 (而非固定 host/guest)
-                        hostColor={hostTotal >= guestTotal ? '#10b981' : '#f43f5e'}
-                        guestColor={guestTotal >= hostTotal ? '#10b981' : '#f43f5e'}
+                        monthMetrics={monthMetrics}
+                        totalMetrics={totalMetrics}
                     />
                 </div>
             )}
