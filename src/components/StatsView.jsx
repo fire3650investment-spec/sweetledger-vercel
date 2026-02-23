@@ -96,8 +96,15 @@ export default function StatsView({ ledgerData, currentProjectId, statsMonth, se
                     if (tx.customSplit) {
                         const hShare = parseFloat(tx.customSplit[hId]) || 0;
                         const gShare = parseFloat(tx.customSplit[gId]) || 0;
-                        hReal += calculateTwdValue(hShare, tx.currency || 'TWD', currentRates);
-                        gReal += calculateTwdValue(gShare, tx.currency || 'TWD', currentRates);
+                        const hShareTwd = calculateTwdValue(hShare, tx.currency || 'TWD', currentRates);
+                        const gShareTwd = calculateTwdValue(gShare, tx.currency || 'TWD', currentRates);
+
+                        hReal += hShareTwd;
+                        gReal += gShareTwd;
+
+                        // [Bug Fix] if someone takes 100% of the custom split, consider it a Private Expense!
+                        if (hShareTwd > 0 && gShareTwd === 0) hPrivate += hShareTwd;
+                        if (gShareTwd > 0 && hShareTwd === 0) gPrivate += gShareTwd;
                     }
                 } else if (tx.splitType === 'host_all') {
                     hReal += amountTwd;
